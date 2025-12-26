@@ -1,0 +1,23 @@
+# FastAPI and ASGI server
+fastapi>=0.109.0
+uvicorn[standard]>=0.27.0
+
+# Image processing
+pillow>=10.2.0
+numpy>=1.26.0
+
+# YOLO / Object Detection
+# Note: ultralytics includes YOLO11, and YOLOv12 can be loaded from sunsmarterjie/yolov12
+ultralytics>=8.1.0
+
+# For GPU support (uncomment as needed):
+# torch>=2.1.0
+# torchvision>=0.16.0
+# onnxruntime-gpu>=1.16.0
+
+# For CPU-only:
+onnxruntime>=1.16.0
+
+# Utilities
+python-multipart>=0.0.6
+pydantic>=2.5.0

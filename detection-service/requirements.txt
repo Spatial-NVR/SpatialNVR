@@ -1,0 +1,19 @@
+# Core dependencies
+grpcio>=1.60.0
+grpcio-tools>=1.60.0
+protobuf>=4.25.0
+numpy>=1.24.0
+opencv-python>=4.9.0
+Pillow>=10.0.0
+pyyaml>=6.0
+
+# ONNX Runtime (CPU baseline)
+onnxruntime>=1.17.0
+
+# Logging and utilities
+structlog>=24.0.0
+python-dotenv>=1.0.0
+
+# Optional: API server (if running standalone)
+uvicorn>=0.27.0
+fastapi>=0.109.0

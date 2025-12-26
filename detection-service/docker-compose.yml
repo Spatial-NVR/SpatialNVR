@@ -1,0 +1,79 @@
+version: '3.8'
+
+services:
+  # CPU-only detection service
+  detection-cpu:
+    build:
+      context: .
+      target: cpu
+    ports:
+      - "50051:50051"
+    volumes:
+      - ./models:/app/models
+    environment:
+      - LOG_LEVEL=INFO
+    restart: unless-stopped
+    profiles:
+      - cpu
+
+  # NVIDIA GPU detection service
+  detection-gpu:
+    build:
+      context: .
+      target: gpu
+    ports:
+      - "50051:50051"
+    volumes:
+      - ./models:/app/models
+    environment:
+      - LOG_LEVEL=INFO
+      - NVIDIA_VISIBLE_DEVICES=all
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    restart: unless-stopped
+    profiles:
+      - gpu
+
+  # OpenVINO detection service (Intel CPU/NPU)
+  detection-openvino:
+    build:
+      context: .
+      target: openvino
+    ports:
+      - "50051:50051"
+    volumes:
+      - ./models:/app/models
+    environment:
+      - LOG_LEVEL=INFO
+    restart: unless-stopped
+    profiles:
+      - openvino
+
+  # Coral Edge TPU detection service
+  detection-coral:
+    build:
+      context: .
+      target: coral
+    ports:
+      - "50051:50051"
+    volumes:
+      - ./models:/app/models
+    devices:
+      - /dev/bus/usb:/dev/bus/usb
+    privileged: true
+    environment:
+      - LOG_LEVEL=INFO
+    restart: unless-stopped
+    profiles:
+      - coral
+
+# Usage:
+# CPU:      docker compose --profile cpu up -d
+# GPU:      docker compose --profile gpu up -d
+# OpenVINO: docker compose --profile openvino up -d
+# Coral:    docker compose --profile coral up -d

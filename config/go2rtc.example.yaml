@@ -1,0 +1,29 @@
+# go2rtc configuration
+# This file is auto-generated from config.yaml
+# Manual edits will be overwritten
+
+api:
+  listen: ":1984"
+  base_path: ""
+  origin: "*"
+
+rtsp:
+  listen: ":8554"
+  default_query: "video&audio"
+
+webrtc:
+  listen: ":8555/tcp"
+  candidates:
+    - stun:stun.l.google.com:19302
+
+streams: {}
+  # Streams are auto-generated from camera config
+  # Example:
+  # front_door:
+  #   - rtsp://admin:password@192.168.1.100:554/stream
+  # front_door_sub:
+  #   - rtsp://admin:password@192.168.1.100:554/substream
+
+log:
+  level: "info"
+  format: "text"

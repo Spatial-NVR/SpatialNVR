@@ -1,0 +1,148 @@
+version: "1.0"
+
+system:
+  name: "Home NVR"
+  timezone: "America/New_York"
+  storage_path: "/data"
+  max_storage_gb: 1000
+
+  database:
+    type: "sqlite"
+    path: "/data/nvr.db"
+
+  deployment:
+    type: "standalone"  # standalone or distributed
+
+  logging:
+    level: "info"
+    format: "json"
+
+cameras: []
+  # Example camera configuration:
+  # - id: "front_door_abc123"
+  #   name: "Front Door"
+  #   enabled: true
+  #   stream:
+  #     url: "rtsp://192.168.1.100:554/stream"
+  #     username: "admin"
+  #     password: "encrypted:YOUR_ENCRYPTED_PASSWORD"
+  #     auth_type: "basic"
+  #   manufacturer: "Reolink"
+  #   model: "RLC-811A"
+  #   recording:
+  #     enabled: true
+  #     mode: "continuous"
+  #     pre_buffer_seconds: 5
+  #     post_buffer_seconds: 5
+  #     retention:
+  #       default_days: 30
+  #       events_days: 60
+  #   detection:
+  #     enabled: true
+  #     fps: 5
+  #     models:
+  #       - "yolo12"
+  #       - "face_recognition"
+  #     zones: []
+
+detectors:
+  yolo12:
+    type: "yolo"
+    model: "yolov12n.pt"
+    device: "cuda"
+    confidence: 0.5
+    iou: 0.45
+    classes: []
+
+  yolo11:
+    type: "yolo"
+    model: "yolo11n.pt"
+    device: "cuda"
+    confidence: 0.5
+
+  face_recognition:
+    type: "insightface"
+    model: "buffalo_l"
+    device: "cpu"
+    det_size: [640, 640]
+    confidence: 0.7
+
+  lpr:
+    type: "paddleocr"
+    device: "cpu"
+    lang: "en"
+    confidence: 0.6
+    formats:
+      - country: "US"
+        regex: "^[A-Z0-9]{5,8}$"
+
+plugins:
+  wyze_bridge:
+    enabled: false
+    config:
+      api_key: ""
+      api_id: ""
+      username: ""
+      password: ""
+      refresh_interval: 300
+
+  reolink:
+    enabled: true
+    config:
+      auto_discover: true
+      onvif_port: 8000
+      rtsp_port: 554
+
+  onvif:
+    enabled: true
+    config:
+      auto_discover: true
+
+notifications:
+  enabled: false
+  quiet_hours:
+    enabled: true
+    start: "22:00"
+    end: "07:00"
+  channels:
+    push:
+      enabled: false
+    email:
+      enabled: false
+    webhook:
+      enabled: false
+
+storage:
+  recordings: "recordings"
+  thumbnails: "thumbnails"
+  snapshots: "snapshots"
+  exports: "exports"
+
+  retention:
+    default_days: 30
+    tiers:
+      hot:
+        duration_days: 2
+        location: "local"
+      warm:
+        duration_days: 7
+        location: "local"
+      cold:
+        duration_days: 30
+        location: "local"
+
+preferences:
+  ui:
+    theme: "dark"
+    language: "en"
+    dashboard:
+      grid_columns: 3
+      show_fps: true
+      show_bitrate: false
+  timeline:
+    default_range_hours: 24
+    thumbnail_interval_seconds: 10
+  events:
+    auto_acknowledge_after_days: 7
+    group_similar_events: true
+    group_window_seconds: 300

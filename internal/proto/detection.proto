@@ -1,0 +1,324 @@
+syntax = "proto3";
+
+package detection;
+
+option go_package = "github.com/nvr-system/nvr/internal/proto/detection";
+
+// DetectionService provides object detection capabilities
+service DetectionService {
+  // Detect performs detection on a single image
+  rpc Detect(DetectRequest) returns (DetectResponse);
+
+  // DetectStream performs detection on a stream of images
+  rpc DetectStream(stream DetectRequest) returns (stream DetectResponse);
+
+  // GetStatus returns the service status
+  rpc GetStatus(StatusRequest) returns (StatusResponse);
+
+  // LoadModel loads a detection model
+  rpc LoadModel(LoadModelRequest) returns (LoadModelResponse);
+
+  // UnloadModel unloads a detection model
+  rpc UnloadModel(UnloadModelRequest) returns (UnloadModelResponse);
+
+  // GetModels returns loaded models
+  rpc GetModels(GetModelsRequest) returns (GetModelsResponse);
+
+  // GetBackends returns available backends
+  rpc GetBackends(GetBackendsRequest) returns (GetBackendsResponse);
+}
+
+// DetectRequest is a request to perform detection
+message DetectRequest {
+  // Camera identifier
+  string camera_id = 1;
+
+  // Image data (JPEG or PNG encoded)
+  bytes image_data = 2;
+
+  // Image width (required if sending raw data)
+  int32 width = 3;
+
+  // Image height (required if sending raw data)
+  int32 height = 4;
+
+  // Image format: "jpeg", "png", "rgb", "bgr"
+  string format = 5;
+
+  // Model IDs to use (empty = use default)
+  repeated string model_ids = 6;
+
+  // Minimum confidence threshold (0-1)
+  float min_confidence = 7;
+
+  // Object types to detect (empty = all)
+  repeated string object_types = 8;
+
+  // Zone IDs to filter (empty = no zone filtering)
+  repeated string zone_ids = 9;
+
+  // Timestamp of the frame (Unix milliseconds)
+  int64 timestamp_ms = 10;
+
+  // Frame ID for tracking
+  int64 frame_id = 11;
+}
+
+// DetectResponse contains detection results
+message DetectResponse {
+  // Camera identifier
+  string camera_id = 1;
+
+  // Timestamp of the frame (Unix milliseconds)
+  int64 timestamp_ms = 2;
+
+  // Frame ID
+  int64 frame_id = 3;
+
+  // Detected objects
+  repeated Detection detections = 4;
+
+  // Processing time in milliseconds
+  float process_time_ms = 5;
+
+  // Backend used
+  string backend = 6;
+
+  // Model ID used
+  string model_id = 7;
+
+  // Error message if any
+  string error = 8;
+}
+
+// Detection represents a single detected object
+message Detection {
+  // Unique detection ID
+  string id = 1;
+
+  // Object type (person, vehicle, etc.)
+  string object_type = 2;
+
+  // Label (e.g., "car", "truck" for vehicle type)
+  string label = 3;
+
+  // Confidence score (0-1)
+  float confidence = 4;
+
+  // Bounding box
+  BoundingBox bbox = 5;
+
+  // Track ID for object tracking
+  string track_id = 6;
+
+  // Additional attributes
+  map<string, string> attributes = 7;
+
+  // Zone IDs where detected
+  repeated string zone_ids = 8;
+}
+
+// BoundingBox represents a detection bounding box
+message BoundingBox {
+  // Top-left X coordinate (0-1 normalized)
+  float x = 1;
+
+  // Top-left Y coordinate (0-1 normalized)
+  float y = 2;
+
+  // Width (0-1 normalized)
+  float width = 3;
+
+  // Height (0-1 normalized)
+  float height = 4;
+}
+
+// StatusRequest requests service status
+message StatusRequest {}
+
+// StatusResponse contains service status
+message StatusResponse {
+  // Whether the service is connected and healthy
+  bool connected = 1;
+
+  // Available backends
+  repeated BackendInfo backends = 2;
+
+  // Loaded models
+  repeated ModelInfo models = 3;
+
+  // Current queue size
+  int32 queue_size = 4;
+
+  // Total processed frames
+  int64 processed_count = 5;
+
+  // Total errors
+  int64 error_count = 6;
+
+  // Average latency in milliseconds
+  float avg_latency_ms = 7;
+
+  // Uptime in seconds
+  float uptime = 8;
+}
+
+// BackendInfo contains backend information
+message BackendInfo {
+  // Backend type
+  string type = 1;
+
+  // Whether available
+  bool available = 2;
+
+  // Version string
+  string version = 3;
+
+  // Device name (e.g., "NVIDIA GeForce RTX 4090")
+  string device = 4;
+
+  // Device index
+  int32 device_index = 5;
+
+  // Available memory in bytes
+  int64 memory = 6;
+
+  // Compute capability
+  string compute = 7;
+}
+
+// ModelInfo contains model information
+message ModelInfo {
+  // Model ID
+  string id = 1;
+
+  // Model name
+  string name = 2;
+
+  // Model type (yolo12, yolov8, etc.)
+  string type = 3;
+
+  // Backend used
+  string backend = 4;
+
+  // Model file path
+  string path = 5;
+
+  // Model version
+  string version = 6;
+
+  // Input size [width, height]
+  repeated int32 input_size = 7;
+
+  // Input format (nchw, nhwc)
+  string input_format = 8;
+
+  // Pixel format (rgb, bgr)
+  string pixel_format = 9;
+
+  // Supported classes
+  repeated string classes = 10;
+
+  // Whether loaded
+  bool loaded = 11;
+
+  // Load timestamp (Unix milliseconds)
+  int64 load_time_ms = 12;
+}
+
+// LoadModelRequest requests loading a model
+message LoadModelRequest {
+  // Path to the model file
+  string path = 1;
+
+  // Model type
+  string type = 2;
+
+  // Preferred backend (optional)
+  string backend = 3;
+
+  // Device index (optional, -1 for auto)
+  int32 device_index = 4;
+
+  // Custom model ID (optional)
+  string model_id = 5;
+}
+
+// LoadModelResponse contains load result
+message LoadModelResponse {
+  // Whether successful
+  bool success = 1;
+
+  // Model ID
+  string model_id = 2;
+
+  // Model info
+  ModelInfo model_info = 3;
+
+  // Error message if any
+  string error = 4;
+}
+
+// UnloadModelRequest requests unloading a model
+message UnloadModelRequest {
+  // Model ID to unload
+  string model_id = 1;
+}
+
+// UnloadModelResponse contains unload result
+message UnloadModelResponse {
+  // Whether successful
+  bool success = 1;
+
+  // Error message if any
+  string error = 2;
+}
+
+// GetModelsRequest requests model list
+message GetModelsRequest {}
+
+// GetModelsResponse contains model list
+message GetModelsResponse {
+  repeated ModelInfo models = 1;
+}
+
+// GetBackendsRequest requests backend list
+message GetBackendsRequest {}
+
+// GetBackendsResponse contains backend list
+message GetBackendsResponse {
+  repeated BackendInfo backends = 1;
+}
+
+// Zone represents a detection zone for filtering
+message Zone {
+  // Zone ID
+  string id = 1;
+
+  // Zone name
+  string name = 2;
+
+  // Camera ID
+  string camera_id = 3;
+
+  // Whether enabled
+  bool enabled = 4;
+
+  // Polygon points [[x1,y1], [x2,y2], ...]
+  repeated Point points = 5;
+
+  // Object types to detect
+  repeated string object_types = 6;
+
+  // Minimum confidence
+  float min_confidence = 7;
+
+  // Minimum object size (0-1)
+  float min_size = 8;
+}
+
+// Point represents a 2D point
+message Point {
+  float x = 1;
+  float y = 2;
+}

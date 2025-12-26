@@ -1,0 +1,10 @@
+# Coral Edge TPU dependencies
+
+# PyCoral library
+pycoral>=2.0.0
+
+# TensorFlow Lite Runtime
+tflite-runtime>=2.14.0
+
+# Note: Requires Edge TPU runtime installed:
+# https://coral.ai/docs/accelerator/get-started/

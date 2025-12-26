@@ -1,0 +1,51 @@
+# NVR Detection Plugin Manifest
+id: nvr-detection
+name: Detection Service
+version: 1.0.0
+description: Object detection service supporting multiple backends (NVIDIA, OpenVINO, Coral TPU, CPU)
+
+category: core
+critical: false  # Can run without detection
+
+runtime:
+  type: go
+  entry_point: main.go
+
+dependencies:
+  - nvr-streaming  # Needs video streams to analyze
+
+capabilities:
+  - detection
+  - motion
+
+author: NVR System
+repository: https://github.com/nvr-system/nvr
+
+config_schema:
+  type: object
+  properties:
+    detection_addr:
+      type: string
+      description: Address of the detection service (gRPC or HTTP)
+      default: "localhost:50051"
+    go2rtc_addr:
+      type: string
+      description: go2rtc API address for frame grabbing
+      default: "http://localhost:1984"
+    default_fps:
+      type: integer
+      description: Default detection frames per second
+      default: 5
+    min_confidence:
+      type: number
+      description: Default minimum confidence threshold
+      default: 0.5
+    models_path:
+      type: string
+      description: Path to detection models
+      default: "/data/models"
+    default_backend:
+      type: string
+      description: Default detection backend
+      enum: ["nvidia", "openvino", "coral", "coreml", "onnx", "cpu"]
+      default: "onnx"

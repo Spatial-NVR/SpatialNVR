@@ -1,0 +1,48 @@
+# NVR Streaming Plugin Manifest
+id: nvr-streaming
+name: Streaming Service
+version: 1.0.0
+description: Core video streaming service using go2rtc for WebRTC, RTSP, and HLS streaming
+
+category: core
+critical: true  # Core service - required for video delivery
+
+runtime:
+  type: go
+  entry_point: main.go
+
+dependencies: []  # No plugin dependencies, but requires go2rtc binary
+
+capabilities:
+  - streaming
+  - two_way_audio
+
+author: NVR System
+repository: https://github.com/nvr-system/nvr
+
+config_schema:
+  type: object
+  properties:
+    config_path:
+      type: string
+      description: Path to go2rtc configuration file
+      default: "/data/go2rtc.yaml"
+    binary_path:
+      type: string
+      description: Path to go2rtc binary (auto-detected if not specified)
+    api_port:
+      type: integer
+      description: go2rtc API port
+      default: 1984
+    rtsp_port:
+      type: integer
+      description: RTSP server port
+      default: 8554
+    webrtc_port:
+      type: integer
+      description: WebRTC server port
+      default: 8555
+    auto_restart:
+      type: boolean
+      description: Auto-restart go2rtc if it crashes
+      default: true

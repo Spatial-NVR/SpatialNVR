@@ -1,0 +1,32 @@
+# NVR Core Config Plugin Manifest
+id: nvr-core-config
+name: Configuration Service
+version: 1.0.0
+description: System configuration management with hot-reload support
+
+category: core
+critical: true  # Required for configuration
+
+runtime:
+  type: go
+  entry_point: main.go
+
+dependencies: []
+
+capabilities:
+  - config
+
+author: NVR System
+repository: https://github.com/nvr-system/nvr
+
+config_schema:
+  type: object
+  properties:
+    config_path:
+      type: string
+      description: Path to main configuration file
+      default: "/config/config.yaml"
+    watch_enabled:
+      type: boolean
+      description: Enable file watching for hot-reload
+      default: true

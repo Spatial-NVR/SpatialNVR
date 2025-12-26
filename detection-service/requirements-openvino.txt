@@ -1,0 +1,10 @@
+# OpenVINO dependencies (2025.x)
+
+# OpenVINO Runtime
+openvino>=2025.0.0
+
+# OpenVINO Development tools (for model conversion)
+openvino-dev>=2025.0.0
+
+# Note: For Intel NPU support, install:
+# pip install openvino-npu

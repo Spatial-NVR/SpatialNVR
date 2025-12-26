@@ -1,0 +1,32 @@
+# NVR Core Events Plugin Manifest
+id: nvr-core-events
+name: Events Service
+version: 1.0.0
+description: Event management, storage, and streaming via WebSocket/SSE
+
+category: core
+critical: true  # Required for event handling
+
+runtime:
+  type: go
+  entry_point: main.go
+
+dependencies: []
+
+capabilities:
+  - events
+
+author: NVR System
+repository: https://github.com/nvr-system/nvr
+
+config_schema:
+  type: object
+  properties:
+    max_events:
+      type: integer
+      description: Maximum number of events to keep in memory
+      default: 10000
+    retention_days:
+      type: integer
+      description: Days to keep events in database
+      default: 30

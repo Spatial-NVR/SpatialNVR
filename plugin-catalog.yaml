@@ -1,0 +1,211 @@
+# NVR Plugin Catalog
+# This file contains the official list of maintained plugins for the NVR system.
+# Users can also install plugins from custom GitHub URLs.
+
+version: "1.0"
+updated: "2024-12-24"
+
+plugins:
+  - id: reolink
+    name: Reolink
+    description: Reolink camera and NVR integration via HTTP API
+    author: NVR System
+    repo: github.com/nvr-plugins/reolink
+    icon: camera
+    category: cameras
+    featured: true
+    capabilities:
+      - discovery
+      - nvr
+      - video
+      - audio
+      - two_way_audio
+      - ptz
+      - motion
+      - ai_detection
+      - snapshot
+    supported_devices:
+      - Reolink IP cameras (RLC, E1 series)
+      - Reolink NVRs (RLN series)
+      - Reolink doorbells
+      - Reolink battery cameras
+      - Reolink PTZ cameras
+      - Reolink floodlight cameras
+
+  - id: wyze
+    name: Wyze
+    description: Wyze camera integration using TUTK library for local streaming
+    author: NVR System
+    repo: github.com/nvr-plugins/wyze
+    icon: camera
+    category: cameras
+    featured: true
+    capabilities:
+      - video
+      - audio
+      - two_way_audio
+      - motion
+      - snapshot
+    supported_devices:
+      - Wyze Cam v1, v2, v3, v3 Pro
+      - Wyze Cam Pan, Pan v2, Pan v3
+      - Wyze Cam Outdoor v1, v2
+      - Wyze Video Doorbell
+      - Wyze Cam OG
+      - Wyze Cam Floodlight
+
+  - id: onvif
+    name: ONVIF
+    description: Generic ONVIF camera support for any ONVIF-compliant device
+    author: NVR System
+    repo: github.com/nvr-plugins/onvif
+    icon: camera
+    category: cameras
+    featured: false
+    capabilities:
+      - discovery
+      - video
+      - ptz
+      - motion
+      - snapshot
+    supported_devices:
+      - Any ONVIF Profile S compliant camera
+
+  - id: hikvision
+    name: Hikvision
+    description: Hikvision camera and NVR integration via ISAPI
+    author: NVR System
+    repo: github.com/nvr-plugins/hikvision
+    icon: camera
+    category: cameras
+    featured: false
+    capabilities:
+      - discovery
+      - nvr
+      - video
+      - audio
+      - ptz
+      - motion
+      - ai_detection
+      - snapshot
+    supported_devices:
+      - Hikvision IP cameras
+      - Hikvision NVRs
+      - Hikvision doorbells
+
+  - id: dahua
+    name: Dahua
+    description: Dahua camera and NVR integration
+    author: NVR System
+    repo: github.com/nvr-plugins/dahua
+    icon: camera
+    category: cameras
+    featured: false
+    capabilities:
+      - discovery
+      - nvr
+      - video
+      - audio
+      - ptz
+      - motion
+      - ai_detection
+      - snapshot
+    supported_devices:
+      - Dahua IP cameras
+      - Dahua NVRs
+
+  - id: amcrest
+    name: Amcrest
+    description: Amcrest camera integration (uses Dahua protocol)
+    author: NVR System
+    repo: github.com/nvr-plugins/amcrest
+    icon: camera
+    category: cameras
+    featured: false
+    capabilities:
+      - discovery
+      - video
+      - audio
+      - ptz
+      - motion
+      - snapshot
+    supported_devices:
+      - Amcrest IP cameras
+      - Amcrest doorbells
+
+  - id: unifi-protect
+    name: UniFi Protect
+    description: Ubiquiti UniFi Protect camera integration
+    author: NVR System
+    repo: github.com/nvr-plugins/unifi-protect
+    icon: camera
+    category: cameras
+    featured: false
+    capabilities:
+      - discovery
+      - video
+      - audio
+      - motion
+      - ai_detection
+      - snapshot
+    supported_devices:
+      - UniFi Protect cameras (G3, G4, G5 series)
+      - UniFi Doorbell
+
+  - id: frigate
+    name: Frigate Integration
+    description: Import cameras and events from Frigate NVR
+    author: NVR System
+    repo: github.com/nvr-plugins/frigate
+    icon: integration
+    category: integrations
+    featured: false
+    capabilities:
+      - discovery
+      - video
+      - ai_detection
+    supported_devices:
+      - Frigate NVR instances
+
+  - id: homeassistant
+    name: Home Assistant
+    description: Sync cameras and events with Home Assistant
+    author: NVR System
+    repo: github.com/nvr-plugins/homeassistant
+    icon: integration
+    category: integrations
+    featured: false
+    capabilities:
+      - discovery
+      - events
+    supported_devices:
+      - Home Assistant instances
+
+  - id: mqtt
+    name: MQTT Events
+    description: Publish events to MQTT broker for home automation
+    author: NVR System
+    repo: github.com/nvr-plugins/mqtt
+    icon: integration
+    category: integrations
+    featured: false
+    capabilities:
+      - events
+    supported_devices:
+      - Any MQTT broker
+
+categories:
+  cameras:
+    name: Camera Plugins
+    description: Plugins for connecting to camera brands and protocols
+    icon: video
+
+  integrations:
+    name: Integrations
+    description: Plugins for integrating with other systems
+    icon: plug
+
+  detectors:
+    name: Detection Engines
+    description: Plugins for AI/ML object detection
+    icon: cpu

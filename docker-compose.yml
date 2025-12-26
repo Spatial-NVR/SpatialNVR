@@ -1,0 +1,37 @@
+services:
+  spatialnvr:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: spatialnvr
+    restart: unless-stopped
+    environment:
+      - DEPLOYMENT_TYPE=standalone
+      - LOG_LEVEL=info
+      - TZ=${TZ:-America/New_York}
+    volumes:
+      - ./config:/config
+      - ./data:/data
+    ports:
+      - "12000:12000"       # Web UI and API
+      - "12010:12010"       # go2rtc API
+      - "12011:12011"       # RTSP streams
+      - "12012:12012/udp"   # WebRTC UDP
+    # Uncomment for Intel QSV hardware acceleration:
+    # devices:
+    #   - /dev/dri:/dev/dri
+    # Uncomment for NVIDIA GPU support:
+    # runtime: nvidia
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: 1
+    #           capabilities: [gpu]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:12000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s

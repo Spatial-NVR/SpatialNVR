@@ -1,0 +1,33 @@
+# NVR Core API Plugin Manifest
+id: nvr-core-api
+name: Core API
+version: 1.0.0
+description: Core camera management and system API
+
+category: core
+critical: true  # Required for camera management
+
+runtime:
+  type: go
+  entry_point: main.go
+
+dependencies: []  # No plugin dependencies
+
+capabilities:
+  - camera
+  - system
+
+author: NVR System
+repository: https://github.com/nvr-system/nvr
+
+config_schema:
+  type: object
+  properties:
+    config_path:
+      type: string
+      description: Path to main configuration file
+      default: "/config/config.yaml"
+    storage_path:
+      type: string
+      description: Path to storage directory
+      default: "/data"

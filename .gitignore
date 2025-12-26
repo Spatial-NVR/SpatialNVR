@@ -1,0 +1,133 @@
+# Binaries
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+/nvr
+/nvr-server
+/nvr-plugin
+/bin/
+/cmd/nvr/nvr
+/cmd/services/*/main
+
+# Test binary
+*.test
+
+# Output of go coverage
+*.out
+
+# Go workspace
+go.work
+go.work.sum
+
+# Dependency directories
+vendor/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Environment files
+.env
+.env.local
+.env.*.local
+*.env
+
+# Data and storage
+/data/
+/recordings/
+/thumbnails/
+/snapshots/
+/exports/
+
+# Database
+*.db
+*.db-shm
+*.db-wal
+
+# Logs
+*.log
+logs/
+
+# Config with secrets (keep examples)
+config.yaml
+config/config.yaml
+config/go2rtc.yaml
+!config/*.example.yaml
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+ENV/
+env/
+.venv/
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# AI Models (large files)
+services/*/models/*.pt
+services/*/models/*.onnx
+services/*/models/*.pth
+!services/*/models/.gitkeep
+
+# Node.js
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# Build outputs
+web-ui/dist/
+web-ui/build/
+*.tsbuildinfo
+
+# Test coverage
+coverage/
+.nyc_output/
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# Docker
+.docker/
+
+# Kubernetes secrets
+*-secret.yaml
+*-secrets.yaml
+
+# Plugin development
+plugins/*/node_modules/
+plugins/*/.venv/
+
+# External plugins (separate repos)
+plugins/reolink/
+plugins/wyze/
+plugins/wyze-bridge/
+plugins/onvif/
+
+# iOS
+ios-app/*/DerivedData/
+ios-app/*/*.xcuserdata/
+ios-app/*/*.xcworkspace/
+
+# Encryption keys (never commit!)
+*.key
+*.pem
+!*.example.key
