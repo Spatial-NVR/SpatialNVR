@@ -301,6 +301,6 @@ func TestMigrator_ContextCancellation(t *testing.T) {
 	cancel()
 
 	// Run with cancelled context
-	err = migrator.Run(ctx)
+	_ = migrator.Run(ctx)
 	// May or may not error depending on timing, but should not panic
 }

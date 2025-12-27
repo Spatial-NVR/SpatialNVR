@@ -100,7 +100,7 @@ func TestGet(t *testing.T) {
 		Timestamp:  time.Now(),
 		Confidence: 0.8,
 	}
-	service.Create(context.Background(), event)
+	_ = service.Create(context.Background(), event)
 
 	// Get the event
 	retrieved, err := service.Get(context.Background(), event.ID)
@@ -147,7 +147,7 @@ func TestList(t *testing.T) {
 			Timestamp:  time.Now().Add(-time.Duration(i) * time.Minute),
 			Confidence: 0.9,
 		}
-		service.Create(context.Background(), event)
+		_ = service.Create(context.Background(), event)
 	}
 
 	// List events
@@ -180,7 +180,7 @@ func TestListWithFilters(t *testing.T) {
 	}
 	for _, e := range events {
 		e.Confidence = 0.9
-		service.Create(context.Background(), e)
+		_ = service.Create(context.Background(), e)
 	}
 
 	// Filter by camera
@@ -520,7 +520,7 @@ func TestGetZone(t *testing.T) {
 		Sensitivity:   7,
 		Cooldown:      60,
 	}
-	service.CreateZone(context.Background(), zone)
+	_ = service.CreateZone(context.Background(), zone)
 
 	// Get the zone
 	retrieved, err := service.GetZone(context.Background(), zone.ID)
@@ -570,7 +570,7 @@ func TestListZones(t *testing.T) {
 		{CameraID: "cam2", Name: "Zone 3", Points: []Point{{X: 0, Y: 0}, {X: 1, Y: 0}, {X: 0.5, Y: 1}}, Sensitivity: 5, MinConfidence: 0.5, Cooldown: 30},
 	}
 	for _, z := range zones {
-		service.CreateZone(context.Background(), z)
+		_ = service.CreateZone(context.Background(), z)
 	}
 
 	// List all zones
@@ -608,7 +608,7 @@ func TestUpdateZone(t *testing.T) {
 		Sensitivity:   5,
 		Cooldown:      30,
 	}
-	service.CreateZone(context.Background(), zone)
+	_ = service.CreateZone(context.Background(), zone)
 
 	// Update the zone
 	zone.Name = "Updated Name"
@@ -688,7 +688,7 @@ func TestGetEnabledZonesForCamera(t *testing.T) {
 		{CameraID: "cam1", Name: "Enabled 2", Enabled: true, Points: []Point{{X: 0, Y: 0}, {X: 1, Y: 0}, {X: 0.5, Y: 1}}, MinConfidence: 0.5, Sensitivity: 5, Cooldown: 30},
 	}
 	for _, z := range zones {
-		service.CreateZone(context.Background(), z)
+		_ = service.CreateZone(context.Background(), z)
 	}
 
 	// Get enabled zones only

@@ -145,7 +145,7 @@ func TestRetentionPolicy_RunCleanup_NoCameras(t *testing.T) {
 		t.Errorf("RunCleanup() error = %v", err)
 	}
 	if stats == nil {
-		t.Error("RunCleanup() returned nil stats")
+		t.Fatal("RunCleanup() returned nil stats")
 	}
 	if stats.SegmentsDeleted != 0 {
 		t.Errorf("SegmentsDeleted = %d, want 0", stats.SegmentsDeleted)

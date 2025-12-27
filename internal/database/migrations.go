@@ -122,7 +122,7 @@ func (m *Migrator) getAppliedMigrations(ctx context.Context) (map[int]time.Time,
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	result := make(map[int]time.Time)
 	for rows.Next() {

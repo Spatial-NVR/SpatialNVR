@@ -315,7 +315,7 @@ func (s *Service) GetStats(ctx context.Context, cameraID string) (map[string]int
 		query += " AND camera_id = ?"
 		args = append(args, cameraID)
 	}
-	s.db.QueryRowContext(ctx, query, args...).Scan(&today)
+	_ = s.db.QueryRowContext(ctx, query, args...).Scan(&today)
 
 	// Count unacknowledged
 	query = "SELECT COUNT(*) FROM events WHERE acknowledged = 0"
@@ -324,7 +324,7 @@ func (s *Service) GetStats(ctx context.Context, cameraID string) (map[string]int
 		query += " AND camera_id = ?"
 		args = append(args, cameraID)
 	}
-	s.db.QueryRowContext(ctx, query, args...).Scan(&unacknowledged)
+	_ = s.db.QueryRowContext(ctx, query, args...).Scan(&unacknowledged)
 
 	// Count total
 	query = "SELECT COUNT(*) FROM events"
@@ -333,7 +333,7 @@ func (s *Service) GetStats(ctx context.Context, cameraID string) (map[string]int
 		query += " WHERE camera_id = ?"
 		args = append(args, cameraID)
 	}
-	s.db.QueryRowContext(ctx, query, args...).Scan(&total)
+	_ = s.db.QueryRowContext(ctx, query, args...).Scan(&total)
 
 	return map[string]interface{}{
 		"today":          today,

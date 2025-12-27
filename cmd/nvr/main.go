@@ -16,7 +16,6 @@ import (
 	"os/signal"
 	"path/filepath"
 	"runtime"
-	goruntime "runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -832,7 +831,7 @@ func handleSystemMetrics() http.HandlerFunc {
 
 		// Get CPU stats
 		cpuPercent := 0.0
-		loadAvg := [3]float64{0.0, 0.0, 0.0}
+		var loadAvg [3]float64
 
 		// Get memory stats
 		var memTotal, memUsed, memFree uint64
@@ -902,7 +901,7 @@ func handleSystemMetrics() http.HandlerFunc {
 				"encode_h264": hwCaps.EncodeH264,
 				"encode_h265": hwCaps.EncodeH265,
 			}
-		} else if goruntime.GOOS == "darwin" && goruntime.GOARCH == "arm64" {
+		} else if runtime.GOOS == "darwin" && runtime.GOARCH == "arm64" {
 			// Fallback for macOS Apple Silicon
 			gpu = map[string]interface{}{
 				"available":   true,
@@ -917,8 +916,8 @@ func handleSystemMetrics() http.HandlerFunc {
 			"available": false,
 		}
 		// Apple Neural Engine on M-series Macs (native or in Docker on Apple Silicon)
-		isAppleSilicon := (goruntime.GOOS == "darwin" && goruntime.GOARCH == "arm64") ||
-			(goruntime.GOOS == "linux" && goruntime.GOARCH == "arm64" && isRunningOnAppleSilicon())
+		isAppleSilicon := (runtime.GOOS == "darwin" && runtime.GOARCH == "arm64") ||
+			(runtime.GOOS == "linux" && runtime.GOARCH == "arm64" && isRunningOnAppleSilicon())
 		if isAppleSilicon {
 			npu = map[string]interface{}{
 				"available": true,
@@ -1558,7 +1557,7 @@ func handleInstallPlugin(installer *plugin.Installer, loader *core.PluginLoader)
 			slog.Info("Plugin installed and hot-reloaded successfully", "plugin", manifest.ID)
 		}
 
-		message := "Plugin installed successfully"
+		var message string
 		if hotReloaded {
 			message = "Plugin installed and started successfully (hot-reload)"
 		} else {

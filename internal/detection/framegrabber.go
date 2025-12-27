@@ -173,9 +173,7 @@ type RTSPFrameGrabber struct {
 }
 
 type rtspStream struct {
-	cameraID string
-	url      string
-	stopCh   chan struct{}
+	stopCh chan struct{}
 }
 
 // NewRTSPFrameGrabber creates a new RTSP frame grabber

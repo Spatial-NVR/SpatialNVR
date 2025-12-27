@@ -171,12 +171,12 @@ func (l *Launcher) stop() {
 	}
 
 	// Send SIGTERM first
-	l.cmd.Process.Signal(syscall.SIGTERM)
+	_ = l.cmd.Process.Signal(syscall.SIGTERM)
 
 	// Wait with timeout
 	done := make(chan struct{})
 	go func() {
-		l.cmd.Wait()
+		_ = l.cmd.Wait()
 		close(done)
 	}()
 
@@ -185,7 +185,7 @@ func (l *Launcher) stop() {
 		l.logger.Info("NVR process stopped gracefully")
 	case <-time.After(10 * time.Second):
 		l.logger.Warn("NVR process did not stop gracefully, killing")
-		l.cmd.Process.Kill()
+		_ = l.cmd.Process.Kill()
 	}
 
 	l.running = false

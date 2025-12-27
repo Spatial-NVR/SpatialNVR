@@ -8,7 +8,6 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
-	"sync"
 	"time"
 
 	_ "github.com/mattn/go-sqlite3"
@@ -19,7 +18,6 @@ type DB struct {
 	*sql.DB
 	path   string
 	logger *slog.Logger
-	mu     sync.RWMutex
 }
 
 // Config holds database configuration
@@ -65,7 +63,7 @@ func Open(cfg *Config) (*DB, error) {
 
 	// Test connection
 	if err := db.Ping(); err != nil {
-		db.Close()
+		_ = db.Close()
 		return nil, fmt.Errorf("failed to ping database: %w", err)
 	}
 

@@ -106,12 +106,6 @@ func (gw *APIGateway) routeToPlugin(pluginID string) func(chi.Router) {
 	}
 }
 
-// respondJSON sends a JSON response
-func (gw *APIGateway) respondJSON(w http.ResponseWriter, data interface{}) {
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(data)
-}
-
 // respondError sends an error response
 func (gw *APIGateway) respondError(w http.ResponseWriter, status int, message string) {
 	w.Header().Set("Content-Type", "application/json")

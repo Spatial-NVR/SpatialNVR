@@ -166,7 +166,7 @@ func (h *DefaultSegmentHandler) CalculateChecksum(filePath string) (string, erro
 	if err != nil {
 		return "", err
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	hash := sha256.New()
 	if _, err := io.Copy(hash, file); err != nil {
@@ -311,14 +311,14 @@ func (h *DefaultSegmentHandler) MergeSegments(segments []string, outputPath stri
 	if err != nil {
 		return fmt.Errorf("failed to create concat file: %w", err)
 	}
-	defer os.Remove(concatFile.Name())
+	defer func() { _ = os.Remove(concatFile.Name()) }()
 
 	// Write segment paths
 	for _, seg := range segments {
 		absPath, _ := filepath.Abs(seg)
-		fmt.Fprintf(concatFile, "file '%s'\n", absPath)
+		_, _ = fmt.Fprintf(concatFile, "file '%s'\n", absPath)
 	}
-	concatFile.Close()
+	_ = concatFile.Close()
 
 	// Run ffmpeg concat
 	args := []string{

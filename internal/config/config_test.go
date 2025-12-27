@@ -791,21 +791,21 @@ func TestDecryptInvalidData(t *testing.T) {
 func TestGetEncryptionKey(t *testing.T) {
 	// Test with environment variable
 	originalKey := os.Getenv("NVR_ENCRYPTION_KEY")
-	defer os.Setenv("NVR_ENCRYPTION_KEY", originalKey)
+	defer func() { _ = os.Setenv("NVR_ENCRYPTION_KEY", originalKey) }()
 
 	// Test with valid base64 key
 	testKey := make([]byte, 32)
 	for i := range testKey {
 		testKey[i] = byte(i)
 	}
-	os.Setenv("NVR_ENCRYPTION_KEY", "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=")
+	_ = os.Setenv("NVR_ENCRYPTION_KEY", "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=")
 	key := getEncryptionKey()
 	if len(key) != 32 {
 		t.Errorf("Expected 32-byte key, got %d bytes", len(key))
 	}
 
 	// Test with invalid key (wrong length after decoding)
-	os.Setenv("NVR_ENCRYPTION_KEY", "dGVzdA==") // "test" in base64 (4 bytes)
+	_ = os.Setenv("NVR_ENCRYPTION_KEY", "dGVzdA==") // "test" in base64 (4 bytes)
 	key = getEncryptionKey()
 	// Should fall back to default key
 	if len(key) != 32 {
@@ -813,14 +813,14 @@ func TestGetEncryptionKey(t *testing.T) {
 	}
 
 	// Test with invalid base64
-	os.Setenv("NVR_ENCRYPTION_KEY", "not-valid-base64!!!")
+	_ = os.Setenv("NVR_ENCRYPTION_KEY", "not-valid-base64!!!")
 	key = getEncryptionKey()
 	if len(key) != 32 {
 		t.Errorf("Expected 32-byte default key, got %d bytes", len(key))
 	}
 
 	// Test without environment variable
-	os.Unsetenv("NVR_ENCRYPTION_KEY")
+	_ = os.Unsetenv("NVR_ENCRYPTION_KEY")
 	key = getEncryptionKey()
 	if len(key) != 32 {
 		t.Errorf("Expected 32-byte default key, got %d bytes", len(key))

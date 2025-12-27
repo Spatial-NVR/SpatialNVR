@@ -280,7 +280,7 @@ func (r *SQLiteRepository) List(ctx context.Context, opts ListOptions) ([]Segmen
 	if err != nil {
 		return nil, 0, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var segments []Segment
 	for rows.Next() {
@@ -380,7 +380,7 @@ func (r *SQLiteRepository) GetByTimeRange(ctx context.Context, cameraID string, 
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	return r.scanSegments(rows)
 }

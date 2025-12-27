@@ -461,8 +461,3 @@ func (r *Recorder) setError(err error) {
 	r.lastErrorTime = time.Now()
 	r.logger.Error("Recorder error", "error", err)
 }
-
-// parseFFmpegOutput is a helper that wraps bufio.Reader
-func (r *Recorder) parseFFmpegOutputReader(reader *os.File) {
-	r.parseFFmpegOutput(bufio.NewReader(reader))
-}

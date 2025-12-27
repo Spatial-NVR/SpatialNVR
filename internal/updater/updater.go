@@ -323,7 +323,7 @@ func (u *Updater) Update(ctx context.Context, componentName string) error {
 	}
 
 	// Cleanup download
-	os.Remove(downloadPath)
+	_ = os.Remove(downloadPath)
 
 	return nil
 }
@@ -367,7 +367,7 @@ func (u *Updater) getLatestRelease(ctx context.Context, repo string) (*GitHubRel
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch release: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != 200 {
 		return nil, fmt.Errorf("GitHub API returned status %d", resp.StatusCode)
@@ -409,7 +409,7 @@ func (u *Updater) downloadAsset(ctx context.Context, url, destPath, componentNam
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != 200 {
 		return fmt.Errorf("download failed with status %d", resp.StatusCode)
@@ -420,7 +420,7 @@ func (u *Updater) downloadAsset(ctx context.Context, url, destPath, componentNam
 	if err != nil {
 		return err
 	}
-	defer out.Close()
+	defer func() { _ = out.Close() }()
 
 	// Track progress
 	totalSize := resp.ContentLength
@@ -478,13 +478,13 @@ func (u *Updater) extractTarGz(archivePath, destPath string) error {
 	if err != nil {
 		return err
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	gzr, err := gzip.NewReader(file)
 	if err != nil {
 		return err
 	}
-	defer gzr.Close()
+	defer func() { _ = gzr.Close() }()
 
 	tr := tar.NewReader(gzr)
 
@@ -513,10 +513,10 @@ func (u *Updater) extractTarGz(archivePath, destPath string) error {
 				return err
 			}
 			if _, err := io.Copy(f, tr); err != nil {
-				f.Close()
+				_ = f.Close()
 				return err
 			}
-			f.Close()
+			_ = f.Close()
 		}
 	}
 
@@ -529,13 +529,13 @@ func (u *Updater) extractZip(archivePath, destPath string) error {
 	if err != nil {
 		return err
 	}
-	defer r.Close()
+	defer func() { _ = r.Close() }()
 
 	for _, f := range r.File {
 		target := filepath.Join(destPath, f.Name)
 
 		if f.FileInfo().IsDir() {
-			os.MkdirAll(target, 0755)
+			_ = os.MkdirAll(target, 0755)
 			continue
 		}
 
@@ -550,13 +550,13 @@ func (u *Updater) extractZip(archivePath, destPath string) error {
 
 		out, err := os.OpenFile(target, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, f.Mode())
 		if err != nil {
-			rc.Close()
+			_ = rc.Close()
 			return err
 		}
 
 		_, err = io.Copy(out, rc)
-		rc.Close()
-		out.Close()
+		_ = rc.Close()
+		_ = out.Close()
 		if err != nil {
 			return err
 		}
@@ -571,7 +571,7 @@ func (u *Updater) copyFile(src, dst string) error {
 	if err != nil {
 		return err
 	}
-	defer in.Close()
+	defer func() { _ = in.Close() }()
 
 	if err := os.MkdirAll(filepath.Dir(dst), 0755); err != nil {
 		return err
@@ -581,7 +581,7 @@ func (u *Updater) copyFile(src, dst string) error {
 	if err != nil {
 		return err
 	}
-	defer out.Close()
+	defer func() { _ = out.Close() }()
 
 	if _, err := io.Copy(out, in); err != nil {
 		return err
