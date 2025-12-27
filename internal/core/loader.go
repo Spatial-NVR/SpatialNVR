@@ -300,6 +300,7 @@ func (l *PluginLoader) startPlugin(pluginID string) error {
 	}
 
 	lp.State = PluginStateStarting
+	isExternal := !lp.IsBuiltin
 	l.pluginsMu.Unlock()
 
 	l.logger.Info("Starting plugin", "id", pluginID)
@@ -313,8 +314,18 @@ func (l *PluginLoader) startPlugin(pluginID string) error {
 	// Create runtime
 	runtime := sdk.NewPluginRuntime(pluginID, l.eventBus.Conn(), l.db, config, l.logger)
 
+	// For external plugins, use a timeout to prevent hanging
+	var initCtx context.Context
+	var initCancel context.CancelFunc
+	if isExternal {
+		initCtx, initCancel = context.WithTimeout(l.ctx, 30*time.Second)
+		defer initCancel()
+	} else {
+		initCtx = l.ctx
+	}
+
 	// Initialize plugin
-	if err := lp.Plugin.Initialize(l.ctx, runtime); err != nil {
+	if err := lp.Plugin.Initialize(initCtx, runtime); err != nil {
 		l.pluginsMu.Lock()
 		lp.State = PluginStateError
 		lp.LastError = err.Error()
@@ -324,7 +335,7 @@ func (l *PluginLoader) startPlugin(pluginID string) error {
 	}
 
 	// Start plugin
-	if err := lp.Plugin.Start(l.ctx); err != nil {
+	if err := lp.Plugin.Start(initCtx); err != nil {
 		l.pluginsMu.Lock()
 		lp.State = PluginStateError
 		lp.LastError = err.Error()

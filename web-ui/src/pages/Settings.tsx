@@ -1,8 +1,8 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Moon, Sun, ChevronDown, ChevronRight, Cpu, Download, Check, AlertCircle, Loader2, HardDrive, Trash2 } from 'lucide-react'
+import { Moon, Sun, ChevronDown, ChevronRight, Cpu, Download, Check, AlertCircle, Loader2, HardDrive, Trash2, RefreshCw, ArrowUpCircle } from 'lucide-react'
 import { useState, useEffect } from 'react'
 import { useLocation, Navigate } from 'react-router-dom'
-import { configApi, modelsApi, storageApi, cameraApi, ModelDownloadStatus } from '../lib/api'
+import { configApi, modelsApi, storageApi, cameraApi, updatesApi, ModelDownloadStatus } from '../lib/api'
 import { useToast } from '../components/Toast'
 
 // Format bytes to human readable
@@ -474,6 +474,9 @@ export function Settings() {
         </div>
       </section>
 
+      {/* Updates Section */}
+      <UpdatesSection />
+
       {/* Detection Settings */}
       <section className="bg-card rounded-lg border">
         <div className="p-4 border-b flex items-center gap-2">
@@ -806,4 +809,177 @@ function ModelStatusBadge({ status }: { status?: ModelDownloadStatus }) {
     default:
       return null
   }
+}
+
+// Updates Section Component
+function UpdatesSection() {
+  const queryClient = useQueryClient()
+  const { addToast } = useToast()
+  const [isCheckingUpdates, setIsCheckingUpdates] = useState(false)
+
+  // Fetch updates status
+  const { data: updatesData, refetch: refetchUpdates } = useQuery({
+    queryKey: ['updates'],
+    queryFn: () => updatesApi.getUpdates(),
+    staleTime: 60000, // Cache for 1 minute
+  })
+
+  // Check for updates mutation
+  const checkUpdates = useMutation({
+    mutationFn: () => updatesApi.checkUpdates(),
+    onMutate: () => setIsCheckingUpdates(true),
+    onSuccess: (data) => {
+      queryClient.setQueryData(['updates'], data)
+      if (data.pending_updates > 0) {
+        addToast('info', `${data.pending_updates} update(s) available`)
+      } else {
+        addToast('success', 'All components are up to date')
+      }
+      setIsCheckingUpdates(false)
+    },
+    onError: (error: Error) => {
+      addToast('error', `Failed to check updates: ${error.message}`)
+      setIsCheckingUpdates(false)
+    },
+  })
+
+  // Update component mutation
+  const updateComponent = useMutation({
+    mutationFn: (component: string) => updatesApi.updateComponent(component),
+    onSuccess: (status) => {
+      refetchUpdates()
+      if (status.status === 'complete') {
+        addToast('success', `${status.component} updated. Restart required.`)
+      }
+    },
+    onError: (error: Error) => {
+      addToast('error', `Update failed: ${error.message}`)
+    },
+  })
+
+  // Update all mutation
+  const updateAll = useMutation({
+    mutationFn: () => updatesApi.updateAll(),
+    onSuccess: () => {
+      refetchUpdates()
+      addToast('success', 'All updates installed. Restart required.')
+    },
+    onError: (error: Error) => {
+      addToast('error', `Update failed: ${error.message}`)
+    },
+  })
+
+  const pendingUpdates = updatesData?.pending_updates || 0
+  const needsRestart = updatesData?.needs_restart || false
+
+  return (
+    <section className="bg-card rounded-lg border">
+      <div className="p-4 border-b flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <ArrowUpCircle size={18} className="text-muted-foreground" />
+          <h2 className="font-semibold">Updates</h2>
+          {pendingUpdates > 0 && (
+            <span className="px-2 py-0.5 text-xs font-medium bg-blue-500/20 text-blue-400 rounded-full">
+              {pendingUpdates} available
+            </span>
+          )}
+        </div>
+        <button
+          onClick={() => checkUpdates.mutate()}
+          disabled={isCheckingUpdates}
+          className="flex items-center gap-2 px-3 py-1.5 text-sm bg-secondary text-secondary-foreground rounded-lg hover:bg-secondary/80 transition-colors disabled:opacity-50"
+        >
+          <RefreshCw size={14} className={isCheckingUpdates ? 'animate-spin' : ''} />
+          {isCheckingUpdates ? 'Checking...' : 'Check for Updates'}
+        </button>
+      </div>
+
+      <div className="p-4 space-y-4">
+        {/* Restart Warning */}
+        {needsRestart && (
+          <div className="flex items-center gap-3 p-3 bg-yellow-500/10 border border-yellow-500/30 rounded-lg">
+            <AlertCircle size={18} className="text-yellow-500" />
+            <div>
+              <p className="text-sm font-medium text-yellow-500">Restart Required</p>
+              <p className="text-xs text-muted-foreground">Updates have been installed. Restart the container to apply them.</p>
+            </div>
+          </div>
+        )}
+
+        {/* Components List */}
+        {updatesData?.components && updatesData.components.length > 0 ? (
+          <div className="space-y-2">
+            {updatesData.components.map((component) => (
+              <div
+                key={component.name}
+                className="flex items-center justify-between p-3 bg-background rounded-lg border"
+              >
+                <div className="flex items-center gap-3">
+                  <div>
+                    <p className="font-medium text-sm">{component.name}</p>
+                    <p className="text-xs text-muted-foreground">
+                      v{component.current_version}
+                      {component.update_available && component.latest_version && (
+                        <span className="text-blue-400"> → v{component.latest_version}</span>
+                      )}
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  {component.update_available ? (
+                    <button
+                      onClick={() => updateComponent.mutate(component.name)}
+                      disabled={updateComponent.isPending}
+                      className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50"
+                    >
+                      {updateComponent.isPending ? (
+                        <Loader2 size={12} className="animate-spin" />
+                      ) : (
+                        <Download size={12} />
+                      )}
+                      Update
+                    </button>
+                  ) : (
+                    <span className="flex items-center gap-1 text-xs text-green-400">
+                      <Check size={12} />
+                      Up to date
+                    </span>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="text-center py-6 text-muted-foreground">
+            <ArrowUpCircle size={32} className="mx-auto mb-2 opacity-50" />
+            <p className="text-sm">No update information available</p>
+            <p className="text-xs">Click "Check for Updates" to fetch the latest versions</p>
+          </div>
+        )}
+
+        {/* Update All Button */}
+        {pendingUpdates > 1 && (
+          <button
+            onClick={() => updateAll.mutate()}
+            disabled={updateAll.isPending}
+            className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors disabled:opacity-50"
+          >
+            {updateAll.isPending ? (
+              <Loader2 size={16} className="animate-spin" />
+            ) : (
+              <Download size={16} />
+            )}
+            Update All ({pendingUpdates})
+          </button>
+        )}
+
+        {/* Last Checked */}
+        {updatesData?.components?.[0]?.last_checked && (
+          <p className="text-xs text-muted-foreground text-center">
+            Last checked: {new Date(updatesData.components[0].last_checked).toLocaleString()}
+          </p>
+        )}
+      </div>
+    </section>
+  )
 }

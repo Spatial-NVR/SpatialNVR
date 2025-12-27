@@ -1641,3 +1641,76 @@ export const spatialApi = {
     });
   },
 };
+
+// ============================================================================
+// Updates API
+// ============================================================================
+
+export interface UpdateComponent {
+  name: string;
+  current_version: string;
+  latest_version?: string;
+  update_available: boolean;
+  repository: string;
+  last_checked: string;
+  auto_update: boolean;
+}
+
+export interface UpdateStatus {
+  component: string;
+  status: 'checking' | 'downloading' | 'extracting' | 'installing' | 'complete' | 'error' | 'available' | 'current';
+  progress: number;
+  message: string;
+  started_at: string;
+  completed_at?: string;
+  error?: string;
+}
+
+export interface UpdatesResponse {
+  components: UpdateComponent[];
+  pending_updates: number;
+  needs_restart: boolean;
+}
+
+export const updatesApi = {
+  /**
+   * Get all components and their update status
+   */
+  getUpdates: async (): Promise<UpdatesResponse> => {
+    return request<UpdatesResponse>('/api/v1/updates');
+  },
+
+  /**
+   * Check for updates on all components
+   */
+  checkUpdates: async (): Promise<UpdatesResponse> => {
+    return request<UpdatesResponse>('/api/v1/updates/check', {
+      method: 'POST',
+    });
+  },
+
+  /**
+   * Update a specific component
+   */
+  updateComponent: async (component: string): Promise<UpdateStatus> => {
+    return request<UpdateStatus>(`/api/v1/updates/${component}`, {
+      method: 'POST',
+    });
+  },
+
+  /**
+   * Update all components with available updates
+   */
+  updateAll: async (): Promise<Record<string, UpdateStatus>> => {
+    return request<Record<string, UpdateStatus>>('/api/v1/updates/all', {
+      method: 'POST',
+    });
+  },
+
+  /**
+   * Get current update status
+   */
+  getStatus: async (): Promise<Record<string, UpdateStatus>> => {
+    return request<Record<string, UpdateStatus>>('/api/v1/updates/status');
+  },
+};

@@ -44,6 +44,17 @@ type SystemConfig struct {
 	Database    DatabaseConfig `yaml:"database"`
 	Deployment  DeploymentConfig `yaml:"deployment"`
 	Logging     LoggingConfig  `yaml:"logging"`
+	Updates     UpdatesConfig  `yaml:"updates"`
+}
+
+// UpdatesConfig holds automatic update settings
+type UpdatesConfig struct {
+	Enabled            bool   `yaml:"enabled" json:"enabled"`                         // Enable update checking
+	AutoUpdate         bool   `yaml:"auto_update" json:"auto_update"`                 // Automatically install updates
+	AutoUpdateTime     string `yaml:"auto_update_time" json:"auto_update_time"`       // Time to apply auto-updates (e.g., "03:00")
+	CheckInterval      string `yaml:"check_interval" json:"check_interval"`           // How often to check (e.g., "6h")
+	IncludePrereleases bool   `yaml:"include_prereleases" json:"include_prereleases"` // Include beta/alpha releases
+	NotifyOnly         bool   `yaml:"notify_only" json:"notify_only"`                 // Only notify, don't auto-update
 }
 
 // DatabaseConfig holds database settings

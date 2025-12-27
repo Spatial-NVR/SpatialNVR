@@ -41,6 +41,7 @@ import (
 	nvrrecording "github.com/Spatial-NVR/SpatialNVR/plugins/nvr-recording"
 	nvrspatial "github.com/Spatial-NVR/SpatialNVR/plugins/nvr-spatial-tracking"
 	nvrstreaming "github.com/Spatial-NVR/SpatialNVR/plugins/nvr-streaming"
+	nvrupdates "github.com/Spatial-NVR/SpatialNVR/plugins/nvr-updates"
 )
 
 const (
@@ -238,6 +239,11 @@ func registerCorePlugins(loader *core.PluginLoader, dataPath string) {
 	if err := loader.RegisterBuiltinPlugin(nvrspatial.New()); err != nil {
 		slog.Error("Failed to register spatial tracking plugin", "error", err)
 	}
+
+	// Register updates plugin (manages self-updates)
+	if err := loader.RegisterBuiltinPlugin(nvrupdates.New()); err != nil {
+		slog.Error("Failed to register updates plugin", "error", err)
+	}
 }
 
 // configurePlugins sets up configuration for each plugin
@@ -289,6 +295,13 @@ func configurePlugins(loader *core.PluginLoader, dataPath, configPath string, po
 		"reid_enabled":     true,
 		"max_gap_seconds":  30,
 		"track_ttl_seconds": 300,
+	})
+
+	// Updates plugin config
+	loader.SetPluginConfig("nvr-updates", map[string]interface{}{
+		"data_path":       filepath.Join(dataPath, "updates"),
+		"check_interval":  "6h",
+		"auto_update":     false,
 	})
 }
 

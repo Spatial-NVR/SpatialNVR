@@ -8,6 +8,15 @@
 # The Wyze plugin requires the TUTK library which only provides Linux x86_64 binaries.
 # Users who need Wyze support must use the amd64 image (works on Apple Silicon via Rosetta 2).
 # Users on ARM devices who don't need Wyze can use the arm64 image for better performance.
+#
+# Self-Updating Architecture:
+# - /app/bin/nvr: Main NVR binary (updatable via /data/bin/nvr)
+# - /app/web: Web UI assets (updatable via /data/web)
+# - /data/plugins: External plugins (always updatable)
+# - /data/updates: Downloaded updates staging area
+#
+# The container ships with initial versions, but the system checks GitHub releases
+# and can update components without rebuilding the container.
 
 # =============================================================================
 # Stage 1: Build the Go backend
@@ -84,7 +93,12 @@ RUN addgroup -g 1000 nvr && \
     adduser -u 1000 -G nvr -s /bin/sh -D nvr
 
 # Create directories
-RUN mkdir -p /app /app/bin /app/web /config /data /data/recordings /data/thumbnails /data/snapshots /data/exports \
+# /app contains the shipped versions (read-only after build)
+# /data/bin and /data/web can contain updated versions (writable, checked first at runtime)
+RUN mkdir -p /app /app/bin /app/web \
+    /config \
+    /data /data/bin /data/web /data/plugins /data/updates \
+    /data/recordings /data/thumbnails /data/snapshots /data/exports \
     && chown -R nvr:nvr /app /config /data
 
 WORKDIR /app
@@ -94,14 +108,18 @@ ARG GO2RTC_VERSION=1.9.13
 ARG TARGETARCH=amd64
 ADD --chmod=755 https://github.com/AlexxIT/go2rtc/releases/download/v${GO2RTC_VERSION}/go2rtc_linux_${TARGETARCH} /app/bin/go2rtc
 
-# Copy the backend binary
-COPY --from=builder /build/nvr /app/nvr
+# Copy the backend binary to /app/bin (new location for self-updating)
+COPY --from=builder /build/nvr /app/bin/nvr
 
 # Copy the web UI
 COPY --from=ui-builder /build/dist /app/web
 
 # Copy default config template
 COPY config/config.example.yaml /app/config.example.yaml
+
+# Copy the entrypoint script
+COPY docker-entrypoint.sh /app/docker-entrypoint.sh
+RUN chmod +x /app/docker-entrypoint.sh
 
 # Set ownership
 RUN chown -R nvr:nvr /app
@@ -119,7 +137,7 @@ ENV DEPLOYMENT_TYPE=standalone \
     # FFmpeg settings
     FFMPEG_BIN=/usr/bin/ffmpeg \
     FFPROBE_BIN=/usr/bin/ffprobe \
-    # go2rtc binary path
+    # go2rtc binary path (entrypoint may override)
     GO2RTC_PATH=/app/bin/go2rtc
 
 # Expose ports
@@ -133,5 +151,5 @@ EXPOSE 12000 12010 12011 12012/tcp 12012/udp
 HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
     CMD curl -f http://localhost:12000/health || exit 1
 
-# Run the application
-ENTRYPOINT ["/app/nvr"]
+# Use entrypoint script to check for updates before starting
+ENTRYPOINT ["/app/docker-entrypoint.sh"]
