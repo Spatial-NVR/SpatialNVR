@@ -19,14 +19,21 @@
 # and can update components without rebuilding the container.
 
 # =============================================================================
-# Stage 1: Build the Go backend
+# Stage 0: Extract TUTK library from docker-wyze-bridge (x86_64 only)
 # =============================================================================
-FROM golang:1.24-alpine AS builder
+FROM --platform=linux/amd64 mrlt8/wyze-bridge:latest AS wyze-libs
+
+# =============================================================================
+# Stage 1: Build the Go backend (using Debian for glibc compatibility)
+# =============================================================================
+FROM golang:1.24-bookworm AS builder
 
 WORKDIR /build
 
-# Install build dependencies including GCC for CGO (required by go-sqlite3)
-RUN apk add --no-cache git ca-certificates tzdata gcc musl-dev
+# Install build dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    git ca-certificates tzdata gcc libc6-dev \
+    && rm -rf /var/lib/apt/lists/*
 
 # Copy go mod files first for better caching
 COPY go.mod go.sum ./
@@ -59,9 +66,9 @@ ENV VITE_API_URL=""
 RUN npm run build
 
 # =============================================================================
-# Stage 3: Final runtime image
+# Stage 3: Final runtime image (Debian for full glibc support)
 # =============================================================================
-FROM alpine:3.20
+FROM debian:bookworm-slim
 
 # Labels
 LABEL org.opencontainers.image.title="NVR System"
@@ -69,37 +76,40 @@ LABEL org.opencontainers.image.description="Network Video Recorder with AI detec
 LABEL org.opencontainers.image.source="https://github.com/nvr-system/nvr"
 
 # Install runtime dependencies
-RUN apk add --no-cache \
+RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     tzdata \
     curl \
     git \
     # FFmpeg with all codecs for stream processing
     ffmpeg \
-    # Intel Quick Sync Video support (x86_64 only)
-    # intel-media-driver \
-    # libva-intel-driver \
-    # Mesa for VA-API
-    # mesa-va-gallium \
-    # Required for hardware decoding
-    # libva \
-    # libva-utils \
+    # Python for wyze-bridge and other plugin dependencies
+    python3 \
+    python3-pip \
+    python3-venv \
     # Additional utilities
     bash \
-    && rm -rf /var/cache/apk/*
+    procps \
+    && rm -rf /var/lib/apt/lists/* \
+    # Configure pip
+    && mkdir -p /etc/pip.conf.d \
+    && echo "[global]" > /etc/pip.conf \
+    && echo "break-system-packages = true" >> /etc/pip.conf
 
 # Create non-root user
-RUN addgroup -g 1000 nvr && \
-    adduser -u 1000 -G nvr -s /bin/sh -D nvr
+RUN groupadd -g 1000 nvr && \
+    useradd -u 1000 -g nvr -s /bin/bash -m nvr
 
 # Create directories
 # /app contains the shipped versions (read-only after build)
 # /data/bin and /data/web can contain updated versions (writable, checked first at runtime)
+# /tokens and /img are required by wyze-bridge plugin
 RUN mkdir -p /app /app/bin /app/web \
     /config \
     /data /data/bin /data/web /data/plugins /data/updates \
     /data/recordings /data/thumbnails /data/snapshots /data/exports \
-    && chown -R nvr:nvr /app /config /data
+    /tokens /img \
+    && chown -R nvr:nvr /app /config /data /tokens /img
 
 WORKDIR /app
 
@@ -107,6 +117,18 @@ WORKDIR /app
 ARG GO2RTC_VERSION=1.9.13
 ARG TARGETARCH=amd64
 ADD --chmod=755 https://github.com/AlexxIT/go2rtc/releases/download/v${GO2RTC_VERSION}/go2rtc_linux_${TARGETARCH} /app/bin/go2rtc
+
+# Download MediaMTX for wyze-bridge plugin (required for Wyze camera support)
+ARG MTX_VERSION=1.9.1
+RUN MTX_ARCH=$(case ${TARGETARCH} in arm64) echo "arm64v8" ;; armv7) echo "armv7" ;; *) echo "amd64" ;; esac) && \
+    curl -SL https://github.com/bluenviron/mediamtx/releases/download/v${MTX_VERSION}/mediamtx_v${MTX_VERSION}_linux_${MTX_ARCH}.tar.gz \
+    | tar -xzf - -C /app mediamtx mediamtx.yml && \
+    chmod +x /app/mediamtx
+
+# Copy TUTK library from wyze-bridge for Wyze P2P connections (x86_64 only)
+# This is a proprietary library required for direct camera connections
+COPY --from=wyze-libs /usr/local/lib/libIOTCAPIs_ALL.so /usr/local/lib/libIOTCAPIs_ALL.so
+RUN ldconfig
 
 # Copy the backend binary to /app/bin (new location for self-updating)
 COPY --from=builder /build/nvr /app/bin/nvr
@@ -141,15 +163,15 @@ ENV DEPLOYMENT_TYPE=standalone \
     GO2RTC_PATH=/app/bin/go2rtc
 
 # Expose ports
-# 12000: Main API and Web UI
-# 12010: go2rtc API
-# 12011: RTSP streams
-# 12012: WebRTC (TCP and UDP)
-EXPOSE 12000 12010 12011 12012/tcp 12012/udp
+# 8080: Main API and Web UI (standard web port)
+# 1984: go2rtc API (internal, for streaming control)
+# 8554: RTSP streams
+# 8555: WebRTC (TCP and UDP)
+EXPOSE 8080 1984 8554 8555/tcp 8555/udp
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
-    CMD curl -f http://localhost:12000/health || exit 1
+    CMD curl -f http://localhost:8080/health || exit 1
 
 # Use entrypoint script to check for updates before starting
 ENTRYPOINT ["/app/docker-entrypoint.sh"]

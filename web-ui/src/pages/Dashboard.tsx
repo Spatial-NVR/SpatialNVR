@@ -23,7 +23,8 @@ export function Dashboard() {
   })
 
   const isLoading = camerasLoading || eventsLoading
-  const events = eventsData?.data ?? []
+  // Filter out state_change events - they're internal system events, not user-facing activity
+  const events = (eventsData?.data ?? []).filter(e => e.event_type !== 'state_change')
   const hasCameras = cameras && cameras.length > 0
 
   // Check for connection errors

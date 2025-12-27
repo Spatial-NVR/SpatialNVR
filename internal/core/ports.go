@@ -1,5 +1,6 @@
 // Package core provides port management for NVR services.
-// All services use ports starting at 12000 to avoid conflicts with other systems.
+// Standard services (go2rtc, Web UI) use their conventional ports.
+// Internal services use ports starting at 12000 to avoid conflicts.
 package core
 
 import (
@@ -8,19 +9,21 @@ import (
 	"sync"
 )
 
-// Default port assignments (all in 12000+ range)
+// Default port assignments
 const (
 	// Core services
-	DefaultAPIPort     = 12000 // Main NVR API
-	DefaultNATSPort    = 12001 // Embedded NATS event bus
-	DefaultWebUIPort   = 12002 // Web UI (Vite dev server in dev mode)
+	DefaultAPIPort  = 8080  // Main NVR API and Web UI (standard web port)
+	DefaultNATSPort = 4222  // Embedded NATS event bus (standard NATS port)
 
-	// Streaming services
-	DefaultGo2RTCAPIPort    = 12010 // go2rtc API
-	DefaultGo2RTCRTSPPort   = 12011 // go2rtc RTSP
-	DefaultGo2RTCWebRTCPort = 12012 // go2rtc WebRTC
+	// Web UI - same as API (static files served by Go backend)
+	DefaultWebUIPort = 8080 // Web UI served on same port as API
 
-	// Plugin services (when running as separate processes)
+	// Streaming services - standard go2rtc ports
+	DefaultGo2RTCAPIPort    = 1984 // go2rtc API (standard)
+	DefaultGo2RTCRTSPPort   = 8554 // go2rtc RTSP (standard)
+	DefaultGo2RTCWebRTCPort = 8555 // go2rtc WebRTC (standard)
+
+	// Plugin services - internal ports (12000+ range)
 	DefaultSpatialPort   = 12020 // Spatial tracking plugin
 	DefaultDetectionPort = 12021 // Detection service (gRPC)
 

@@ -1,12 +1,13 @@
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { ArrowLeft, Settings, Trash2, RefreshCw, X, Save, Copy, Check, Volume2, VolumeX, HardDrive, Mic, MicOff, Circle, Square, Loader2, AlertCircle } from 'lucide-react'
+import { ArrowLeft, Settings, Trash2, RefreshCw, X, Save, Copy, Check, Volume2, VolumeX, HardDrive, Mic, MicOff, Circle, Square, Loader2, AlertCircle, List, Clock, Bell } from 'lucide-react'
 import { Link } from 'react-router-dom'
-import { cameraApi, CameraConfig, storageApi, audioApi, AudioSessionResponse, recordingApi } from '../lib/api'
+import { cameraApi, CameraConfig, storageApi, audioApi, AudioSessionResponse, recordingApi, eventApi, timelineApi } from '../lib/api'
 import { VideoPlayer } from '../components/VideoPlayer'
 import { MotionZoneEditor } from '../components/MotionZoneEditor'
 import { useState, useEffect } from 'react'
 import { usePorts } from '../hooks/usePorts'
+import { useToast } from '../components/Toast'
 
 // Format bytes to human readable
 function formatBytes(bytes: number): string {
@@ -18,12 +19,14 @@ function formatBytes(bytes: number): string {
 }
 
 type SettingsTab = 'general' | 'streams' | 'recording' | 'detection' | 'zones' | 'audio';
+type EventsViewMode = 'list' | 'timeline';
 
 export function CameraDetail() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const { go2rtcUrl, go2rtcWsUrl, ports } = usePorts()
+  const { addToast } = useToast()
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
   const [settingsTab, setSettingsTab] = useState<SettingsTab>('general')
@@ -32,6 +35,8 @@ export function CameraDetail() {
   const [audioEnabled, setAudioEnabled] = useState(false)
   const [talkSession, setTalkSession] = useState<AudioSessionResponse | null>(null)
   const [isTalking, setIsTalking] = useState(false)
+  const [eventsViewMode, setEventsViewMode] = useState<EventsViewMode>('list')
+  const [timelinePosition, setTimelinePosition] = useState(Date.now() / 1000)
 
   // Form state for settings
   const [formData, setFormData] = useState<Partial<CameraConfig>>({
@@ -40,7 +45,7 @@ export function CameraDetail() {
     manufacturer: '',
     model: '',
     display_aspect_ratio: '16:9',
-    recording: { enabled: false, mode: 'motion', retention_days: 30 },
+    recording: { enabled: false, mode: 'motion', retention: { default_days: 30 } },
     detection: { enabled: true, show_overlay: false, min_confidence: 0.5 },
     audio: { enabled: false },
     motion: { enabled: true, threshold: 0.02, method: 'frame_diff' },
@@ -62,6 +67,24 @@ export function CameraDetail() {
 
   // Get storage used by this camera
   const cameraStorageBytes = id && storageStats?.by_camera ? (storageStats.by_camera[id] || 0) : 0
+
+  // Fetch events for this camera
+  const { data: eventsData } = useQuery({
+    queryKey: ['camera-events', id],
+    queryFn: () => eventApi.list({ camera_id: id, limit: 50 }),
+    enabled: !!id,
+    refetchInterval: 30000,
+  })
+
+  const events = eventsData?.data || []
+
+  // Fetch timeline segments
+  const { data: timelineSegments } = useQuery({
+    queryKey: ['camera-timeline', id],
+    queryFn: () => timelineApi.get(id!),
+    enabled: !!id,
+    refetchInterval: 60000,
+  })
 
   // Fetch full camera config when settings modal opens
   const { data: cameraConfig } = useQuery({
@@ -131,7 +154,9 @@ export function CameraDetail() {
           mode: cameraConfig.recording?.mode || 'motion',
           pre_buffer_seconds: cameraConfig.recording?.pre_buffer_seconds ?? 5,
           post_buffer_seconds: cameraConfig.recording?.post_buffer_seconds ?? 10,
-          retention_days: cameraConfig.recording?.retention_days ?? 30,
+          retention: {
+            default_days: cameraConfig.recording?.retention?.default_days ?? 30,
+          },
         },
         detection: {
           enabled: cameraConfig.detection?.enabled ?? true,
@@ -155,8 +180,14 @@ export function CameraDetail() {
   const deleteMutation = useMutation({
     mutationFn: () => cameraApi.delete(id!),
     onSuccess: () => {
+      addToast('success', 'Camera deleted successfully')
       queryClient.invalidateQueries({ queryKey: ['cameras'] })
-      navigate('/cameras')
+      navigate('/')
+    },
+    onError: (error: Error) => {
+      console.error('Delete failed:', error)
+      addToast('error', `Failed to delete camera: ${error.message}`)
+      setShowDeleteConfirm(false)
     },
   })
 
@@ -527,6 +558,220 @@ export function CameraDetail() {
         </div>
       </div>
 
+      {/* Events Section with Timeline */}
+      <div className="bg-card rounded-lg border p-6">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-lg font-semibold">Events</h2>
+          <div className="flex border rounded-lg overflow-hidden">
+            <button
+              onClick={() => setEventsViewMode('list')}
+              className={`px-3 py-2 flex items-center gap-1 ${eventsViewMode === 'list' ? 'bg-primary text-primary-foreground' : 'hover:bg-accent'}`}
+              title="List view"
+            >
+              <List size={18} />
+            </button>
+            <button
+              onClick={() => setEventsViewMode('timeline')}
+              className={`px-3 py-2 flex items-center gap-1 ${eventsViewMode === 'timeline' ? 'bg-primary text-primary-foreground' : 'hover:bg-accent'}`}
+              title="Timeline view"
+            >
+              <Clock size={18} />
+            </button>
+          </div>
+        </div>
+
+        {eventsViewMode === 'list' ? (
+          /* List View */
+          events.length > 0 ? (
+            <div className="space-y-3 max-h-96 overflow-y-auto">
+              {events.map((event) => (
+                <div
+                  key={event.id}
+                  className="flex items-center gap-3 p-3 bg-background rounded-lg"
+                >
+                  <div className="w-16 h-12 bg-muted rounded flex items-center justify-center overflow-hidden">
+                    {event.thumbnail_path ? (
+                      <img
+                        src={event.thumbnail_path}
+                        alt="Event"
+                        className="w-full h-full object-cover"
+                      />
+                    ) : (
+                      <Bell size={16} className="opacity-50" />
+                    )}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center justify-between">
+                      <span className="font-medium capitalize truncate">
+                        {event.label || event.event_type}
+                      </span>
+                      <span className="text-xs text-muted-foreground">
+                        {Math.round(event.confidence * 100)}%
+                      </span>
+                    </div>
+                    <p className="text-sm text-muted-foreground">
+                      {new Date(event.timestamp * 1000).toLocaleString()}
+                    </p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="text-center py-8">
+              <Bell className="h-12 w-12 mx-auto mb-3 opacity-30" />
+              <p className="text-muted-foreground">No events yet for this camera</p>
+            </div>
+          )
+        ) : (
+          /* Timeline View */
+          <div className="space-y-4">
+            {/* Timeline scrubber */}
+            <div className="relative">
+              <div className="h-16 bg-background rounded-lg overflow-hidden">
+                {/* Timeline bar showing recordings */}
+                <div className="h-8 relative bg-muted/30 rounded">
+                  {timelineSegments && timelineSegments.length > 0 ? (
+                    <>
+                      {/* Calculate time range for display (last 24 hours) */}
+                      {(() => {
+                        const now = Date.now()
+                        const dayAgo = now - 24 * 60 * 60 * 1000
+                        const timeRange = now - dayAgo
+
+                        return timelineSegments.map((segment) => {
+                          const startTime = new Date(segment.start_time).getTime()
+                          const endTime = new Date(segment.end_time).getTime()
+
+                          // Skip if outside visible range
+                          if (endTime < dayAgo || startTime > now) return null
+
+                          const left = Math.max(0, ((startTime - dayAgo) / timeRange) * 100)
+                          const right = Math.min(100, ((endTime - dayAgo) / timeRange) * 100)
+                          const width = right - left
+
+                          return (
+                            <div
+                              key={segment.id}
+                              className={`absolute top-0 h-full ${segment.has_events ? 'bg-blue-500/60' : 'bg-green-500/40'}`}
+                              style={{
+                                left: `${left}%`,
+                                width: `${width}%`,
+                              }}
+                              title={`${new Date(segment.start_time).toLocaleTimeString()} - ${new Date(segment.end_time).toLocaleTimeString()}`}
+                            />
+                          )
+                        })
+                      })()}
+                    </>
+                  ) : (
+                    <div className="absolute inset-0 flex items-center justify-center text-xs text-muted-foreground">
+                      No recordings available
+                    </div>
+                  )}
+
+                  {/* Current position indicator */}
+                  <input
+                    type="range"
+                    min={Date.now() / 1000 - 24 * 60 * 60}
+                    max={Date.now() / 1000}
+                    value={timelinePosition}
+                    onChange={(e) => setTimelinePosition(parseFloat(e.target.value))}
+                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                    title="Drag to navigate timeline"
+                  />
+                  <div
+                    className="absolute top-0 h-full w-0.5 bg-primary pointer-events-none"
+                    style={{
+                      left: `${((timelinePosition - (Date.now() / 1000 - 24 * 60 * 60)) / (24 * 60 * 60)) * 100}%`,
+                    }}
+                  />
+                </div>
+
+                {/* Time labels */}
+                <div className="flex justify-between text-xs text-muted-foreground px-1 mt-1">
+                  <span>24h ago</span>
+                  <span>12h ago</span>
+                  <span>Now</span>
+                </div>
+              </div>
+
+              {/* Current time display */}
+              <div className="text-center mt-2">
+                <span className="text-sm font-mono">
+                  {new Date(timelinePosition * 1000).toLocaleString()}
+                </span>
+              </div>
+            </div>
+
+            {/* Events at current position */}
+            <div>
+              <h3 className="text-sm font-medium mb-2 text-muted-foreground">Events near selected time</h3>
+              <div className="relative">
+                {/* Timeline vertical line */}
+                <div className="absolute left-4 top-0 bottom-0 w-0.5 bg-border" />
+
+                <div className="space-y-4">
+                  {events
+                    .filter((event) => {
+                      const eventTime = event.timestamp
+                      const diff = Math.abs(eventTime - timelinePosition)
+                      return diff < 3600 // Within 1 hour of selected position
+                    })
+                    .slice(0, 10)
+                    .map((event) => (
+                      <div key={event.id} className="relative pl-10">
+                        {/* Timeline dot */}
+                        <div className={`absolute left-2.5 top-2 w-3 h-3 rounded-full border-2 ${
+                          event.acknowledged
+                            ? 'bg-muted border-muted-foreground'
+                            : 'bg-primary border-primary'
+                        }`} />
+
+                        <div className="flex items-start gap-3 bg-background p-3 rounded-lg">
+                          {/* Thumbnail */}
+                          <div className="w-16 h-12 bg-muted rounded flex-shrink-0 overflow-hidden">
+                            {event.thumbnail_path ? (
+                              <img
+                                src={event.thumbnail_path}
+                                alt="Event"
+                                className="w-full h-full object-cover"
+                              />
+                            ) : (
+                              <div className="w-full h-full flex items-center justify-center">
+                                <Bell size={16} className="opacity-50" />
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Event details */}
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center justify-between">
+                              <span className="font-medium capitalize">
+                                {event.label || event.event_type}
+                              </span>
+                              <span className="text-xs text-muted-foreground">
+                                {new Date(event.timestamp * 1000).toLocaleTimeString()}
+                              </span>
+                            </div>
+                            <p className="text-sm text-muted-foreground">
+                              Confidence: {Math.round(event.confidence * 100)}%
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  {events.filter((event) => Math.abs(event.timestamp - timelinePosition) < 3600).length === 0 && (
+                    <div className="pl-10 text-sm text-muted-foreground py-4">
+                      No events near this time. Drag the timeline to explore.
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+
       {/* Delete Confirmation Modal */}
       {showDeleteConfirm && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
@@ -845,10 +1090,16 @@ export function CameraDetail() {
                           type="number"
                           min="1"
                           max="365"
-                          value={formData.recording?.retention_days ?? 30}
+                          value={formData.recording?.retention?.default_days ?? 30}
                           onChange={(e) => setFormData({
                             ...formData,
-                            recording: { ...formData.recording, retention_days: parseInt(e.target.value) || 30 }
+                            recording: {
+                              ...formData.recording,
+                              retention: {
+                                ...formData.recording?.retention,
+                                default_days: parseInt(e.target.value) || 30
+                              }
+                            }
                           })}
                           className="w-full px-3 py-2 bg-background border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
                         />

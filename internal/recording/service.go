@@ -23,13 +23,13 @@ type Service struct {
 	timelineBuilder *TimelineBuilder
 	retentionPolicy *RetentionPolicy
 
-	recorders      map[string]*Recorder
-	storagePath    string
-	thumbnailPath  string
-	running        bool
-	ctx            context.Context
-	cancel         context.CancelFunc
-	logger         *slog.Logger
+	recorders     map[string]*Recorder
+	storagePath   string
+	thumbnailPath string
+	running       bool
+	ctx           context.Context
+	cancel        context.CancelFunc
+	logger        *slog.Logger
 }
 
 // ServiceConfig holds service configuration

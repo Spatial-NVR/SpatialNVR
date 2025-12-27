@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"net/url"
 
 	"github.com/go-chi/chi/v5"
 )
@@ -45,6 +46,12 @@ func (gw *APIGateway) setupRouter() {
 	r.Route("/timeline", gw.routeToPlugin("nvr-recording"))
 	r.Route("/config", gw.routeToPlugin("nvr-core-config"))
 
+	// Updates routes
+	r.Route("/updates", gw.routeToPlugin("nvr-updates"))
+
+	// Models routes (detection)
+	r.Route("/models", gw.routeToPlugin("nvr-detection"))
+
 	// Spatial tracking routes - integrated into main API
 	// This means spatial API is at /api/v1/spatial/* instead of separate port
 	r.Route("/spatial", gw.routeToPlugin("nvr-spatial-tracking"))
@@ -78,7 +85,20 @@ func (gw *APIGateway) routeToPlugin(pluginID string) func(chi.Router) {
 				return
 			}
 
-			pluginHandler.ServeHTTP(w, req)
+			// Get the remaining path after the route prefix using chi's routing context
+			// chi.RouteContext provides the RoutePath which is the unmatched portion
+			rctx := chi.RouteContext(req.Context())
+			routePath := "/"
+			if rctx != nil && rctx.RoutePath != "" {
+				routePath = rctx.RoutePath
+			}
+
+			// Create a new request with the stripped path for the plugin
+			pluginReq := req.Clone(req.Context())
+			pluginReq.URL = pluginReq.URL.ResolveReference(&url.URL{Path: routePath})
+			pluginReq.URL.RawQuery = req.URL.RawQuery
+
+			pluginHandler.ServeHTTP(w, pluginReq)
 		}
 		// Handle all methods for both root path and subpaths
 		r.HandleFunc("/", handler)

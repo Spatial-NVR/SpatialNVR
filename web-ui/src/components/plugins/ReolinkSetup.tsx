@@ -140,13 +140,41 @@ export function ReolinkSetup({ pluginId, onCameraAdded }: ReolinkSetupProps) {
 
         // Also register with NVR camera service for go2rtc
         const pluginCamera = data.result
+
+        // Build proper stream URL with credentials
+        const streamUrl = channelInfo?.rtsp_main || pluginCamera?.main_stream
+        const subStreamUrl = channelInfo?.rtsp_sub || pluginCamera?.sub_stream
+
+        // Format the camera configuration with proper structure expected by the API
         const cameraConfig = {
           name: displayName,
-          stream_url: channelInfo?.rtsp_main || pluginCamera?.main_stream,
-          sub_stream_url: channelInfo?.rtsp_sub || pluginCamera?.sub_stream,
+          stream: {
+            url: streamUrl,
+            sub_url: subStreamUrl,
+            username: username,
+            password: password,
+            // Use main stream for recording, sub stream for detection/motion
+            roles: {
+              detect: 'sub' as const,
+              record: 'main' as const,
+              audio: 'main' as const,
+              motion: 'sub' as const,
+            },
+          },
           manufacturer: 'Reolink',
           model: probeResult?.model || pluginCamera?.model,
-          enabled: true,
+          // Include device capabilities
+          audio: {
+            enabled: probeResult?.has_two_way_audio || false,
+            two_way: probeResult?.has_two_way_audio || false,
+          },
+          detection: {
+            enabled: probeResult?.has_ai_detection || false,
+            fps: 5,
+            show_overlay: true,
+            min_confidence: 0.5,
+          },
+          // Store extra metadata
           plugin_id: pluginId,
           plugin_camera_id: pluginCamera?.id || `${host}_ch${channel}`
         }

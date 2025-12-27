@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 	"sync"
@@ -367,7 +368,8 @@ func (l *PluginLoader) stopPlugin(pluginID string) error {
 		return nil
 	}
 
-	if lp.State != PluginStateRunning {
+	// Allow stopping plugins that are running OR in error state
+	if lp.State != PluginStateRunning && lp.State != PluginStateError {
 		l.pluginsMu.Unlock()
 		return nil
 	}
@@ -443,8 +445,8 @@ func (l *PluginLoader) ScanExternalPlugins() error {
 				continue
 			}
 
-			// Create external plugin wrapper
-			extPlugin := NewExternalPlugin(manifest, binaryPath)
+			// Create external plugin wrapper - pass plugin directory so it can find resources
+			extPlugin := NewExternalPlugin(manifest, binaryPath, pluginDir)
 
 			// Register the plugin
 			l.plugins[manifest.ID] = &LoadedPlugin{
@@ -465,36 +467,54 @@ func (l *PluginLoader) ScanExternalPlugins() error {
 
 // findPluginBinary finds the executable binary in a plugin directory
 func (l *PluginLoader) findPluginBinary(pluginDir string, pluginID string) string {
-	// Common binary names to look for, in order of preference
-	candidates := []string{
-		pluginID,                                // e.g., "reolink"
-		pluginID + "-plugin",                    // e.g., "reolink-plugin"
-		filepath.Base(pluginDir),                // directory name
-		filepath.Base(pluginDir) + "-plugin",   // directory name + "-plugin"
+	// Platform suffix for current OS/arch (e.g., "-linux-amd64")
+	platformSuffix := fmt.Sprintf("-%s-%s", runtime.GOOS, runtime.GOARCH)
+
+	// Build candidates list with platform-specific binaries first
+	baseCandidates := []string{
+		pluginID,                              // e.g., "reolink"
+		pluginID + "-plugin",                  // e.g., "reolink-plugin"
+		filepath.Base(pluginDir),              // directory name
+		filepath.Base(pluginDir) + "-plugin", // directory name + "-plugin"
 	}
+
+	// Check platform-specific binaries first, then generic ones
+	var candidates []string
+	for _, base := range baseCandidates {
+		candidates = append(candidates, base+platformSuffix) // e.g., "reolink-plugin-linux-amd64"
+	}
+	candidates = append(candidates, baseCandidates...) // Then generic names
 
 	for _, name := range candidates {
 		path := filepath.Join(pluginDir, name)
 		info, err := os.Stat(path)
 		if err == nil && !info.IsDir() && isExecutable(info) {
+			l.logger.Debug("Found plugin binary", "path", path)
 			return path
 		}
 	}
 
-	// Fallback: look for any executable file
+	// Fallback: look for any executable file (excluding scripts and common non-binaries)
 	entries, err := os.ReadDir(pluginDir)
 	if err != nil {
 		return ""
 	}
 
 	for _, entry := range entries {
-		if entry.IsDir() || entry.Name() == "manifest.yaml" {
+		name := entry.Name()
+		// Skip directories, manifests, and shell scripts
+		if entry.IsDir() || name == "manifest.yaml" || strings.HasSuffix(name, ".sh") ||
+			strings.HasSuffix(name, ".py") || strings.HasSuffix(name, ".js") ||
+			strings.HasSuffix(name, ".go") || strings.HasSuffix(name, ".yaml") ||
+			strings.HasSuffix(name, ".yml") || strings.HasSuffix(name, ".json") ||
+			strings.HasSuffix(name, ".md") || strings.HasSuffix(name, ".txt") {
 			continue
 		}
 
-		path := filepath.Join(pluginDir, entry.Name())
+		path := filepath.Join(pluginDir, name)
 		info, err := os.Stat(path)
 		if err == nil && !info.IsDir() && isExecutable(info) {
+			l.logger.Debug("Found plugin binary (fallback)", "path", path)
 			return path
 		}
 	}
@@ -723,8 +743,9 @@ func (l *PluginLoader) UnregisterPlugin(pluginID string) error {
 		return fmt.Errorf("cannot unregister builtin plugin: %s", pluginID)
 	}
 
-	if lp.State == PluginStateRunning {
-		return fmt.Errorf("plugin is still running, stop it first: %s", pluginID)
+	// Allow unregistering stopped or error state plugins
+	if lp.State == PluginStateRunning || lp.State == PluginStateStarting {
+		return fmt.Errorf("plugin is still running or starting, stop it first: %s", pluginID)
 	}
 
 	delete(l.plugins, pluginID)

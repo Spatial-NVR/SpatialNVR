@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
+import { useState, useRef, useEffect, useCallback } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import {
   Calendar,
@@ -13,21 +13,18 @@ import {
   Maximize,
   Volume2,
   VolumeX,
-  ZoomIn,
-  ZoomOut,
   Download,
-  Scissors,
   AlertCircle,
   User,
   Car,
   Dog,
   Package,
   Eye,
-  X,
-  Check
+  Radio
 } from 'lucide-react'
 import { cameraApi, eventApi, type Camera as CameraType, type Event } from '../lib/api'
 import { usePorts } from '../hooks/usePorts'
+import { VideoPlayer } from '../components/VideoPlayer'
 
 interface TimelineSegment {
   start_time: string
@@ -46,9 +43,6 @@ interface TimelineData {
   total_size: number
   total_hours: number
 }
-
-// Timeline zoom levels (hours shown)
-const ZOOM_LEVELS = [1, 2, 4, 6, 12, 24]
 
 // Playback speed options
 const PLAYBACK_SPEEDS = [0.25, 0.5, 1, 1.5, 2, 4]
@@ -69,12 +63,93 @@ function getEventInfo(eventType: string) {
   return EVENT_ICONS[eventType.toLowerCase()] || EVENT_ICONS.default
 }
 
-// Export state interface
-interface ExportState {
-  active: boolean
-  startTime: Date | null
-  endTime: Date | null
-  exporting: boolean
+// Camera thumbnail component with snapshot
+function CameraThumbnail({
+  camera,
+  isSelected,
+  onClick,
+  apiUrl,
+}: {
+  camera: CameraType
+  isSelected: boolean
+  onClick: () => void
+  apiUrl: string
+}) {
+  const [snapshotUrl, setSnapshotUrl] = useState<string | null>(null)
+  const [hasError, setHasError] = useState(false)
+
+  useEffect(() => {
+    // Fetch snapshot on mount and periodically refresh
+    const fetchSnapshot = async () => {
+      try {
+        const response = await fetch(`${apiUrl}/api/v1/cameras/${camera.id}/snapshot`)
+        if (response.ok) {
+          const blob = await response.blob()
+          const url = URL.createObjectURL(blob)
+          setSnapshotUrl((prev) => {
+            if (prev) URL.revokeObjectURL(prev)
+            return url
+          })
+          setHasError(false)
+        } else {
+          setHasError(true)
+        }
+      } catch {
+        setHasError(true)
+      }
+    }
+
+    // Only fetch if camera is online
+    if (camera.status === 'online') {
+      fetchSnapshot()
+      // Refresh every 30 seconds
+      const interval = setInterval(fetchSnapshot, 30000)
+      return () => {
+        clearInterval(interval)
+        if (snapshotUrl) URL.revokeObjectURL(snapshotUrl)
+      }
+    }
+  }, [camera.id, camera.status, apiUrl])
+
+  return (
+    <button
+      onClick={onClick}
+      className={`shrink-0 relative rounded-lg overflow-hidden border-2 transition-colors ${
+        isSelected ? 'border-primary' : 'border-transparent hover:border-primary/50'
+      }`}
+      style={{ width: '120px', height: '68px' }}
+    >
+      {/* Camera thumbnail - snapshot or placeholder */}
+      {snapshotUrl && !hasError ? (
+        <img
+          src={snapshotUrl}
+          alt={camera.name}
+          className="w-full h-full object-cover"
+          onError={() => setHasError(true)}
+        />
+      ) : (
+        <div className="w-full h-full bg-muted flex items-center justify-center">
+          <Camera size={24} className="text-muted-foreground" />
+        </div>
+      )}
+
+      {/* Camera name overlay */}
+      <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 to-transparent px-2 py-1">
+        <span className="text-white text-xs truncate block">{camera.name}</span>
+      </div>
+
+      {/* Status indicator */}
+      <div
+        className={`absolute top-1 right-1 w-2 h-2 rounded-full ${
+          camera.status === 'online'
+            ? 'bg-green-500'
+            : camera.status === 'error'
+            ? 'bg-red-500'
+            : 'bg-gray-500'
+        }`}
+      />
+    </button>
+  )
 }
 
 export function Recordings() {
@@ -83,34 +158,27 @@ export function Recordings() {
   const [selectedDate, setSelectedDate] = useState<string>(
     new Date().toISOString().split('T')[0]
   )
+  const [viewMode, setViewMode] = useState<'live' | 'playback'>('live')
   const [currentTime, setCurrentTime] = useState<Date | null>(null)
   const [isPlaying, setIsPlaying] = useState(false)
   const [isMuted, setIsMuted] = useState(true)
-  const [zoomLevel, setZoomLevel] = useState(24) // Hours to show
-  const [timelineOffset, setTimelineOffset] = useState(0) // Offset in hours from start of day
-  const [isDragging, setIsDragging] = useState(false)
-  const [dragTime, setDragTime] = useState<Date | null>(null) // Separate state for drag preview
-  const [videoStartTime, setVideoStartTime] = useState<Date | null>(null) // Track when current video segment started
+  const [videoStartTime, setVideoStartTime] = useState<Date | null>(null)
   const [playbackSpeed, setPlaybackSpeed] = useState(1)
-  const [showEventPanel, setShowEventPanel] = useState(false)
-  const [hoverTime, setHoverTime] = useState<Date | null>(null)
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const [_hoverThumbnail, setHoverThumbnail] = useState<string | null>(null)
-  const [exportState, setExportState] = useState<ExportState>({
-    active: false,
-    startTime: null,
-    endTime: null,
-    exporting: false
-  })
 
   const videoRef = useRef<HTMLVideoElement>(null)
   const timelineRef = useRef<HTMLDivElement>(null)
-  const playheadRef = useRef<HTMLDivElement>(null)
 
   const { data: cameras } = useQuery({
     queryKey: ['cameras'],
     queryFn: cameraApi.list,
   })
+
+  // Auto-select first camera when cameras load and none selected
+  useEffect(() => {
+    if (cameras && cameras.length > 0 && !selectedCamera) {
+      setSelectedCamera(cameras[0].id)
+    }
+  }, [cameras, selectedCamera])
 
   // Fetch timeline data for selected date
   const { data: timeline, isLoading: timelineLoading } = useQuery({
@@ -141,7 +209,6 @@ export function Recordings() {
       const end = new Date(selectedDate)
       end.setHours(23, 59, 59, 999)
 
-      // eventApi.list returns { data: Event[], total: number }
       const result = await eventApi.list({
         camera_id: selectedCamera,
         per_page: 100
@@ -156,27 +223,6 @@ export function Recordings() {
     enabled: !!selectedCamera,
   })
 
-  // Calculate timeline bounds based on zoom level
-  const getTimelineBounds = useCallback(() => {
-    const dayStart = new Date(selectedDate)
-    dayStart.setHours(0, 0, 0, 0)
-
-    const viewStart = new Date(dayStart.getTime() + timelineOffset * 60 * 60 * 1000)
-    const viewEnd = new Date(viewStart.getTime() + zoomLevel * 60 * 60 * 1000)
-
-    return { viewStart, viewEnd, dayStart }
-  }, [selectedDate, timelineOffset, zoomLevel])
-
-  // Calculate events within current view
-  const visibleEvents = useMemo(() => {
-    if (!events) return []
-    const { viewStart, viewEnd } = getTimelineBounds()
-    return events.filter(e => {
-      const eventTime = new Date(e.timestamp * 1000)
-      return eventTime >= viewStart && eventTime <= viewEnd
-    })
-  }, [events, getTimelineBounds])
-
   // Format time for display
   const formatTime = (date: Date) => {
     return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
@@ -187,15 +233,15 @@ export function Recordings() {
   }
 
   // Get stream URL for a timestamp
-  const getStreamUrl = (timestamp: Date) => {
+  const getStreamUrl = useCallback((timestamp: Date) => {
     return `${apiUrl}/api/v1/recordings/timeline/${selectedCamera}/stream?t=${timestamp.toISOString()}`
-  }
+  }, [apiUrl, selectedCamera])
 
   // Seek to a specific time
   const seekToTime = useCallback((time: Date) => {
+    setViewMode('playback')
     setCurrentTime(time)
-    setVideoStartTime(time) // Remember when this segment started
-    setDragTime(null) // Clear any drag preview
+    setVideoStartTime(time)
     if (videoRef.current) {
       const url = getStreamUrl(time)
       videoRef.current.src = url
@@ -204,68 +250,46 @@ export function Recordings() {
         videoRef.current.play().catch(() => {})
       }
     }
-  }, [selectedCamera, isPlaying])
+  }, [getStreamUrl, isPlaying])
 
-  // Handle timeline click to seek
-  const handleTimelineClick = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
-    if (!timelineRef.current) return
+  // Jump to event
+  const jumpToEvent = useCallback((event: Event) => {
+    const eventTime = new Date(event.timestamp * 1000)
+    seekToTime(eventTime)
+  }, [seekToTime])
 
-    const rect = timelineRef.current.getBoundingClientRect()
-    const clickX = e.clientX - rect.left
-    const percent = clickX / rect.width
+  // Switch to live view
+  const goLive = useCallback(() => {
+    setViewMode('live')
+    setCurrentTime(null)
+    setVideoStartTime(null)
+    setIsPlaying(false)
+  }, [])
 
-    const { viewStart, viewEnd } = getTimelineBounds()
-    const duration = viewEnd.getTime() - viewStart.getTime()
-    const clickTime = new Date(viewStart.getTime() + percent * duration)
-
-    seekToTime(clickTime)
-  }, [getTimelineBounds, seekToTime])
-
-
-  // Start/stop playhead drag
-  const startDrag = (e: React.MouseEvent) => {
-    e.stopPropagation() // Prevent click from also firing
-    setIsDragging(true)
-    setDragTime(currentTime) // Initialize drag from current position
-  }
-
-  const stopDrag = useCallback(() => {
-    if (isDragging && dragTime) {
-      seekToTime(dragTime) // Load video at the dropped position
-    }
-    setIsDragging(false)
-    setDragTime(null)
-  }, [isDragging, dragTime, seekToTime])
-
-  // Keyboard shortcuts
+  // Track video time and update currentTime
   useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.target instanceof HTMLInputElement) return
+    if (!videoRef.current || !videoStartTime || viewMode !== 'playback') return
 
-      switch (e.key) {
-        case ' ':
-          e.preventDefault()
-          setIsPlaying(p => !p)
-          break
-        case 'ArrowLeft':
-          if (currentTime) {
-            seekToTime(new Date(currentTime.getTime() - 10000)) // -10s
-          }
-          break
-        case 'ArrowRight':
-          if (currentTime) {
-            seekToTime(new Date(currentTime.getTime() + 10000)) // +10s
-          }
-          break
-        case 'm':
-          setIsMuted(m => !m)
-          break
+    const video = videoRef.current
+    const handleTimeUpdate = () => {
+      const offset = video.currentTime * 1000
+      setCurrentTime(new Date(videoStartTime.getTime() + offset))
+    }
+
+    video.addEventListener('timeupdate', handleTimeUpdate)
+    return () => video.removeEventListener('timeupdate', handleTimeUpdate)
+  }, [videoStartTime, viewMode])
+
+  // Play/pause video
+  useEffect(() => {
+    if (videoRef.current && viewMode === 'playback') {
+      if (isPlaying) {
+        videoRef.current.play().catch(() => {})
+      } else {
+        videoRef.current.pause()
       }
     }
-
-    window.addEventListener('keydown', handleKeyDown)
-    return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [currentTime, seekToTime])
+  }, [isPlaying, viewMode])
 
   // Update video muted state
   useEffect(() => {
@@ -274,170 +298,12 @@ export function Recordings() {
     }
   }, [isMuted])
 
-  // Play/pause video
-  useEffect(() => {
-    if (videoRef.current) {
-      if (isPlaying) {
-        videoRef.current.play().catch(() => {})
-      } else {
-        videoRef.current.pause()
-      }
-    }
-  }, [isPlaying])
-
-  // Track video time and update currentTime
-  useEffect(() => {
-    if (!videoRef.current || !videoStartTime) return
-
-    const video = videoRef.current
-    const handleTimeUpdate = () => {
-      // Only update if not dragging
-      if (isDragging) return
-
-      // Update currentTime based on video progress
-      // videoStartTime is when this segment started, video.currentTime is offset into segment
-      const offset = video.currentTime * 1000
-      setCurrentTime(new Date(videoStartTime.getTime() + offset))
-    }
-
-    video.addEventListener('timeupdate', handleTimeUpdate)
-    return () => video.removeEventListener('timeupdate', handleTimeUpdate)
-  }, [videoStartTime, isDragging])
-
-  // Global mouse move and up listeners for smooth dragging
-  useEffect(() => {
-    const handleGlobalMouseMove = (e: MouseEvent) => {
-      if (!isDragging || !timelineRef.current) return
-
-      const rect = timelineRef.current.getBoundingClientRect()
-      const dragX = Math.max(0, Math.min(e.clientX - rect.left, rect.width))
-      const percent = dragX / rect.width
-
-      const { viewStart, viewEnd } = getTimelineBounds()
-      const duration = viewEnd.getTime() - viewStart.getTime()
-      const newDragTime = new Date(viewStart.getTime() + percent * duration)
-
-      setDragTime(newDragTime)
-    }
-
-    window.addEventListener('mousemove', handleGlobalMouseMove)
-    window.addEventListener('mouseup', stopDrag)
-    return () => {
-      window.removeEventListener('mousemove', handleGlobalMouseMove)
-      window.removeEventListener('mouseup', stopDrag)
-    }
-  }, [stopDrag, isDragging, getTimelineBounds])
-
   // Update playback speed
   useEffect(() => {
     if (videoRef.current) {
       videoRef.current.playbackRate = playbackSpeed
     }
   }, [playbackSpeed])
-
-  // Handle timeline hover for thumbnail preview
-  const handleTimelineMouseMove = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
-    if (!timelineRef.current || isDragging) return
-
-    const rect = timelineRef.current.getBoundingClientRect()
-    const hoverX = e.clientX - rect.left
-    const percent = hoverX / rect.width
-
-    const { viewStart, viewEnd } = getTimelineBounds()
-    const duration = viewEnd.getTime() - viewStart.getTime()
-    const time = new Date(viewStart.getTime() + percent * duration)
-
-    setHoverTime(time)
-    // TODO: Fetch thumbnail for this timestamp
-    // setHoverThumbnail(`${API_BASE}/api/v1/recordings/thumbnail/${selectedCamera}?t=${time.toISOString()}`)
-  }, [isDragging, getTimelineBounds])
-
-  const handleTimelineMouseLeave = useCallback(() => {
-    setHoverTime(null)
-    setHoverThumbnail(null)
-  }, [])
-
-  // Export functions
-  const startExport = useCallback(() => {
-    setExportState({
-      active: true,
-      startTime: currentTime,
-      endTime: null,
-      exporting: false
-    })
-  }, [currentTime])
-
-  const setExportEnd = useCallback(() => {
-    if (exportState.active && currentTime) {
-      setExportState(prev => ({
-        ...prev,
-        endTime: currentTime
-      }))
-    }
-  }, [exportState.active, currentTime])
-
-  const cancelExport = useCallback(() => {
-    setExportState({
-      active: false,
-      startTime: null,
-      endTime: null,
-      exporting: false
-    })
-  }, [])
-
-  const performExport = useCallback(async () => {
-    if (!exportState.startTime || !exportState.endTime || !selectedCamera) return
-
-    setExportState(prev => ({ ...prev, exporting: true }))
-
-    try {
-      const response = await fetch(`${apiUrl}/api/v1/recordings/export`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          camera_id: selectedCamera,
-          start_time: exportState.startTime.toISOString(),
-          end_time: exportState.endTime.toISOString()
-        })
-      })
-
-      if (response.ok) {
-        const data = await response.json()
-        // Trigger download if path is returned
-        if (data.data?.output_path) {
-          window.open(`${apiUrl}/api/v1/recordings/download?path=${encodeURIComponent(data.data.output_path)}`)
-        }
-        cancelExport()
-      }
-    } catch (error) {
-      console.error('Export failed:', error)
-    } finally {
-      setExportState(prev => ({ ...prev, exporting: false }))
-    }
-  }, [exportState.startTime, exportState.endTime, selectedCamera, cancelExport])
-
-  // Jump to event
-  const jumpToEvent = useCallback((event: Event) => {
-    const eventTime = new Date(event.timestamp * 1000)
-    seekToTime(eventTime)
-    setShowEventPanel(false)
-  }, [seekToTime])
-
-  // Calculate playhead position - uses dragTime when dragging, currentTime otherwise
-  const getPlayheadPosition = (): number | null => {
-    const displayTime = isDragging ? dragTime : currentTime
-    if (!displayTime) return null
-
-    const { viewStart, viewEnd } = getTimelineBounds()
-    const duration = viewEnd.getTime() - viewStart.getTime()
-    const position = (displayTime.getTime() - viewStart.getTime()) / duration
-
-    if (position < 0 || position > 1) return null
-    return position * 100
-  }
-
-  // Get the time to display (drag preview or current)
-  const displayTime = isDragging ? dragTime : currentTime
 
   // Navigate date
   const navigateDate = (direction: 'prev' | 'next') => {
@@ -446,185 +312,133 @@ export function Recordings() {
     setSelectedDate(current.toISOString().split('T')[0])
     setCurrentTime(null)
     setIsPlaying(false)
-  }
-
-  // Zoom controls
-  const zoomIn = () => {
-    const idx = ZOOM_LEVELS.indexOf(zoomLevel)
-    if (idx > 0) {
-      // Center the zoom on current view center
-      const centerOffset = timelineOffset + zoomLevel / 2
-      const newZoom = ZOOM_LEVELS[idx - 1]
-      setZoomLevel(newZoom)
-      setTimelineOffset(Math.max(0, Math.min(24 - newZoom, centerOffset - newZoom / 2)))
+    if (viewMode === 'playback') {
+      goLive()
     }
-  }
-
-  const zoomOut = () => {
-    const idx = ZOOM_LEVELS.indexOf(zoomLevel)
-    if (idx < ZOOM_LEVELS.length - 1) {
-      const centerOffset = timelineOffset + zoomLevel / 2
-      const newZoom = ZOOM_LEVELS[idx + 1]
-      setZoomLevel(newZoom)
-      setTimelineOffset(Math.max(0, Math.min(24 - newZoom, centerOffset - newZoom / 2)))
-    }
-  }
-
-  // Generate time markers for timeline
-  const getTimeMarkers = () => {
-    const { viewStart } = getTimelineBounds()
-    const markers: { position: number; label: string }[] = []
-
-    // Determine interval based on zoom level
-    let intervalMinutes = 60
-    if (zoomLevel <= 2) intervalMinutes = 15
-    else if (zoomLevel <= 6) intervalMinutes = 30
-
-    const intervalMs = intervalMinutes * 60 * 1000
-    const durationMs = zoomLevel * 60 * 60 * 1000
-
-    let markerTime = new Date(Math.ceil(viewStart.getTime() / intervalMs) * intervalMs)
-
-    while (markerTime.getTime() < viewStart.getTime() + durationMs) {
-      const position = ((markerTime.getTime() - viewStart.getTime()) / durationMs) * 100
-      markers.push({
-        position,
-        label: formatTimeShort(markerTime)
-      })
-      markerTime = new Date(markerTime.getTime() + intervalMs)
-    }
-
-    return markers
   }
 
   // Check if there's any recording for the selected camera/date
   const hasRecordings = timeline?.segments?.some(s => s.type === 'recording')
 
-  const playheadPosition = getPlayheadPosition()
+  // Get the selected camera's data
+  const selectedCameraData = cameras?.find(c => c.id === selectedCamera)
 
   return (
     <div className="flex flex-col h-[calc(100vh-4rem)]">
       {/* Header */}
-      <div className="flex items-center justify-between p-4 border-b border-border">
-        <div>
-          <h1 className="text-xl font-bold">Playback</h1>
-          <p className="text-sm text-muted-foreground">
-            {currentTime ? formatTime(currentTime) : 'Select a time on the timeline'}
-          </p>
+      <div className="flex items-center justify-between p-4 border-b border-border shrink-0">
+        <div className="flex items-center gap-4">
+          <h1 className="text-xl font-bold">Recordings</h1>
+
+          {/* View mode toggle */}
+          <div className="flex items-center gap-1 bg-muted rounded-lg p-1">
+            <button
+              onClick={goLive}
+              className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors flex items-center gap-2 ${
+                viewMode === 'live'
+                  ? 'bg-background text-foreground shadow-sm'
+                  : 'text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              <Radio size={14} className={viewMode === 'live' ? 'text-red-500' : ''} />
+              Live
+            </button>
+            <button
+              onClick={() => {
+                if (events && events.length > 0) {
+                  jumpToEvent(events[events.length - 1])
+                } else if (timeline?.segments?.some(s => s.type === 'recording')) {
+                  const lastRecording = [...(timeline.segments || [])].reverse().find(s => s.type === 'recording')
+                  if (lastRecording) {
+                    seekToTime(new Date(lastRecording.start_time))
+                  }
+                }
+              }}
+              className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors flex items-center gap-2 ${
+                viewMode === 'playback'
+                  ? 'bg-background text-foreground shadow-sm'
+                  : 'text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              <Play size={14} />
+              Playback
+            </button>
+          </div>
         </div>
 
-        <div className="flex items-center gap-4">
-          {/* Camera selector */}
+        {/* Date navigation */}
+        <div className="flex items-center gap-1">
+          <button
+            onClick={() => navigateDate('prev')}
+            className="p-1.5 hover:bg-accent rounded-md transition-colors"
+          >
+            <ChevronLeft size={18} />
+          </button>
           <div className="flex items-center gap-2">
-            <Camera size={18} className="text-muted-foreground" />
-            <select
-              value={selectedCamera}
+            <Calendar size={18} className="text-muted-foreground" />
+            <input
+              type="date"
+              value={selectedDate}
               onChange={(e) => {
-                setSelectedCamera(e.target.value)
+                setSelectedDate(e.target.value)
                 setCurrentTime(null)
                 setIsPlaying(false)
               }}
-              className="bg-background border border-border rounded-md px-3 py-1.5 text-sm min-w-[180px]"
-            >
-              <option value="">Select Camera</option>
-              {cameras?.map((cam: CameraType) => (
-                <option key={cam.id} value={cam.id}>
-                  {cam.name}
-                </option>
-              ))}
-            </select>
+              className="bg-background border border-border rounded-md px-2 py-1 text-sm"
+            />
           </div>
-
-          {/* Date navigation */}
-          <div className="flex items-center gap-1">
-            <button
-              onClick={() => navigateDate('prev')}
-              className="p-1.5 hover:bg-accent rounded-md transition-colors"
-            >
-              <ChevronLeft size={18} />
-            </button>
-            <div className="flex items-center gap-2">
-              <Calendar size={18} className="text-muted-foreground" />
-              <input
-                type="date"
-                value={selectedDate}
-                onChange={(e) => {
-                  setSelectedDate(e.target.value)
-                  setCurrentTime(null)
-                  setIsPlaying(false)
-                }}
-                className="bg-background border border-border rounded-md px-2 py-1 text-sm"
-              />
-            </div>
-            <button
-              onClick={() => navigateDate('next')}
-              className="p-1.5 hover:bg-accent rounded-md transition-colors"
-              disabled={selectedDate >= new Date().toISOString().split('T')[0]}
-            >
-              <ChevronRight size={18} />
-            </button>
-          </div>
+          <button
+            onClick={() => navigateDate('next')}
+            className="p-1.5 hover:bg-accent rounded-md transition-colors"
+            disabled={selectedDate >= new Date().toISOString().split('T')[0]}
+          >
+            <ChevronRight size={18} />
+          </button>
         </div>
       </div>
 
-      {/* Main content */}
-      <div className="flex-1 flex flex-col min-h-0">
-        {!selectedCamera ? (
-          <div className="flex-1 flex flex-col items-center justify-center text-center">
-            <Camera size={64} className="text-muted-foreground mb-4" />
-            <h2 className="text-lg font-medium mb-2">Select a Camera</h2>
-            <p className="text-muted-foreground">
-              Choose a camera to view recorded footage
-            </p>
+      {/* Main content - split layout */}
+      <div className="flex-1 flex min-h-0">
+        {/* Left side - Video player */}
+        <div className="flex-1 flex flex-col min-w-0">
+          {/* Video area */}
+          <div className="flex-1 bg-black flex items-center justify-center min-h-0 p-2">
+            {!selectedCamera ? (
+              <div className="text-white/50 text-center">
+                <Camera size={64} className="mx-auto mb-4 opacity-50" />
+                <p>Select a camera to view</p>
+              </div>
+            ) : viewMode === 'live' ? (
+              <VideoPlayer
+                cameraId={selectedCamera}
+                className="w-full h-full"
+                muted={isMuted}
+                showDetectionToggle={true}
+                aspectRatio={selectedCameraData?.display_aspect_ratio?.replace(':', '/') || '16/9'}
+              />
+            ) : (
+              <video
+                ref={videoRef}
+                className="max-w-full max-h-full"
+                muted={isMuted}
+                playsInline
+                onEnded={() => {
+                  if (currentTime) {
+                    const nextTime = new Date(currentTime.getTime() + 1000)
+                    seekToTime(nextTime)
+                  }
+                }}
+                onError={() => {
+                  setIsPlaying(false)
+                }}
+              />
+            )}
           </div>
-        ) : timelineLoading ? (
-          <div className="flex-1 flex items-center justify-center">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
-          </div>
-        ) : !hasRecordings ? (
-          <div className="flex-1 flex flex-col items-center justify-center text-center">
-            <Clock size={64} className="text-muted-foreground mb-4" />
-            <h2 className="text-lg font-medium mb-2">No Recordings</h2>
-            <p className="text-muted-foreground">
-              No recordings found for {new Date(selectedDate).toLocaleDateString([], {
-                weekday: 'long',
-                month: 'long',
-                day: 'numeric'
-              })}
-            </p>
-          </div>
-        ) : (
-          <>
-            {/* Video player area */}
-            <div className="flex-1 bg-black flex items-center justify-center min-h-0">
-              {currentTime ? (
-                <video
-                  ref={videoRef}
-                  className="max-w-full max-h-full"
-                  muted={isMuted}
-                  playsInline
-                  onEnded={() => {
-                    // When segment ends, try to load the next one
-                    if (currentTime) {
-                      const nextTime = new Date(currentTime.getTime() + 1000)
-                      seekToTime(nextTime)
-                    }
-                  }}
-                  onError={() => {
-                    setIsPlaying(false)
-                  }}
-                />
-              ) : (
-                <div className="text-white/50 text-center">
-                  <Play size={64} className="mx-auto mb-4 opacity-50" />
-                  <p>Click on the timeline below to start playback</p>
-                </div>
-              )}
-            </div>
 
-            {/* Playback controls */}
-            <div className="bg-card border-t border-border p-3">
-              <div className="flex items-center justify-between mb-3">
+          {/* Playback controls - only show in playback mode */}
+          {viewMode === 'playback' && (
+            <div className="bg-card border-t border-border p-3 shrink-0">
+              <div className="flex items-center justify-between">
                 {/* Left controls */}
                 <div className="flex items-center gap-2">
                   <button
@@ -668,15 +482,12 @@ export function Recordings() {
 
                 {/* Center - current time */}
                 <div className="text-sm font-mono">
-                  {displayTime ? (
+                  {currentTime ? (
                     <>
                       <span className="text-muted-foreground mr-2">
                         {new Date(selectedDate).toLocaleDateString([], { month: 'short', day: 'numeric' })}
                       </span>
-                      <span className={isDragging ? 'text-primary' : ''}>
-                        {formatTime(displayTime)}
-                      </span>
-                      {isDragging && <span className="text-primary ml-2">(seeking...)</span>}
+                      <span>{formatTime(currentTime)}</span>
                     </>
                   ) : (
                     <span className="text-muted-foreground">--:--:--</span>
@@ -691,87 +502,6 @@ export function Recordings() {
                     title={isMuted ? 'Unmute' : 'Mute'}
                   >
                     {isMuted ? <VolumeX size={18} /> : <Volume2 size={18} />}
-                  </button>
-
-                  {/* Export clip button */}
-                  {!exportState.active ? (
-                    <button
-                      onClick={startExport}
-                      className="p-2 hover:bg-accent rounded-md transition-colors"
-                      title="Export clip"
-                      disabled={!currentTime}
-                    >
-                      <Scissors size={18} />
-                    </button>
-                  ) : (
-                    <div className="flex items-center gap-1 bg-accent rounded px-2">
-                      {!exportState.endTime ? (
-                        <>
-                          <span className="text-xs">Set end:</span>
-                          <button
-                            onClick={setExportEnd}
-                            className="p-1.5 bg-primary text-primary-foreground rounded"
-                            title="Set clip end"
-                          >
-                            <Check size={14} />
-                          </button>
-                        </>
-                      ) : (
-                        <>
-                          <button
-                            onClick={performExport}
-                            className="p-1.5 bg-primary text-primary-foreground rounded"
-                            title="Download clip"
-                            disabled={exportState.exporting}
-                          >
-                            <Download size={14} />
-                          </button>
-                        </>
-                      )}
-                      <button
-                        onClick={cancelExport}
-                        className="p-1.5 hover:bg-destructive/20 rounded"
-                        title="Cancel"
-                      >
-                        <X size={14} />
-                      </button>
-                    </div>
-                  )}
-
-                  {/* Event panel toggle */}
-                  <button
-                    onClick={() => setShowEventPanel(!showEventPanel)}
-                    className={`p-2 hover:bg-accent rounded-md transition-colors ${showEventPanel ? 'bg-accent' : ''}`}
-                    title="Show events"
-                  >
-                    <AlertCircle size={18} />
-                    {events && events.length > 0 && (
-                      <span className="absolute -top-1 -right-1 bg-primary text-primary-foreground text-[10px] rounded-full w-4 h-4 flex items-center justify-center">
-                        {events.length > 99 ? '99+' : events.length}
-                      </span>
-                    )}
-                  </button>
-
-                  <div className="w-px h-6 bg-border mx-1" />
-
-                  <button
-                    onClick={zoomIn}
-                    className="p-2 hover:bg-accent rounded-md transition-colors"
-                    disabled={zoomLevel === ZOOM_LEVELS[0]}
-                    title="Zoom in"
-                  >
-                    <ZoomIn size={18} />
-                  </button>
-                  <span className="text-xs text-muted-foreground w-12 text-center">
-                    {zoomLevel}h
-                  </span>
-                  <button
-                    onClick={zoomOut}
-                    className="p-2 hover:bg-accent rounded-md transition-colors"
-                    disabled={zoomLevel === ZOOM_LEVELS[ZOOM_LEVELS.length - 1]}
-                    title="Zoom out"
-                  >
-                    <ZoomOut size={18} />
                   </button>
                   <button
                     onClick={() => {
@@ -789,228 +519,156 @@ export function Recordings() {
                   >
                     <Maximize size={18} />
                   </button>
+                  <button
+                    onClick={goLive}
+                    className="px-3 py-1.5 text-xs bg-red-500 text-white rounded-md hover:bg-red-600 transition-colors flex items-center gap-1"
+                  >
+                    <Radio size={12} />
+                    Go Live
+                  </button>
                 </div>
               </div>
 
-              {/* Timeline */}
-              <div className="relative">
-                {/* Time markers */}
-                <div className="relative h-5 mb-1">
-                  {getTimeMarkers().map((marker, i) => (
-                    <span
-                      key={i}
-                      className="absolute text-[10px] text-muted-foreground -translate-x-1/2"
-                      style={{ left: `${marker.position}%` }}
-                    >
-                      {marker.label}
-                    </span>
-                  ))}
-                </div>
-
-                {/* Timeline bar */}
+              {/* Timeline scrubber */}
+              {timeline && (
                 <div
                   ref={timelineRef}
-                  className={`relative h-10 bg-muted/30 rounded cursor-pointer overflow-hidden ${isDragging ? 'cursor-ew-resize' : ''}`}
-                  onClick={handleTimelineClick}
-                  onMouseMove={handleTimelineMouseMove}
-                  onMouseLeave={handleTimelineMouseLeave}
+                  className="mt-3 h-8 bg-muted/30 rounded cursor-pointer overflow-hidden relative"
+                  onClick={(e) => {
+                    if (!timelineRef.current) return
+                    const rect = timelineRef.current.getBoundingClientRect()
+                    const clickX = e.clientX - rect.left
+                    const percent = clickX / rect.width
+
+                    const dayStart = new Date(selectedDate)
+                    dayStart.setHours(0, 0, 0, 0)
+                    const dayEnd = new Date(selectedDate)
+                    dayEnd.setHours(23, 59, 59, 999)
+
+                    const duration = dayEnd.getTime() - dayStart.getTime()
+                    const clickTime = new Date(dayStart.getTime() + percent * duration)
+                    seekToTime(clickTime)
+                  }}
                 >
                   {/* Recording segments */}
-                  {timeline?.segments?.map((segment, i) => {
+                  {timeline.segments?.map((segment, i) => {
                     if (segment.type !== 'recording') return null
 
-                    const { viewStart, viewEnd } = getTimelineBounds()
-                    const viewDuration = viewEnd.getTime() - viewStart.getTime()
+                    const dayStart = new Date(selectedDate)
+                    dayStart.setHours(0, 0, 0, 0)
+                    const dayEnd = new Date(selectedDate)
+                    dayEnd.setHours(23, 59, 59, 999)
+                    const dayDuration = dayEnd.getTime() - dayStart.getTime()
 
                     const segStart = new Date(segment.start_time)
                     const segEnd = new Date(segment.end_time)
 
-                    // Calculate position within current view
-                    const left = Math.max(0, ((segStart.getTime() - viewStart.getTime()) / viewDuration) * 100)
-                    const right = Math.min(100, ((segEnd.getTime() - viewStart.getTime()) / viewDuration) * 100)
-                    const width = right - left
-
-                    if (width <= 0 || left >= 100 || right <= 0) return null
+                    const left = ((segStart.getTime() - dayStart.getTime()) / dayDuration) * 100
+                    const width = ((segEnd.getTime() - segStart.getTime()) / dayDuration) * 100
 
                     return (
                       <div
                         key={i}
-                        className={`absolute top-1 bottom-1 rounded ${
-                          segment.has_events ? 'bg-primary' : 'bg-primary/60'
-                        }`}
-                        style={{ left: `${left}%`, width: `${width}%` }}
+                        className="absolute top-1 bottom-1 bg-primary/60 rounded"
+                        style={{ left: `${Math.max(0, left)}%`, width: `${Math.min(100 - left, width)}%` }}
                       />
                     )
                   })}
 
-                  {/* Export range overlay */}
-                  {exportState.active && exportState.startTime && (
+                  {/* Current position indicator */}
+                  {currentTime && (
                     (() => {
-                      const { viewStart, viewEnd } = getTimelineBounds()
-                      const viewDuration = viewEnd.getTime() - viewStart.getTime()
-                      const startPos = ((exportState.startTime.getTime() - viewStart.getTime()) / viewDuration) * 100
-                      const endPos = exportState.endTime
-                        ? ((exportState.endTime.getTime() - viewStart.getTime()) / viewDuration) * 100
-                        : currentTime
-                          ? ((currentTime.getTime() - viewStart.getTime()) / viewDuration) * 100
-                          : startPos
+                      const dayStart = new Date(selectedDate)
+                      dayStart.setHours(0, 0, 0, 0)
+                      const dayEnd = new Date(selectedDate)
+                      dayEnd.setHours(23, 59, 59, 999)
+                      const dayDuration = dayEnd.getTime() - dayStart.getTime()
+                      const position = ((currentTime.getTime() - dayStart.getTime()) / dayDuration) * 100
 
                       return (
                         <div
-                          className="absolute top-0 bottom-0 bg-yellow-500/30 border-l-2 border-r-2 border-yellow-500"
-                          style={{
-                            left: `${Math.max(0, Math.min(startPos, endPos))}%`,
-                            width: `${Math.max(0, Math.abs(endPos - startPos))}%`
-                          }}
-                        />
-                      )
-                    })()
-                  )}
-
-                  {/* Event markers */}
-                  {visibleEvents.map((event, i) => {
-                    const { viewStart, viewEnd } = getTimelineBounds()
-                    const viewDuration = viewEnd.getTime() - viewStart.getTime()
-                    const eventTime = new Date(event.timestamp * 1000)
-                    const position = ((eventTime.getTime() - viewStart.getTime()) / viewDuration) * 100
-
-                    if (position < 0 || position > 100) return null
-
-                    const eventInfo = getEventInfo(event.event_type)
-                    const Icon = eventInfo.icon
-
-                    return (
-                      <div
-                        key={event.id || i}
-                        className="absolute top-0 bottom-0 w-0.5 cursor-pointer group"
-                        style={{ left: `${position}%` }}
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          jumpToEvent(event)
-                        }}
-                        title={`${eventInfo.label}: ${event.label || event.event_type}`}
-                      >
-                        <div
-                          className="absolute inset-0"
-                          style={{ backgroundColor: eventInfo.color }}
-                        />
-                        <div
-                          className="absolute -top-1 left-1/2 -translate-x-1/2 w-3 h-3 rounded-full flex items-center justify-center shadow-sm opacity-80 group-hover:opacity-100 group-hover:scale-125 transition-all"
-                          style={{ backgroundColor: eventInfo.color }}
-                        >
-                          <Icon size={8} className="text-white" />
-                        </div>
-                      </div>
-                    )
-                  })}
-
-                  {/* Hour grid lines */}
-                  {Array.from({ length: Math.ceil(zoomLevel) + 1 }).map((_, i) => {
-                    const position = (i / zoomLevel) * 100
-                    if (position > 100) return null
-                    return (
-                      <div
-                        key={i}
-                        className="absolute top-0 h-full border-l border-border/30"
-                        style={{ left: `${position}%` }}
-                      />
-                    )
-                  })}
-
-                  {/* Hover time indicator */}
-                  {hoverTime && !isDragging && (
-                    (() => {
-                      const { viewStart, viewEnd } = getTimelineBounds()
-                      const viewDuration = viewEnd.getTime() - viewStart.getTime()
-                      const position = ((hoverTime.getTime() - viewStart.getTime()) / viewDuration) * 100
-
-                      return (
-                        <div
-                          className="absolute top-0 h-full w-px bg-white/40 pointer-events-none z-5"
+                          className="absolute top-0 h-full w-0.5 bg-white z-10"
                           style={{ left: `${position}%` }}
-                        >
-                          <div className="absolute -top-7 left-1/2 -translate-x-1/2 bg-black/80 text-white px-2 py-0.5 rounded text-[10px] whitespace-nowrap">
-                            {formatTime(hoverTime)}
-                          </div>
-                        </div>
+                        />
                       )
                     })()
                   )}
 
-                  {/* Playhead */}
-                  {playheadPosition !== null && (
+                  {/* Hour markers */}
+                  {Array.from({ length: 24 }).map((_, i) => (
                     <div
-                      ref={playheadRef}
-                      className={`absolute top-0 h-full w-1 z-10 cursor-ew-resize transition-colors ${
-                        isDragging ? 'bg-primary' : 'bg-white'
-                      }`}
-                      style={{ left: `${playheadPosition}%`, transform: 'translateX(-50%)' }}
-                      onMouseDown={startDrag}
+                      key={i}
+                      className="absolute top-0 h-full border-l border-border/30"
+                      style={{ left: `${(i / 24) * 100}%` }}
                     >
-                      {/* Playhead handle - larger hit area for easier dragging */}
-                      <div className={`absolute -top-2 left-1/2 -translate-x-1/2 w-4 h-4 rounded-full shadow-lg transition-all ${
-                        isDragging ? 'bg-primary scale-125' : 'bg-white hover:scale-110'
-                      }`} />
-                      {/* Time tooltip when dragging */}
-                      {isDragging && dragTime && (
-                        <div className="absolute -top-8 left-1/2 -translate-x-1/2 bg-primary text-primary-foreground px-2 py-1 rounded text-xs whitespace-nowrap shadow-lg">
-                          {formatTime(dragTime)}
-                        </div>
+                      {i % 6 === 0 && (
+                        <span className="absolute -top-4 text-[10px] text-muted-foreground -translate-x-1/2">
+                          {i.toString().padStart(2, '0')}:00
+                        </span>
                       )}
                     </div>
-                  )}
+                  ))}
                 </div>
-
-                {/* Scroll controls for zoomed timeline */}
-                {zoomLevel < 24 && (
-                  <div className="flex items-center justify-center gap-2 mt-2">
-                    <button
-                      onClick={() => setTimelineOffset(Math.max(0, timelineOffset - zoomLevel / 2))}
-                      className="p-1 hover:bg-accent rounded"
-                      disabled={timelineOffset === 0}
-                    >
-                      <ChevronLeft size={16} />
-                    </button>
-                    <div className="text-xs text-muted-foreground">
-                      {formatTimeShort(getTimelineBounds().viewStart)} - {formatTimeShort(getTimelineBounds().viewEnd)}
-                    </div>
-                    <button
-                      onClick={() => setTimelineOffset(Math.min(24 - zoomLevel, timelineOffset + zoomLevel / 2))}
-                      className="p-1 hover:bg-accent rounded"
-                      disabled={timelineOffset >= 24 - zoomLevel}
-                    >
-                      <ChevronRight size={16} />
-                    </button>
-                  </div>
-                )}
-              </div>
+              )}
             </div>
-          </>
-        )}
-      </div>
+          )}
 
-      {/* Event panel overlay */}
-      {showEventPanel && events && (
-        <div className="fixed inset-y-0 right-0 w-80 bg-card border-l border-border shadow-xl z-50 flex flex-col">
-          <div className="flex items-center justify-between p-4 border-b border-border">
-            <h3 className="font-semibold">Events</h3>
-            <button
-              onClick={() => setShowEventPanel(false)}
-              className="p-1 hover:bg-accent rounded"
-            >
-              <X size={18} />
-            </button>
+          {/* Camera thumbnails - bottom bar */}
+          <div className="bg-card border-t border-border p-2 shrink-0 overflow-x-auto">
+            <div className="flex gap-2">
+              {cameras?.map((cam: CameraType) => (
+                <CameraThumbnail
+                  key={cam.id}
+                  camera={cam}
+                  isSelected={selectedCamera === cam.id}
+                  onClick={() => {
+                    setSelectedCamera(cam.id)
+                    if (viewMode === 'playback') {
+                      setCurrentTime(null)
+                      setIsPlaying(false)
+                    }
+                  }}
+                  apiUrl={apiUrl}
+                />
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* Right side - Events panel */}
+        <div className="w-80 border-l border-border flex flex-col shrink-0">
+          <div className="p-3 border-b border-border flex items-center justify-between">
+            <h2 className="font-semibold">Events</h2>
+            <span className="text-xs text-muted-foreground">
+              {events?.length || 0} events
+            </span>
           </div>
 
           <div className="flex-1 overflow-y-auto">
-            {events.length === 0 ? (
+            {!selectedCamera ? (
+              <div className="p-4 text-center text-muted-foreground">
+                <Camera size={32} className="mx-auto mb-2 opacity-50" />
+                <p className="text-sm">Select a camera</p>
+              </div>
+            ) : timelineLoading ? (
+              <div className="flex items-center justify-center p-8">
+                <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-primary" />
+              </div>
+            ) : !hasRecordings && (!events || events.length === 0) ? (
+              <div className="p-4 text-center text-muted-foreground">
+                <Clock size={32} className="mx-auto mb-2 opacity-50" />
+                <p className="text-sm">No recordings or events</p>
+                <p className="text-xs mt-1">for {new Date(selectedDate).toLocaleDateString()}</p>
+              </div>
+            ) : events && events.length === 0 ? (
               <div className="p-4 text-center text-muted-foreground">
                 <AlertCircle size={32} className="mx-auto mb-2 opacity-50" />
-                <p className="text-sm">No events for this date</p>
+                <p className="text-sm">No events detected</p>
+                <p className="text-xs mt-1">Recordings available for playback</p>
               </div>
             ) : (
               <div className="divide-y divide-border">
-                {events.map((event) => {
+                {events?.map((event) => {
                   const eventInfo = getEventInfo(event.event_type)
                   const Icon = eventInfo.icon
                   const eventTime = new Date(event.timestamp * 1000)
@@ -1022,10 +680,10 @@ export function Recordings() {
                       className="w-full p-3 hover:bg-accent text-left transition-colors flex items-start gap-3"
                     >
                       <div
-                        className="w-8 h-8 rounded-full flex items-center justify-center shrink-0"
+                        className="w-10 h-10 rounded-lg flex items-center justify-center shrink-0"
                         style={{ backgroundColor: `${eventInfo.color}20` }}
                       >
-                        <Icon size={16} style={{ color: eventInfo.color }} />
+                        <Icon size={20} style={{ color: eventInfo.color }} />
                       </div>
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center justify-between gap-2">
@@ -1033,7 +691,7 @@ export function Recordings() {
                             {event.label || eventInfo.label}
                           </span>
                           <span className="text-xs text-muted-foreground shrink-0">
-                            {formatTime(eventTime)}
+                            {formatTimeShort(eventTime)}
                           </span>
                         </div>
                         <div className="text-xs text-muted-foreground mt-0.5">
@@ -1047,26 +705,28 @@ export function Recordings() {
             )}
           </div>
 
-          {/* Event legend */}
+          {/* Quick actions */}
           <div className="p-3 border-t border-border bg-muted/30">
-            <div className="text-xs text-muted-foreground mb-2">Event Types</div>
-            <div className="flex flex-wrap gap-2">
-              {Object.entries(EVENT_ICONS).filter(([key]) => key !== 'default').map(([key, info]) => {
-                const Icon = info.icon
-                return (
-                  <div
-                    key={key}
-                    className="flex items-center gap-1 text-xs"
-                  >
-                    <Icon size={12} style={{ color: info.color }} />
-                    <span>{info.label}</span>
-                  </div>
-                )
-              })}
+            <div className="flex gap-2">
+              <button
+                className="flex-1 px-3 py-2 text-xs bg-background border border-border rounded-md hover:bg-accent transition-colors flex items-center justify-center gap-2"
+                onClick={() => {
+                  // Export last 30 min
+                  if (selectedCamera) {
+                    const end = new Date()
+                    const start = new Date(end.getTime() - 30 * 60 * 1000)
+                    window.open(`${apiUrl}/api/v1/recordings/export?camera_id=${selectedCamera}&start=${start.toISOString()}&end=${end.toISOString()}`)
+                  }
+                }}
+                disabled={!selectedCamera}
+              >
+                <Download size={14} />
+                Export
+              </button>
             </div>
           </div>
         </div>
-      )}
+      </div>
     </div>
   )
 }

@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"sync"
 	"time"
 
@@ -108,7 +109,18 @@ type installedPlugin struct {
 	startedAt *time.Time
 	lastError string
 
+	// Log buffer for external plugins
+	logBuffer []LogEntry
+	logMu     sync.RWMutex
+
 	mu sync.RWMutex
+}
+
+// LogEntry represents a single log line from a plugin
+type LogEntry struct {
+	Timestamp time.Time `json:"timestamp"`
+	Level     string    `json:"level"`
+	Message   string    `json:"message"`
 }
 
 // NewManager creates a new plugin manager
@@ -645,7 +657,14 @@ func (m *Manager) startExternalPlugin(p *installedPlugin) error {
 	var cmd *exec.Cmd
 	switch p.manifest.Runtime.Type {
 	case "binary":
-		binaryPath := filepath.Join(p.dir, p.manifest.Runtime.Binary)
+		// Try platform-specific binary first (e.g., plugin-linux-amd64)
+		binaryPath := filepath.Join(p.dir, fmt.Sprintf("%s-%s-%s", p.manifest.Runtime.Binary, runtime.GOOS, runtime.GOARCH))
+		if _, err := os.Stat(binaryPath); os.IsNotExist(err) {
+			// Fall back to generic binary name
+			binaryPath = filepath.Join(p.dir, p.manifest.Runtime.Binary)
+		} else {
+			m.logger.Info("Using platform-specific binary", "path", binaryPath)
+		}
 		cmd = exec.CommandContext(m.ctx, binaryPath, p.manifest.Runtime.Args...)
 	case "python":
 		entryPoint := filepath.Join(p.dir, p.manifest.Runtime.EntryPoint)
@@ -792,7 +811,28 @@ func (m *Manager) logPluginStderr(pluginID string, stderr io.Reader) {
 	for {
 		n, err := stderr.Read(buf)
 		if n > 0 {
-			m.logger.Debug("Plugin stderr", "id", pluginID, "output", string(buf[:n]))
+			output := string(buf[:n])
+			m.logger.Debug("Plugin stderr", "id", pluginID, "output", output)
+
+			// Store log in plugin's buffer
+			m.mu.RLock()
+			p, ok := m.installed[pluginID]
+			m.mu.RUnlock()
+
+			if ok {
+				entry := LogEntry{
+					Timestamp: time.Now(),
+					Level:     "info",
+					Message:   output,
+				}
+				p.logMu.Lock()
+				p.logBuffer = append(p.logBuffer, entry)
+				// Keep only last 1000 entries
+				if len(p.logBuffer) > 1000 {
+					p.logBuffer = p.logBuffer[len(p.logBuffer)-1000:]
+				}
+				p.logMu.Unlock()
+			}
 		}
 		if err != nil {
 			break
@@ -894,6 +934,38 @@ func (m *Manager) ListInstalledPlugins() []PluginStatus {
 // PluginsDir returns the plugins directory path
 func (m *Manager) PluginsDir() string {
 	return m.pluginsDir
+}
+
+// GetInstalledPluginLogs returns the last n log entries for an installed plugin
+func (m *Manager) GetInstalledPluginLogs(pluginID string, n int) []LogEntry {
+	m.mu.RLock()
+	p, ok := m.installed[pluginID]
+	m.mu.RUnlock()
+
+	if !ok {
+		return nil
+	}
+
+	p.logMu.RLock()
+	defer p.logMu.RUnlock()
+
+	if n <= 0 || n > len(p.logBuffer) {
+		n = len(p.logBuffer)
+	}
+
+	if n == 0 {
+		return []LogEntry{}
+	}
+
+	// Return the last n entries
+	start := len(p.logBuffer) - n
+	if start < 0 {
+		start = 0
+	}
+
+	result := make([]LogEntry, n)
+	copy(result, p.logBuffer[start:])
+	return result
 }
 
 // ============================================================================

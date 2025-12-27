@@ -203,8 +203,13 @@ func (p *DetectionPlugin) Health() sdk.HealthStatus {
 }
 
 // Routes returns the HTTP routes for this plugin
+// When mounted at /models by the gateway, "/" handles model listing
 func (p *DetectionPlugin) Routes() http.Handler {
 	r := chi.NewRouter()
+
+	// Root route for model listing (when mounted at /models)
+	r.Get("/", p.handleListModels)
+	r.Post("/", p.handleLoadModel)
 
 	// Detection endpoints
 	r.Post("/detect", p.handleDetect)
@@ -215,10 +220,11 @@ func (p *DetectionPlugin) Routes() http.Handler {
 	r.Post("/cameras/{cameraId}/stop", p.handleStopCamera)
 	r.Get("/cameras/{cameraId}/status", p.handleCameraStatus)
 
-	// Models
+	// Models (also accessible via legacy /models path)
 	r.Get("/models", p.handleListModels)
 	r.Post("/models", p.handleLoadModel)
 	r.Delete("/models/{modelId}", p.handleUnloadModel)
+	r.Delete("/{modelId}", p.handleUnloadModel)
 
 	// Backends
 	r.Get("/backends", p.handleListBackends)

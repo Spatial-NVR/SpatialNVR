@@ -20,7 +20,9 @@ import (
 type ExternalPlugin struct {
 	manifest   sdk.PluginManifest
 	binaryPath string
+	pluginDir  string // Directory where the plugin is installed
 	config     map[string]interface{}
+	runtime    *sdk.PluginRuntime // Plugin runtime for logging
 
 	cmd    *exec.Cmd
 	stdin  io.WriteCloser
@@ -34,7 +36,8 @@ type ExternalPlugin struct {
 	running   bool
 	runningMu sync.RWMutex
 
-	stopCh chan struct{}
+	stopCh   chan struct{}
+	stopOnce sync.Once
 }
 
 // JSONRPCRequest is a JSON-RPC 2.0 request
@@ -61,10 +64,11 @@ type JSONRPCError struct {
 }
 
 // NewExternalPlugin creates a wrapper for an external plugin binary
-func NewExternalPlugin(manifest sdk.PluginManifest, binaryPath string) *ExternalPlugin {
+func NewExternalPlugin(manifest sdk.PluginManifest, binaryPath string, pluginDir string) *ExternalPlugin {
 	return &ExternalPlugin{
 		manifest:   manifest,
 		binaryPath: binaryPath,
+		pluginDir:  pluginDir,
 		pending:    make(map[uint64]chan *JSONRPCResponse),
 		stopCh:     make(chan struct{}),
 	}
@@ -77,13 +81,30 @@ func (p *ExternalPlugin) Manifest() sdk.PluginManifest {
 
 // Initialize starts the external process and sends the initialize command
 func (p *ExternalPlugin) Initialize(ctx context.Context, runtime *sdk.PluginRuntime) error {
+	p.runtime = runtime
 	if runtime != nil {
 		p.config = runtime.Config()
 	}
 
-	// Start the process
-	p.cmd = exec.CommandContext(ctx, p.binaryPath)
-	p.cmd.Env = os.Environ()
+	// Create a new stop channel and reset stopOnce for this run (important for restarts)
+	p.stopCh = make(chan struct{})
+	p.stopOnce = sync.Once{}
+
+	// Start the process - use background context so process survives after init
+	// The ctx is only for the initialization call timeout, not the process lifecycle
+	p.cmd = exec.Command(p.binaryPath)
+
+	// Set working directory to plugin directory so it can find its resources
+	if p.pluginDir != "" {
+		p.cmd.Dir = p.pluginDir
+	}
+
+	// Pass environment with PLUGIN_PATH set
+	env := os.Environ()
+	if p.pluginDir != "" {
+		env = append(env, fmt.Sprintf("PLUGIN_PATH=%s", p.pluginDir))
+	}
+	p.cmd.Env = env
 
 	var err error
 	p.stdin, err = p.cmd.StdinPipe()
@@ -140,7 +161,10 @@ func (p *ExternalPlugin) Stop(ctx context.Context) error {
 	p.running = false
 	p.runningMu.Unlock()
 
-	close(p.stopCh)
+	// Use sync.Once to ensure channel is only closed once
+	p.stopOnce.Do(func() {
+		close(p.stopCh)
+	})
 
 	// Send shutdown command
 	p.Call(ctx, "shutdown", nil)
@@ -306,7 +330,13 @@ func (p *ExternalPlugin) readResponses() {
 func (p *ExternalPlugin) readStderr() {
 	scanner := bufio.NewScanner(p.stderr)
 	for scanner.Scan() {
-		// In production, this should go to a logger
-		fmt.Printf("[%s] %s\n", p.manifest.ID, scanner.Text())
+		line := scanner.Text()
+		// Print to stdout for debugging
+		fmt.Printf("[%s] %s\n", p.manifest.ID, line)
+
+		// Store in runtime's log buffer for API access
+		if p.runtime != nil {
+			p.runtime.AddLog("info", line, nil)
+		}
 	}
 }

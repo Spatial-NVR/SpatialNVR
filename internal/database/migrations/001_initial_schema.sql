@@ -32,6 +32,7 @@ CREATE TABLE IF NOT EXISTS events (
     id TEXT PRIMARY KEY,
     camera_id TEXT NOT NULL,
     event_type TEXT NOT NULL,
+    label TEXT,
     timestamp INTEGER NOT NULL,
     end_timestamp INTEGER,
     confidence REAL,

@@ -79,7 +79,7 @@ function ConfigEditor({
   isSaving
 }: {
   config: Record<string, unknown>
-  schema?: Record<string, { type: string; description?: string; default?: unknown }>
+  schema?: Record<string, { type: string; description?: string; default?: unknown; format?: string }>
   onSave: (config: Record<string, unknown>) => void
   isSaving: boolean
 }) {
@@ -111,6 +111,9 @@ function ConfigEditor({
       {Object.entries(editedConfig).map(([key, value]) => {
         const fieldSchema = schema?.[key]
         const valueType = typeof value
+        // Check if this is a sensitive field that should be masked
+        const isSensitive = fieldSchema?.format === 'password' ||
+          /password|secret|api_key|apikey|key_id|keyid|totp/i.test(key)
 
         return (
           <div key={key} className="space-y-1">
@@ -144,10 +147,11 @@ function ConfigEditor({
               </pre>
             ) : (
               <input
-                type="text"
+                type={isSensitive ? 'password' : 'text'}
                 value={String(value)}
                 onChange={e => handleChange(key, e.target.value)}
                 className="w-full px-3 py-2 bg-background border border-border rounded-md text-sm"
+                autoComplete={isSensitive ? 'off' : undefined}
               />
             )}
           </div>

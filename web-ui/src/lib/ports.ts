@@ -14,13 +14,14 @@ export interface PortConfig {
 }
 
 // Default ports (fallback before discovery completes)
+// All services now use standard ports
 const DEFAULT_PORTS: PortConfig = {
-  api: 12000,
-  nats: 12001,
-  web_ui: 12002,
-  go2rtc_api: 12010,
-  go2rtc_rtsp: 12011,
-  go2rtc_webrtc: 12012,
+  api: 8080,            // Standard web port for API and Web UI
+  nats: 4222,           // Standard NATS port
+  web_ui: 8080,         // Same as API (served by Go backend)
+  go2rtc_api: 1984,     // Standard go2rtc API port
+  go2rtc_rtsp: 8554,    // Standard RTSP port
+  go2rtc_webrtc: 8555,  // Standard WebRTC port
   spatial: 12020,
   detection: 12021,
 };
@@ -31,14 +32,14 @@ let fetchPromise: Promise<PortConfig> | null = null;
 
 // Get the API base URL - this is the one port we must know initially
 // In production, this is served from the same origin
-// In development, it defaults to 12000
+// In development, it defaults to 8080
 function getApiBase(): string {
   if (import.meta.env.VITE_API_URL) {
     return import.meta.env.VITE_API_URL;
   }
-  // In production, use same origin; in development, use port 12000
+  // In production, use same origin; in development, use port 8080
   if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
-    return 'http://localhost:12000';
+    return 'http://localhost:8080';
   }
   return window.location.origin;
 }

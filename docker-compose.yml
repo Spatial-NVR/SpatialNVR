@@ -13,7 +13,7 @@ services:
       - ./config:/config
       - ./data:/data
     ports:
-      - "12000:12000"       # Web UI and API (go2rtc proxied through /go2rtc/)
+      - "8080:8080"         # Web UI and API (go2rtc proxied through /go2rtc/)
       # RTSP port for external clients (e.g., other NVR software)
       # - "12011:12011"     # RTSP streams (uncomment if needed)
       # WebRTC UDP for low-latency streaming
@@ -31,7 +31,7 @@ services:
     #           count: 1
     #           capabilities: [gpu]
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:12000/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
       interval: 30s
       timeout: 10s
       retries: 3

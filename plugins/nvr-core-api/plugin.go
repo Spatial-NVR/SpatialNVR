@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"sync"
 	"time"
@@ -74,6 +75,8 @@ func (p *CoreAPIPlugin) Initialize(ctx context.Context, runtime *sdk.PluginRunti
 			},
 			Cameras: []config.CameraConfig{},
 		}
+		// Set the path so saving works
+		cfg.SetPath(p.configPath)
 	}
 	// Override storage path with runtime value (from DATA_PATH env var)
 	// This ensures container/env paths take precedence over config file values
@@ -302,13 +305,28 @@ func (p *CoreAPIPlugin) handleUpdateCamera(w http.ResponseWriter, r *http.Reques
 
 	id := chi.URLParam(r, "id")
 
+	// Read body into bytes so we can decode twice
+	bodyBytes, err := io.ReadAll(r.Body)
+	if err != nil {
+		p.respondError(w, http.StatusBadRequest, "Failed to read request body")
+		return
+	}
+
+	// First, decode into a map to track which fields were present
+	var rawFields map[string]json.RawMessage
+	if err := json.Unmarshal(bodyBytes, &rawFields); err != nil {
+		p.respondError(w, http.StatusBadRequest, "Invalid JSON")
+		return
+	}
+
+	// Then decode into the proper struct
 	var camCfg config.CameraConfig
-	if err := json.NewDecoder(r.Body).Decode(&camCfg); err != nil {
+	if err := json.Unmarshal(bodyBytes, &camCfg); err != nil {
 		p.respondError(w, http.StatusBadRequest, "Invalid request body")
 		return
 	}
 
-	cam, err := p.cameraService.Update(r.Context(), id, camCfg)
+	cam, err := p.cameraService.UpdateWithFields(r.Context(), id, camCfg, rawFields)
 	if err != nil {
 		p.respondError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -359,6 +377,26 @@ func (p *CoreAPIPlugin) handleGetCameraConfig(w http.ResponseWriter, r *http.Req
 		return
 	}
 
+	// Build stream config with roles
+	streamResponse := map[string]interface{}{
+		"url":          cfg.Stream.URL,
+		"sub_url":      cfg.Stream.SubURL,
+		"username":     cfg.Stream.Username,
+		"has_password": cfg.Stream.Password != "",
+	}
+	// Include roles if configured
+	if cfg.Stream.Roles != nil {
+		streamResponse["roles"] = cfg.Stream.Roles
+	} else {
+		// Default roles if not set
+		streamResponse["roles"] = map[string]string{
+			"detect": "sub",
+			"record": "main",
+			"audio":  "main",
+			"motion": "sub",
+		}
+	}
+
 	// Create a sanitized response (hide password)
 	response := map[string]interface{}{
 		"id":           cfg.ID,
@@ -366,20 +404,14 @@ func (p *CoreAPIPlugin) handleGetCameraConfig(w http.ResponseWriter, r *http.Req
 		"enabled":      cfg.Enabled,
 		"manufacturer": cfg.Manufacturer,
 		"model":        cfg.Model,
-		"stream": map[string]interface{}{
-			"url":      cfg.Stream.URL,
-			"sub_url":  cfg.Stream.SubURL,
-			"username": cfg.Stream.Username,
-			// Don't expose password
-			"has_password": cfg.Stream.Password != "",
-		},
-		"recording":  cfg.Recording,
-		"detection":  cfg.Detection,
-		"motion":     cfg.Motion,
-		"audio":      cfg.Audio,
-		"ptz":        cfg.PTZ,
-		"advanced":   cfg.Advanced,
-		"location":   cfg.Location,
+		"stream":       streamResponse,
+		"recording":    cfg.Recording,
+		"detection":    cfg.Detection,
+		"motion":       cfg.Motion,
+		"audio":        cfg.Audio,
+		"ptz":          cfg.PTZ,
+		"advanced":     cfg.Advanced,
+		"location":     cfg.Location,
 	}
 
 	p.respondJSON(w, response)
@@ -418,7 +450,7 @@ func (p *CoreAPIPlugin) handleGetStreamURLs(w http.ResponseWriter, r *http.Reque
 func (p *CoreAPIPlugin) handleSystemInfo(w http.ResponseWriter, r *http.Request) {
 	p.respondJSON(w, map[string]interface{}{
 		"name":         "NVR System",
-		"version":      "0.2.0",
+		"version":      "0.2.1",
 		"architecture": "plugin-based",
 		"mode":         "production",
 	})

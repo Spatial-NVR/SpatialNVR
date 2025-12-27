@@ -31,21 +31,22 @@ const (
 
 // Camera represents a camera's current state
 type Camera struct {
-	ID                string          `json:"id"`
-	Name              string          `json:"name"`
-	Status            Status          `json:"status"`
-	Enabled           bool            `json:"enabled"`
-	Manufacturer      string          `json:"manufacturer,omitempty"`
-	Model             string          `json:"model,omitempty"`
-	StreamURL         string          `json:"stream_url,omitempty"`
-	LastSeen          *time.Time      `json:"last_seen,omitempty"`
-	FPSCurrent        *float64        `json:"fps_current,omitempty"`
-	BitrateCurrent    *int            `json:"bitrate_current,omitempty"`
-	ResolutionCurrent string          `json:"resolution_current,omitempty"`
-	ErrorMessage      string          `json:"error_message,omitempty"`
-	Stats             json.RawMessage `json:"stats,omitempty"`
-	CreatedAt         time.Time       `json:"created_at"`
-	UpdatedAt         time.Time       `json:"updated_at"`
+	ID                 string          `json:"id"`
+	Name               string          `json:"name"`
+	Status             Status          `json:"status"`
+	Enabled            bool            `json:"enabled"`
+	Manufacturer       string          `json:"manufacturer,omitempty"`
+	Model              string          `json:"model,omitempty"`
+	StreamURL          string          `json:"stream_url,omitempty"`
+	DisplayAspectRatio string          `json:"display_aspect_ratio,omitempty"`
+	LastSeen           *time.Time      `json:"last_seen,omitempty"`
+	FPSCurrent         *float64        `json:"fps_current,omitempty"`
+	BitrateCurrent     *int            `json:"bitrate_current,omitempty"`
+	ResolutionCurrent  string          `json:"resolution_current,omitempty"`
+	ErrorMessage       string          `json:"error_message,omitempty"`
+	Stats              json.RawMessage `json:"stats,omitempty"`
+	CreatedAt          time.Time       `json:"created_at"`
+	UpdatedAt          time.Time       `json:"updated_at"`
 }
 
 // Service manages cameras
@@ -98,15 +99,16 @@ func (s *Service) Stop() {
 func (s *Service) syncFromConfig(ctx context.Context) error {
 	for _, camCfg := range s.cfg.Cameras {
 		cam := &Camera{
-			ID:           camCfg.ID,
-			Name:         camCfg.Name,
-			Status:       StatusOffline,
-			Enabled:      camCfg.Enabled,
-			Manufacturer: camCfg.Manufacturer,
-			Model:        camCfg.Model,
-			StreamURL:    camCfg.Stream.URL,
-			CreatedAt:    time.Now(),
-			UpdatedAt:    time.Now(),
+			ID:                 camCfg.ID,
+			Name:               camCfg.Name,
+			Status:             StatusOffline,
+			Enabled:            camCfg.Enabled,
+			Manufacturer:       camCfg.Manufacturer,
+			Model:              camCfg.Model,
+			StreamURL:          camCfg.Stream.URL,
+			DisplayAspectRatio: camCfg.DisplayAspectRatio,
+			CreatedAt:          time.Now(),
+			UpdatedAt:          time.Now(),
 		}
 
 		if err := s.upsertCameraDB(ctx, cam); err != nil {
@@ -252,9 +254,20 @@ func (s *Service) Create(ctx context.Context, camCfg config.CameraConfig) (*Came
 		camCfg.ID = generateCameraID(camCfg.Name)
 	}
 
-	// Set defaults
+	// Set defaults for new cameras
+	camCfg.Enabled = true
+
+	// Enable detection by default with sensible defaults
+	if !camCfg.Detection.Enabled {
+		camCfg.Detection.Enabled = true
+	}
 	if camCfg.Detection.FPS == 0 {
 		camCfg.Detection.FPS = 5
+	}
+
+	// Enable recording by default
+	if !camCfg.Recording.Enabled {
+		camCfg.Recording.Enabled = true
 	}
 	if camCfg.Recording.PreBufferSeconds == 0 {
 		camCfg.Recording.PreBufferSeconds = 5
@@ -262,7 +275,27 @@ func (s *Service) Create(ctx context.Context, camCfg config.CameraConfig) (*Came
 	if camCfg.Recording.PostBufferSeconds == 0 {
 		camCfg.Recording.PostBufferSeconds = 5
 	}
-	camCfg.Enabled = true
+	if camCfg.Recording.Mode == "" {
+		camCfg.Recording.Mode = "continuous"
+	}
+	if camCfg.Recording.SegmentDuration == 0 {
+		camCfg.Recording.SegmentDuration = 300 // 5 minutes
+	}
+	if camCfg.Recording.Retention.DefaultDays == 0 {
+		camCfg.Recording.Retention.DefaultDays = 7
+	}
+
+	// Enable audio by default
+	if !camCfg.Audio.Enabled {
+		camCfg.Audio.Enabled = true
+	}
+
+	// Enable motion detection by default
+	if !camCfg.Motion.Enabled {
+		camCfg.Motion.Enabled = true
+		camCfg.Motion.Method = "frame_diff"
+		camCfg.Motion.Threshold = 0.02
+	}
 
 	// Add to config
 	if err := s.cfg.UpsertCamera(camCfg); err != nil {
@@ -271,15 +304,16 @@ func (s *Service) Create(ctx context.Context, camCfg config.CameraConfig) (*Came
 
 	// Create in database
 	cam := &Camera{
-		ID:           camCfg.ID,
-		Name:         camCfg.Name,
-		Status:       StatusStarting,
-		Enabled:      camCfg.Enabled,
-		Manufacturer: camCfg.Manufacturer,
-		Model:        camCfg.Model,
-		StreamURL:    camCfg.Stream.URL,
-		CreatedAt:    time.Now(),
-		UpdatedAt:    time.Now(),
+		ID:                 camCfg.ID,
+		Name:               camCfg.Name,
+		Status:             StatusStarting,
+		Enabled:            camCfg.Enabled,
+		Manufacturer:       camCfg.Manufacturer,
+		Model:              camCfg.Model,
+		StreamURL:          camCfg.Stream.URL,
+		DisplayAspectRatio: camCfg.DisplayAspectRatio,
+		CreatedAt:          time.Now(),
+		UpdatedAt:          time.Now(),
 	}
 
 	if err := s.upsertCameraDB(ctx, cam); err != nil {
@@ -362,6 +396,13 @@ func (s *Service) UpdateWithFields(ctx context.Context, id string, camCfg config
 		mergedCfg.Model = existing.Model
 	}
 
+	if fieldPresent("display_aspect_ratio") || camCfg.DisplayAspectRatio != "" {
+		mergedCfg.DisplayAspectRatio = camCfg.DisplayAspectRatio
+	}
+	if mergedCfg.DisplayAspectRatio == "" {
+		mergedCfg.DisplayAspectRatio = existing.DisplayAspectRatio
+	}
+
 	// Handle boolean field - enabled at camera level
 	if fieldPresent("enabled") {
 		mergedCfg.Enabled = camCfg.Enabled
@@ -403,15 +444,16 @@ func (s *Service) UpdateWithFields(ctx context.Context, id string, camCfg config
 
 	// Update database
 	cam := &Camera{
-		ID:           id,
-		Name:         mergedCfg.Name,
-		Status:       existing.Status,
-		Enabled:      mergedCfg.Enabled,
-		Manufacturer: mergedCfg.Manufacturer,
-		Model:        mergedCfg.Model,
-		StreamURL:    mergedCfg.Stream.URL,
-		CreatedAt:    existing.CreatedAt,
-		UpdatedAt:    time.Now(),
+		ID:                 id,
+		Name:               mergedCfg.Name,
+		Status:             existing.Status,
+		Enabled:            mergedCfg.Enabled,
+		Manufacturer:       mergedCfg.Manufacturer,
+		Model:              mergedCfg.Model,
+		StreamURL:          mergedCfg.Stream.URL,
+		DisplayAspectRatio: mergedCfg.DisplayAspectRatio,
+		CreatedAt:          existing.CreatedAt,
+		UpdatedAt:          time.Now(),
 	}
 
 	if err := s.upsertCameraDB(ctx, cam); err != nil {
@@ -431,27 +473,47 @@ func (s *Service) UpdateWithFields(ctx context.Context, id string, camCfg config
 	return cam, nil
 }
 
-// Delete deletes a camera
+// Delete deletes a camera from all storage locations
+// It attempts to remove from all sources even if some fail
 func (s *Service) Delete(ctx context.Context, id string) error {
-	// Remove from config
+	var errors []string
+
+	// Remove from config (may fail if camera was only in DB)
 	if err := s.cfg.RemoveCamera(id); err != nil {
-		return err
+		s.logger.Warn("Failed to remove camera from config", "id", id, "error", err)
+		errors = append(errors, fmt.Sprintf("config: %v", err))
 	}
 
 	// Remove from database
-	_, err := s.db.ExecContext(ctx, "DELETE FROM cameras WHERE id = ?", id)
+	result, err := s.db.ExecContext(ctx, "DELETE FROM cameras WHERE id = ?", id)
 	if err != nil {
-		return err
+		s.logger.Error("Failed to remove camera from database", "id", id, "error", err)
+		errors = append(errors, fmt.Sprintf("database: %v", err))
+	} else {
+		rows, _ := result.RowsAffected()
+		s.logger.Info("Deleted camera from database", "id", id, "rows_affected", rows)
 	}
 
-	// Update go2rtc
+	// Remove from memory
+	s.mu.Lock()
+	_, existed := s.cameras[id]
+	delete(s.cameras, id)
+	s.mu.Unlock()
+
+	if existed {
+		s.logger.Info("Removed camera from memory", "id", id)
+	}
+
+	// Update go2rtc config
 	if err := s.updateGo2RTCConfig(); err != nil {
 		s.logger.Error("Failed to update go2rtc config", "error", err)
 	}
 
-	s.mu.Lock()
-	delete(s.cameras, id)
-	s.mu.Unlock()
+	// Return error only if we couldn't delete from ANY source
+	if len(errors) > 0 && !existed {
+		// Camera wasn't in memory either - truly not found
+		return fmt.Errorf("camera not found in any storage: %s", id)
+	}
 
 	return nil
 }

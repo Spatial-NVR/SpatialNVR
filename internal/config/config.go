@@ -81,19 +81,20 @@ type LoggingConfig struct {
 
 // CameraConfig holds configuration for a single camera
 type CameraConfig struct {
-	ID           string           `yaml:"id" json:"id"`
-	Name         string           `yaml:"name" json:"name"`
-	Enabled      bool             `yaml:"enabled" json:"enabled"`
-	Stream       StreamConfig     `yaml:"stream" json:"stream"`
-	Manufacturer string           `yaml:"manufacturer,omitempty" json:"manufacturer,omitempty"`
-	Model        string           `yaml:"model,omitempty" json:"model,omitempty"`
-	Location     LocationConfig   `yaml:"location,omitempty" json:"location,omitempty"`
-	Recording    RecordingConfig  `yaml:"recording" json:"recording"`
-	Detection    DetectionConfig  `yaml:"detection" json:"detection"`
-	Motion       MotionConfig     `yaml:"motion,omitempty" json:"motion,omitempty"`
-	Audio        AudioConfig      `yaml:"audio,omitempty" json:"audio,omitempty"`
-	PTZ          PTZConfig        `yaml:"ptz,omitempty" json:"ptz,omitempty"`
-	Advanced     AdvancedConfig   `yaml:"advanced,omitempty" json:"advanced,omitempty"`
+	ID                 string           `yaml:"id" json:"id"`
+	Name               string           `yaml:"name" json:"name"`
+	Enabled            bool             `yaml:"enabled" json:"enabled"`
+	Stream             StreamConfig     `yaml:"stream" json:"stream"`
+	Manufacturer       string           `yaml:"manufacturer,omitempty" json:"manufacturer,omitempty"`
+	Model              string           `yaml:"model,omitempty" json:"model,omitempty"`
+	DisplayAspectRatio string           `yaml:"display_aspect_ratio,omitempty" json:"display_aspect_ratio,omitempty"`
+	Location           LocationConfig   `yaml:"location,omitempty" json:"location,omitempty"`
+	Recording          RecordingConfig  `yaml:"recording" json:"recording"`
+	Detection          DetectionConfig  `yaml:"detection" json:"detection"`
+	Motion             MotionConfig     `yaml:"motion,omitempty" json:"motion,omitempty"`
+	Audio              AudioConfig      `yaml:"audio,omitempty" json:"audio,omitempty"`
+	PTZ                PTZConfig        `yaml:"ptz,omitempty" json:"ptz,omitempty"`
+	Advanced           AdvancedConfig   `yaml:"advanced,omitempty" json:"advanced,omitempty"`
 }
 
 // MotionConfig holds motion detection settings for a camera
@@ -110,11 +111,20 @@ type MotionConfig struct {
 
 // StreamConfig holds camera stream settings
 type StreamConfig struct {
-	URL      string `yaml:"url" json:"url"`
-	SubURL   string `yaml:"sub_url,omitempty" json:"sub_url,omitempty"`
-	Username string `yaml:"username,omitempty" json:"username,omitempty"`
-	Password string `yaml:"password,omitempty" json:"password,omitempty"`
-	AuthType string `yaml:"auth_type,omitempty" json:"auth_type,omitempty"` // basic, digest, none
+	URL      string            `yaml:"url" json:"url"`
+	SubURL   string            `yaml:"sub_url,omitempty" json:"sub_url,omitempty"`
+	Username string            `yaml:"username,omitempty" json:"username,omitempty"`
+	Password string            `yaml:"password,omitempty" json:"password,omitempty"`
+	AuthType string            `yaml:"auth_type,omitempty" json:"auth_type,omitempty"` // basic, digest, none
+	Roles    *StreamRolesConfig `yaml:"roles,omitempty" json:"roles,omitempty"`         // Which stream to use for each role
+}
+
+// StreamRolesConfig defines which stream (main or sub) to use for each role
+type StreamRolesConfig struct {
+	Detect string `yaml:"detect,omitempty" json:"detect,omitempty"` // main or sub
+	Record string `yaml:"record,omitempty" json:"record,omitempty"` // main or sub
+	Audio  string `yaml:"audio,omitempty" json:"audio,omitempty"`   // main or sub
+	Motion string `yaml:"motion,omitempty" json:"motion,omitempty"` // main or sub
 }
 
 // LocationConfig holds camera location info
@@ -149,6 +159,8 @@ type DetectionConfig struct {
 	Enabled       bool             `yaml:"enabled" json:"enabled"`
 	FPS           int              `yaml:"fps" json:"fps"`
 	Models        []string         `yaml:"models" json:"models"`
+	ShowOverlay   bool             `yaml:"show_overlay,omitempty" json:"show_overlay,omitempty"`
+	MinConfidence float64          `yaml:"min_confidence,omitempty" json:"min_confidence,omitempty"`
 	Zones         []ZoneConfig     `yaml:"zones,omitempty" json:"zones,omitempty"`
 	Filters       FiltersConfig    `yaml:"filters,omitempty" json:"filters,omitempty"`
 	Notifications NotifyConfig     `yaml:"notifications,omitempty" json:"notifications,omitempty"`
@@ -183,9 +195,10 @@ type NotifyConfig struct {
 
 // AudioConfig holds audio detection settings
 type AudioConfig struct {
-	Enabled     bool     `yaml:"enabled"`
-	Detect      []string `yaml:"detect,omitempty"`
-	Sensitivity float64  `yaml:"sensitivity,omitempty"`
+	Enabled     bool     `yaml:"enabled" json:"enabled"`
+	TwoWay      bool     `yaml:"two_way,omitempty" json:"two_way,omitempty"`
+	Detect      []string `yaml:"detect,omitempty" json:"detect,omitempty"`
+	Sensitivity float64  `yaml:"sensitivity,omitempty" json:"sensitivity,omitempty"`
 }
 
 // PTZConfig holds PTZ settings
@@ -574,6 +587,10 @@ func (c *Config) SetPath(path string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.path = path
+	// Also initialize encryption key if not set
+	if c.encKey == nil {
+		c.encKey = getEncryptionKey()
+	}
 }
 
 // GetPath returns the current config file path

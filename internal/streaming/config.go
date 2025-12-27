@@ -106,15 +106,46 @@ func (g *ConfigGenerator) Generate(cameras []CameraStream) *Go2RTCConfig {
 
 	for _, cam := range cameras {
 		streamURL := g.buildStreamURL(cam.URL, cam.Username, cam.Password)
-
-		// Main stream
 		streamName := sanitizeStreamName(cam.ID)
-		config.Streams[streamName] = []string{streamURL}
+
+		// Add audio transcoding to opus directly in the ffmpeg source
+		// This copies video and adds opus audio transcoding for WebRTC
+		// Format: ffmpeg:source#video=copy#audio=copy#audio=opus
+		if strings.HasPrefix(streamURL, "ffmpeg:") {
+			// Already an ffmpeg source, add audio transcoding parameters
+			streamURL = streamURL + "#video=copy#audio=copy#audio=opus"
+			config.Streams[streamName] = []string{streamURL}
+		} else if strings.HasPrefix(streamURL, "rtsp://") || strings.HasPrefix(streamURL, "rtmp://") {
+			// For RTSP/RTMP, add the source and a separate opus transcode
+			config.Streams[streamName] = []string{
+				streamURL,
+				fmt.Sprintf("ffmpeg:%s#audio=opus", streamName),
+			}
+		} else {
+			// For other protocols (http-flv, etc.), wrap with ffmpeg and add audio
+			config.Streams[streamName] = []string{
+				fmt.Sprintf("ffmpeg:%s#video=copy#audio=copy#audio=opus", streamURL),
+			}
+		}
 
 		// Sub stream if available
 		if cam.SubURL != "" {
 			subStreamURL := g.buildStreamURL(cam.SubURL, cam.Username, cam.Password)
-			config.Streams[streamName+"_sub"] = []string{subStreamURL}
+			subStreamName := streamName + "_sub"
+
+			if strings.HasPrefix(subStreamURL, "ffmpeg:") {
+				subStreamURL = subStreamURL + "#video=copy#audio=copy#audio=opus"
+				config.Streams[subStreamName] = []string{subStreamURL}
+			} else if strings.HasPrefix(subStreamURL, "rtsp://") || strings.HasPrefix(subStreamURL, "rtmp://") {
+				config.Streams[subStreamName] = []string{
+					subStreamURL,
+					fmt.Sprintf("ffmpeg:%s#audio=opus", subStreamName),
+				}
+			} else {
+				config.Streams[subStreamName] = []string{
+					fmt.Sprintf("ffmpeg:%s#video=copy#audio=copy#audio=opus", subStreamURL),
+				}
+			}
 		}
 	}
 

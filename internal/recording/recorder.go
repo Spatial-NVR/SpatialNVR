@@ -20,21 +20,21 @@ import (
 
 // Recorder manages FFmpeg recording for a single camera
 type Recorder struct {
-	cameraID   string
-	config     *config.CameraConfig
+	cameraID    string
+	config      *config.CameraConfig
 	storagePath string
 
-	mu            sync.RWMutex
-	state         RecorderState
-	cmd           *exec.Cmd
-	cancel        context.CancelFunc
+	mu             sync.RWMutex
+	state          RecorderState
+	cmd            *exec.Cmd
+	cancel         context.CancelFunc
 	currentSegment string
-	segmentStart  time.Time
-	bytesWritten  int64
-	segmentsCount int
-	startTime     time.Time
-	lastError     string
-	lastErrorTime time.Time
+	segmentStart   time.Time
+	bytesWritten   int64
+	segmentsCount  int
+	startTime      time.Time
+	lastError      string
+	lastErrorTime  time.Time
 
 	onSegmentComplete func(segment *Segment)
 	segmentHandler    SegmentHandler
@@ -42,6 +42,7 @@ type Recorder struct {
 }
 
 // NewRecorder creates a new camera recorder
+// Records directly from the camera's native stream URL (RTSP, RTMP, HLS, HTTP, etc.)
 func NewRecorder(
 	cameraID string,
 	cfg *config.CameraConfig,
@@ -220,11 +221,47 @@ func sanitizeStreamName(name string) string {
 	return strings.ToLower(replacer.Replace(name))
 }
 
+// buildStreamURL constructs the stream URL with authentication if needed
+func (r *Recorder) buildStreamURL() string {
+	streamURL := r.config.Stream.URL
+	if streamURL == "" {
+		r.logger.Error("No stream URL configured for camera", "camera", r.cameraID)
+		return ""
+	}
+
+	// Add authentication to URL if configured
+	if r.config.Stream.Username != "" && r.config.Stream.Password != "" {
+		// Parse the URL to inject credentials
+		if strings.HasPrefix(streamURL, "rtsp://") {
+			streamURL = fmt.Sprintf("rtsp://%s:%s@%s",
+				r.config.Stream.Username,
+				r.config.Stream.Password,
+				strings.TrimPrefix(streamURL, "rtsp://"))
+		} else if strings.HasPrefix(streamURL, "http://") {
+			streamURL = fmt.Sprintf("http://%s:%s@%s",
+				r.config.Stream.Username,
+				r.config.Stream.Password,
+				strings.TrimPrefix(streamURL, "http://"))
+		} else if strings.HasPrefix(streamURL, "https://") {
+			streamURL = fmt.Sprintf("https://%s:%s@%s",
+				r.config.Stream.Username,
+				r.config.Stream.Password,
+				strings.TrimPrefix(streamURL, "https://"))
+		}
+	}
+
+	return streamURL
+}
+
 // buildFFmpegArgs constructs the FFmpeg command arguments
 func (r *Recorder) buildFFmpegArgs() []string {
-	// Get stream URL through go2rtc (sanitize camera ID to match go2rtc stream names)
-	streamName := sanitizeStreamName(r.cameraID)
-	streamURL := fmt.Sprintf("rtsp://localhost:8554/%s", streamName)
+	// Use the camera's native stream URL directly
+	streamURL := r.buildStreamURL()
+	if streamURL == "" {
+		return nil
+	}
+
+	r.logger.Info("Recording from stream", "url", sanitizeURLForLog(streamURL))
 
 	// Output path pattern
 	outputPattern := filepath.Join(r.storagePath, r.cameraID, "%Y-%m-%d_%H-%M-%S.mp4")
@@ -259,9 +296,16 @@ func (r *Recorder) buildFFmpegArgs() []string {
 		args = append(args, hwAccelArgs...)
 	}
 
+	// Add protocol-specific input options
+	if strings.HasPrefix(streamURL, "rtsp://") {
+		args = append(args, "-rtsp_transport", "tcp")
+	} else if strings.HasPrefix(streamURL, "rtmp://") {
+		args = append(args, "-live_start_index", "-1")
+	}
+	// HLS, HTTP, and other protocols don't need special options
+
 	// Add input and output args
 	args = append(args,
-		"-rtsp_transport", "tcp",
 		"-i", streamURL,
 		"-c:v", "copy",
 		"-c:a", "copy",
@@ -276,6 +320,21 @@ func (r *Recorder) buildFFmpegArgs() []string {
 	)
 
 	return args
+}
+
+// sanitizeURLForLog removes credentials from URL for safe logging
+func sanitizeURLForLog(url string) string {
+	// Simple pattern to remove credentials from URL
+	// Matches protocol://user:pass@host...
+	for _, proto := range []string{"rtsp://", "http://", "https://", "rtmp://"} {
+		if strings.HasPrefix(url, proto) {
+			remainder := strings.TrimPrefix(url, proto)
+			if atIdx := strings.Index(remainder, "@"); atIdx != -1 {
+				return proto + "***:***@" + remainder[atIdx+1:]
+			}
+		}
+	}
+	return url
 }
 
 // parseFFmpegOutput parses FFmpeg stderr for segment completion

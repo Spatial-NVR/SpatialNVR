@@ -162,12 +162,14 @@ export function WyzeSetup({ pluginId, onCameraAdded }: WyzeSetupProps) {
       return data.result as WyzeCamera[]
     },
     onSuccess: (cameras) => {
-      setDiscoveredCameras(cameras)
+      // Ensure cameras is an array (plugin may return null)
+      const cameraList = cameras || []
+      setDiscoveredCameras(cameraList)
       // Select all cameras by default
-      setSelectedCameras(new Set(cameras.map(c => c.id)))
+      setSelectedCameras(new Set(cameraList.map(c => c.id)))
       // Initialize names
       const names: Record<string, string> = {}
-      cameras.forEach(c => {
+      cameraList.forEach(c => {
         names[c.id] = c.name
       })
       setCameraNames(names)

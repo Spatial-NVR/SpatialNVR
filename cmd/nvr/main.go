@@ -12,10 +12,12 @@ import (
 	"net/http/httputil"
 	"net/url"
 	"os"
+	"os/exec"
 	"os/signal"
 	"path/filepath"
 	"runtime"
 	goruntime "runtime"
+	"sort"
 	"strconv"
 	"strings"
 	"syscall"
@@ -32,6 +34,7 @@ import (
 	"github.com/Spatial-NVR/SpatialNVR/internal/database"
 	"github.com/Spatial-NVR/SpatialNVR/internal/detection"
 	"github.com/Spatial-NVR/SpatialNVR/internal/logging"
+	"github.com/Spatial-NVR/SpatialNVR/internal/video"
 	"github.com/Spatial-NVR/SpatialNVR/internal/plugin"
 	"github.com/Spatial-NVR/SpatialNVR/sdk"
 	nvrcoreapi "github.com/Spatial-NVR/SpatialNVR/plugins/nvr-core-api"
@@ -70,7 +73,7 @@ func main() {
 	}
 
 	slog.Info("Starting NVR System (Plugin Architecture)",
-		"version", "0.2.0",
+		"version", "0.2.1",
 		"mode", "plugin-based",
 		"api_port", ports.API,
 		"nats_port", ports.NATS,
@@ -399,7 +402,7 @@ func setupRouter(gateway *core.APIGateway, loader *core.PluginLoader, eventBus *
 		}
 
 		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprintf(w, `{"status":"%s","version":"0.2.0","plugins":%d,"mode":"plugin-based"}`, status, len(plugins))
+		fmt.Fprintf(w, `{"status":"%s","version":"0.2.1","plugins":%d,"mode":"plugin-based"}`, status, len(plugins))
 	})
 
 	// API routes
@@ -413,7 +416,7 @@ func setupRouter(gateway *core.APIGateway, loader *core.PluginLoader, eventBus *
 			r.Post("/{id}/enable", handleEnablePlugin(loader))
 			r.Post("/{id}/disable", handleDisablePlugin(loader))
 			r.Post("/{id}/restart", handleRestartPlugin(loader))
-			r.Delete("/{id}", handleUninstallPlugin(installer))
+			r.Delete("/{id}", handleUninstallPlugin(installer, loader))
 			r.Get("/{id}/config", handleGetPluginConfig(loader))
 			r.Put("/{id}/config", handleSetPluginConfig(loader))
 			r.Get("/{id}/logs", handleGetPluginLogs(loader))
@@ -490,6 +493,12 @@ func setupRouter(gateway *core.APIGateway, loader *core.PluginLoader, eventBus *
 func handleListPlugins(loader *core.PluginLoader) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		plugins := loader.ListPlugins()
+
+		// Sort plugins alphabetically by ID for stable ordering
+		sort.Slice(plugins, func(i, j int) bool {
+			return plugins[i].Manifest.ID < plugins[j].Manifest.ID
+		})
+
 		w.Header().Set("Content-Type", "application/json")
 		fmt.Fprint(w, "[")
 		for i, p := range plugins {
@@ -799,6 +808,21 @@ func handleGetPorts() http.HandlerFunc {
 	}
 }
 
+// isRunningOnAppleSilicon detects if running in Docker on Apple Silicon Mac
+// by checking CPU info for Apple-specific identifiers
+func isRunningOnAppleSilicon() bool {
+	// Check /proc/cpuinfo for Apple CPU identifiers
+	data, err := os.ReadFile("/proc/cpuinfo")
+	if err != nil {
+		return false
+	}
+	cpuInfo := string(data)
+	// Apple Silicon in Docker shows specific patterns
+	return strings.Contains(cpuInfo, "Apple") ||
+		strings.Contains(cpuInfo, "0x61") || // Apple vendor ID in hex
+		strings.Contains(strings.ToLower(cpuInfo), "apple")
+}
+
 // handleSystemMetrics returns system resource metrics (CPU, memory, disk, GPU)
 func handleSystemMetrics() http.HandlerFunc {
 	startTime := time.Now()
@@ -843,30 +867,81 @@ func handleSystemMetrics() http.HandlerFunc {
 		diskFree = diskTotal - diskUsed
 		diskPercent = float64(diskUsed) / float64(diskTotal) * 100
 
-		// GPU detection - check for Apple Silicon
+		// GPU detection
 		gpu := map[string]interface{}{
 			"available": false,
 		}
 
-		// Check if running on macOS with Apple Silicon
-		if goruntime.GOOS == "darwin" && goruntime.GOARCH == "arm64" {
+		// Check for hardware acceleration
+		hwCaps, err := video.DetectHWAccel(r.Context())
+		if err == nil && len(hwCaps.Available) > 0 {
+			gpuName := hwCaps.GPUName
+			gpuType := string(hwCaps.Recommended)
+			if gpuName == "" {
+				// Derive name from acceleration type
+				switch hwCaps.Recommended {
+				case video.HWAccelCUDA:
+					gpuName = "NVIDIA GPU"
+				case video.HWAccelVideoToolbox:
+					gpuName = "Apple M-series GPU"
+				case video.HWAccelVAAPI:
+					gpuName = "VA-API Compatible GPU"
+				case video.HWAccelQSV:
+					gpuName = "Intel Quick Sync GPU"
+				default:
+					gpuName = "Hardware Accelerated GPU"
+				}
+			}
+			gpu = map[string]interface{}{
+				"available":   true,
+				"name":        gpuName,
+				"type":        gpuType,
+				"utilization": 5, // Would need specific APIs for real utilization
+				"decode_h264": hwCaps.DecodeH264,
+				"decode_h265": hwCaps.DecodeH265,
+				"encode_h264": hwCaps.EncodeH264,
+				"encode_h265": hwCaps.EncodeH265,
+			}
+		} else if goruntime.GOOS == "darwin" && goruntime.GOARCH == "arm64" {
+			// Fallback for macOS Apple Silicon
 			gpu = map[string]interface{}{
 				"available":   true,
 				"name":        "Apple M-series GPU",
 				"type":        "apple",
-				"utilization": 5, // Would need IOKit to get real value
+				"utilization": 5,
 			}
 		}
 
-		// NPU detection - Apple Neural Engine on M-series
+		// NPU detection
 		npu := map[string]interface{}{
 			"available": false,
 		}
-		if goruntime.GOOS == "darwin" && goruntime.GOARCH == "arm64" {
+		// Apple Neural Engine on M-series Macs (native or in Docker on Apple Silicon)
+		isAppleSilicon := (goruntime.GOOS == "darwin" && goruntime.GOARCH == "arm64") ||
+			(goruntime.GOOS == "linux" && goruntime.GOARCH == "arm64" && isRunningOnAppleSilicon())
+		if isAppleSilicon {
 			npu = map[string]interface{}{
 				"available": true,
 				"name":      "Apple Neural Engine",
 				"type":      "apple_ane",
+			}
+		}
+		// Check for Coral TPU (USB or PCIe)
+		if _, err := os.Stat("/dev/apex_0"); err == nil {
+			npu = map[string]interface{}{
+				"available": true,
+				"name":      "Google Coral TPU",
+				"type":      "coral_tpu",
+			}
+		} else if _, err := os.Stat("/dev/bus/usb"); err == nil {
+			// Check for Coral USB devices (vendor ID 18d1 for Google)
+			usbOutput, _ := exec.Command("lsusb").Output()
+			if strings.Contains(string(usbOutput), "18d1:9302") || strings.Contains(string(usbOutput), "1a6e:089a") {
+				npu = map[string]interface{}{
+					"available": true,
+					"name":      "Google Coral USB Accelerator",
+					"type":      "coral_usb",
+				}
 			}
 		}
 
@@ -1474,24 +1549,54 @@ func handleInstallPlugin(installer *plugin.Installer, loader *core.PluginLoader)
 			return
 		}
 
+		// Hot-reload: scan and start the newly installed plugin
+		hotReloaded := false
+		if startErr := loader.ScanAndStart(ctx, manifest.ID); startErr != nil {
+			slog.Warn("Plugin installed but failed to hot-reload", "plugin", manifest.ID, "error", startErr)
+		} else {
+			hotReloaded = true
+			slog.Info("Plugin installed and hot-reloaded successfully", "plugin", manifest.ID)
+		}
+
+		message := "Plugin installed successfully"
+		if hotReloaded {
+			message = "Plugin installed and started successfully (hot-reload)"
+		} else {
+			message = "Plugin installed successfully. Restart may be required to activate."
+		}
+
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]interface{}{
-			"success": true,
+			"success":      true,
+			"hot_reloaded": hotReloaded,
 			"plugin": map[string]string{
 				"id":      manifest.ID,
 				"name":    manifest.Name,
 				"version": manifest.Version,
 			},
-			"message": "Plugin installed successfully. Restart may be required to activate.",
+			"message": message,
 		})
 	}
 }
 
 // handleUninstallPlugin removes an installed plugin
-func handleUninstallPlugin(installer *plugin.Installer) http.HandlerFunc {
+func handleUninstallPlugin(installer *plugin.Installer, loader *core.PluginLoader) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		id := chi.URLParam(r, "id")
 
+		// First, try to stop the plugin if it's running or in error state
+		if err := loader.DisablePlugin(r.Context(), id); err != nil {
+			// Log but don't fail - plugin might already be stopped or not exist in loader
+			slog.Debug("Could not disable plugin during uninstall", "id", id, "error", err)
+		}
+
+		// Unregister the plugin from the loader
+		if err := loader.UnregisterPlugin(id); err != nil {
+			// Log but don't fail - we still want to remove the files
+			slog.Debug("Could not unregister plugin during uninstall", "id", id, "error", err)
+		}
+
+		// Remove plugin files
 		if err := installer.UninstallPlugin(id); err != nil {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusInternalServerError)
@@ -1502,6 +1607,7 @@ func handleUninstallPlugin(installer *plugin.Installer) http.HandlerFunc {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]interface{}{
 			"success": true,
+			"id":      id,
 			"message": "Plugin uninstalled successfully",
 		})
 	}

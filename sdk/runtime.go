@@ -119,6 +119,16 @@ func (r *PluginRuntime) addLog(entry LogEntry) {
 	}
 }
 
+// AddLog adds a log entry to the buffer (public method for external plugins)
+func (r *PluginRuntime) AddLog(level, message string, metadata map[string]interface{}) {
+	r.addLog(LogEntry{
+		Timestamp: time.Now(),
+		Level:     level,
+		Message:   message,
+		Metadata:  metadata,
+	})
+}
+
 // GetLogs returns the last n log entries
 func (r *PluginRuntime) GetLogs(n int) []LogEntry {
 	r.logMu.RLock()

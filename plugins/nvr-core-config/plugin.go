@@ -199,15 +199,42 @@ func (p *ConfigPlugin) handleGetConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Return sanitized config (no passwords)
+	// Return full config (no passwords) matching what the frontend expects
 	safeConfig := map[string]interface{}{
 		"version":      cfg.Version,
 		"camera_count": len(cfg.Cameras),
 		"system": map[string]interface{}{
-			"name":         cfg.System.Name,
-			"timezone":     cfg.System.Timezone,
-			"storage_path": cfg.System.StoragePath,
+			"name":           cfg.System.Name,
+			"timezone":       cfg.System.Timezone,
+			"storage_path":   cfg.System.StoragePath,
+			"max_storage_gb": cfg.System.MaxStorageGB,
 		},
+		"storage": map[string]interface{}{
+			"retention": map[string]interface{}{
+				"default_days": cfg.Storage.Retention.DefaultDays,
+			},
+		},
+		"detection": map[string]interface{}{
+			"backend": cfg.Detectors.YOLO12.Type,
+			"fps":     5, // Default detection FPS
+			"objects": map[string]interface{}{
+				"enabled":    cfg.Detectors.YOLO12.Model != "",
+				"model":      cfg.Detectors.YOLO12.Model,
+				"confidence": cfg.Detectors.YOLO12.Confidence,
+				"classes":    cfg.Detectors.YOLO12.Classes,
+			},
+			"faces": map[string]interface{}{
+				"enabled":    cfg.Detectors.FaceRecognition.Model != "",
+				"model":      cfg.Detectors.FaceRecognition.Model,
+				"confidence": cfg.Detectors.FaceRecognition.Confidence,
+			},
+			"lpr": map[string]interface{}{
+				"enabled":    cfg.Detectors.LPR.Type != "",
+				"model":      cfg.Detectors.LPR.Type,
+				"confidence": cfg.Detectors.LPR.Confidence,
+			},
+		},
+		"preferences": cfg.Preferences,
 	}
 
 	p.respondJSON(w, safeConfig)
@@ -220,7 +247,122 @@ func (p *ConfigPlugin) handleUpdateConfig(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	// Configuration update would be implemented here
+	p.mu.Lock()
+	cfg := p.config
+	if cfg == nil {
+		p.mu.Unlock()
+		p.respondError(w, http.StatusServiceUnavailable, "Configuration not loaded")
+		return
+	}
+
+	// Apply system updates
+	if system, ok := updates["system"].(map[string]interface{}); ok {
+		if name, ok := system["name"].(string); ok {
+			cfg.System.Name = name
+		}
+		if tz, ok := system["timezone"].(string); ok {
+			cfg.System.Timezone = tz
+		}
+		if maxStorage, ok := system["max_storage_gb"].(float64); ok {
+			cfg.System.MaxStorageGB = int(maxStorage)
+		}
+	}
+
+	// Apply storage updates
+	if storage, ok := updates["storage"].(map[string]interface{}); ok {
+		if retention, ok := storage["retention"].(map[string]interface{}); ok {
+			if days, ok := retention["default_days"].(float64); ok {
+				cfg.Storage.Retention.DefaultDays = int(days)
+			}
+		}
+	}
+
+	// Apply detection updates
+	if detection, ok := updates["detection"].(map[string]interface{}); ok {
+		if backend, ok := detection["backend"].(string); ok {
+			cfg.Detectors.YOLO12.Type = backend
+		}
+		if objects, ok := detection["objects"].(map[string]interface{}); ok {
+			if model, ok := objects["model"].(string); ok {
+				cfg.Detectors.YOLO12.Model = model
+			}
+			if conf, ok := objects["confidence"].(float64); ok {
+				cfg.Detectors.YOLO12.Confidence = conf
+			}
+			if classes, ok := objects["classes"].([]interface{}); ok {
+				cfg.Detectors.YOLO12.Classes = make([]string, 0, len(classes))
+				for _, c := range classes {
+					if s, ok := c.(string); ok {
+						cfg.Detectors.YOLO12.Classes = append(cfg.Detectors.YOLO12.Classes, s)
+					}
+				}
+			}
+		}
+		if faces, ok := detection["faces"].(map[string]interface{}); ok {
+			if model, ok := faces["model"].(string); ok {
+				cfg.Detectors.FaceRecognition.Model = model
+			}
+			if conf, ok := faces["confidence"].(float64); ok {
+				cfg.Detectors.FaceRecognition.Confidence = conf
+			}
+		}
+		if lpr, ok := detection["lpr"].(map[string]interface{}); ok {
+			if model, ok := lpr["model"].(string); ok {
+				cfg.Detectors.LPR.Type = model
+			}
+			if conf, ok := lpr["confidence"].(float64); ok {
+				cfg.Detectors.LPR.Confidence = conf
+			}
+		}
+	}
+
+	// Apply preferences updates
+	if prefs, ok := updates["preferences"].(map[string]interface{}); ok {
+		if ui, ok := prefs["ui"].(map[string]interface{}); ok {
+			if theme, ok := ui["theme"].(string); ok {
+				cfg.Preferences.UI.Theme = theme
+			}
+			if lang, ok := ui["language"].(string); ok {
+				cfg.Preferences.UI.Language = lang
+			}
+			if dash, ok := ui["dashboard"].(map[string]interface{}); ok {
+				if cols, ok := dash["grid_columns"].(float64); ok {
+					cfg.Preferences.UI.Dashboard.GridColumns = int(cols)
+				}
+				if showFps, ok := dash["show_fps"].(bool); ok {
+					cfg.Preferences.UI.Dashboard.ShowFPS = showFps
+				}
+			}
+		}
+		if timeline, ok := prefs["timeline"].(map[string]interface{}); ok {
+			if hours, ok := timeline["default_range_hours"].(float64); ok {
+				cfg.Preferences.Timeline.DefaultRangeHours = int(hours)
+			}
+			if interval, ok := timeline["thumbnail_interval_seconds"].(float64); ok {
+				cfg.Preferences.Timeline.ThumbnailIntervalSeconds = int(interval)
+			}
+		}
+		if events, ok := prefs["events"].(map[string]interface{}); ok {
+			if days, ok := events["auto_acknowledge_after_days"].(float64); ok {
+				cfg.Preferences.Events.AutoAcknowledgeAfterDays = int(days)
+			}
+			if group, ok := events["group_similar_events"].(bool); ok {
+				cfg.Preferences.Events.GroupSimilarEvents = group
+			}
+			if window, ok := events["group_window_seconds"].(float64); ok {
+				cfg.Preferences.Events.GroupWindowSeconds = int(window)
+			}
+		}
+	}
+
+	p.mu.Unlock()
+
+	// Save configuration to disk
+	if err := cfg.Save(); err != nil {
+		p.respondError(w, http.StatusInternalServerError, "Failed to save configuration: "+err.Error())
+		return
+	}
+
 	p.respondJSON(w, map[string]string{"status": "updated"})
 
 	// Publish config changed event

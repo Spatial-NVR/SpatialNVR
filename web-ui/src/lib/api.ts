@@ -94,7 +94,10 @@ export interface CameraConfig {
     mode?: 'continuous' | 'motion' | 'events';
     pre_buffer_seconds?: number;
     post_buffer_seconds?: number;
-    retention_days?: number;
+    retention?: {
+      default_days?: number;
+      events_days?: number;
+    };
   };
   detection?: {
     enabled?: boolean;
@@ -275,6 +278,11 @@ async function request<T>(
     return response.blob() as unknown as T;
   }
 
+  // Handle 204 No Content (e.g., DELETE requests)
+  if (response.status === 204) {
+    return undefined as unknown as T;
+  }
+
   const json = await response.json();
 
   // Handle both wrapped {success, data} and unwrapped responses
@@ -394,17 +402,27 @@ export const eventApi = {
     type?: string;
     page?: number;
     per_page?: number;
+    limit?: number;
+    offset?: number;
   }): Promise<{ data: Event[]; total: number }> => {
     const searchParams = new URLSearchParams();
     if (params?.camera_id) searchParams.set('camera_id', params.camera_id);
     if (params?.type) searchParams.set('type', params.type);
+    if (params?.limit) searchParams.set('limit', params.limit.toString());
+    if (params?.offset) searchParams.set('offset', params.offset.toString());
+    // Legacy page/per_page support
     if (params?.page) searchParams.set('page', params.page.toString());
     if (params?.per_page) searchParams.set('per_page', params.per_page.toString());
 
     const query = searchParams.toString();
     const endpoint = `/api/v1/events${query ? `?${query}` : ''}`;
 
-    return request<{ data: Event[]; total: number }>(endpoint);
+    // Backend returns { events: [...] }, normalize to { data: [...] }
+    const response = await request<{ events?: Event[]; data?: Event[]; total: number }>(endpoint);
+    return {
+      data: response.events || response.data || [],
+      total: response.total,
+    };
   },
 
   /**
@@ -419,7 +437,7 @@ export const eventApi = {
    */
   acknowledge: async (id: string): Promise<void> => {
     await request<void>(`/api/v1/events/${id}/acknowledge`, {
-      method: 'PUT',
+      method: 'POST',
     });
   },
 };

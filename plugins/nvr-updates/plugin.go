@@ -18,7 +18,7 @@ import (
 )
 
 // Version is set at build time
-var Version = "0.2.0"
+var Version = "0.2.1"
 
 // Plugin implements the NVR updates plugin
 type Plugin struct {

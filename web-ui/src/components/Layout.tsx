@@ -1,5 +1,5 @@
 import { Outlet, NavLink } from 'react-router-dom'
-import { Home, Camera, Bell, Settings, Menu, X, ChevronLeft, ChevronRight, Video, Search, Target, Puzzle, Activity } from 'lucide-react'
+import { Home, Bell, Settings, Menu, X, ChevronLeft, ChevronRight, Video, Search, Target, Puzzle, Activity } from 'lucide-react'
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { DoorbellNotification } from './DoorbellNotification'
@@ -21,7 +21,6 @@ export function Layout() {
 
   const mainNavItems = [
     { to: '/', icon: Home, label: 'Live View' },
-    { to: '/cameras', icon: Camera, label: 'Cameras' },
     { to: '/recordings', icon: Video, label: 'Recordings' },
     { to: '/events', icon: Bell, label: 'Events' },
     { to: '/search', icon: Search, label: 'Search' },

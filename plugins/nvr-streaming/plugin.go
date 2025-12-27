@@ -148,7 +148,7 @@ func (p *StreamingPlugin) syncExistingCameras(ctx context.Context) {
 
 	// Fetch cameras from local API
 	client := &http.Client{Timeout: 5 * time.Second}
-	resp, err := client.Get("http://localhost:12000/api/v1/cameras")
+	resp, err := client.Get("http://localhost:8080/api/v1/cameras")
 	if err != nil {
 		runtime.Logger().Error("Failed to fetch cameras for sync", "error", err)
 		return
