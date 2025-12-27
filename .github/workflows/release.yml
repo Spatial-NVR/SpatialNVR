@@ -36,15 +36,31 @@ jobs:
         id: version
         run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
 
-      - name: Build and push Docker image
+      # Build AMD64 image as the default (supports Wyze plugin via TUTK)
+      - name: Build and push Docker image (amd64 - default)
         uses: docker/build-push-action@v6
         with:
           context: .
-          platforms: linux/amd64,linux/arm64
+          platforms: linux/amd64
           push: true
           tags: |
             ghcr.io/spatial-nvr/spatialnvr:${{ steps.version.outputs.VERSION }}
+            ghcr.io/spatial-nvr/spatialnvr:${{ steps.version.outputs.VERSION }}-amd64
             ghcr.io/spatial-nvr/spatialnvr:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # Build ARM64 image for native performance on ARM devices
+      # Note: Wyze plugin requires amd64 due to TUTK library limitations
+      - name: Build and push Docker image (arm64)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/arm64
+          push: true
+          tags: |
+            ghcr.io/spatial-nvr/spatialnvr:${{ steps.version.outputs.VERSION }}-arm64
+            ghcr.io/spatial-nvr/spatialnvr:arm64
           cache-from: type=gha
           cache-to: type=gha,mode=max
 

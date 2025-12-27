@@ -11,6 +11,21 @@ A modern, plugin-based Network Video Recorder system with AI detection and spati
 - **go2rtc Integration** - WebRTC, RTSP, and HLS streaming
 - **Standalone Deployment** - Single Docker container for easy setup
 
+## Docker Images
+
+| Tag | Architecture | Description |
+|-----|-------------|-------------|
+| `latest` | amd64 | **Recommended.** Full compatibility, supports all plugins including Wyze |
+| `arm64` | arm64 | Native ARM performance for Raspberry Pi and ARM servers |
+| `vX.X.X` | amd64 | Versioned release (amd64) |
+| `vX.X.X-arm64` | arm64 | Versioned release (arm64) |
+
+### Which image should I use?
+
+- **Most users**: Use `latest` (amd64). Works everywhere including Apple Silicon Macs via Rosetta 2
+- **ARM devices without Wyze**: Use `arm64` for native performance on Raspberry Pi, AWS Graviton, etc.
+- **Wyze camera users**: Must use `latest` (amd64) - the Wyze plugin requires the TUTK library which only supports x86_64
+
 ## Quick Start with Docker
 
 ```bash

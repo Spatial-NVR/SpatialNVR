@@ -1,5 +1,13 @@
-# NVR System - Standalone Dockerfile
+# SpatialNVR - Standalone Dockerfile
 # Multi-stage build for optimal image size
+#
+# Architecture Strategy:
+# - amd64 (latest): Default image, full plugin compatibility including Wyze
+# - arm64: Native ARM performance for Raspberry Pi, AWS Graviton, etc.
+#
+# The Wyze plugin requires the TUTK library which only provides Linux x86_64 binaries.
+# Users who need Wyze support must use the amd64 image (works on Apple Silicon via Rosetta 2).
+# Users on ARM devices who don't need Wyze can use the arm64 image for better performance.
 
 # =============================================================================
 # Stage 1: Build the Go backend
