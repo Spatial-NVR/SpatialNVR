@@ -221,7 +221,7 @@ func (s *Store) ListMaps() ([]SpatialMap, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var maps []SpatialMap
 	for rows.Next() {
@@ -386,7 +386,7 @@ func (s *Store) ListPlacementsByMap(mapID string) ([]CameraPlacement, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var placements []CameraPlacement
 	for rows.Next() {
@@ -500,13 +500,13 @@ func (s *Store) GetTransition(id string) (*CameraTransition, error) {
 	}
 
 	if overlapJSON != "" {
-		json.Unmarshal([]byte(overlapJSON), &ct.OverlapZone)
+		_ = json.Unmarshal([]byte(overlapJSON), &ct.OverlapZone)
 	}
 	if exitJSON != "" {
-		json.Unmarshal([]byte(exitJSON), &ct.ExitZone)
+		_ = json.Unmarshal([]byte(exitJSON), &ct.ExitZone)
 	}
 	if entryJSON != "" {
-		json.Unmarshal([]byte(entryJSON), &ct.EntryZone)
+		_ = json.Unmarshal([]byte(entryJSON), &ct.EntryZone)
 	}
 
 	if expectedTime.Valid {
@@ -546,13 +546,13 @@ func (s *Store) GetTransitionByCameras(fromCameraID, toCameraID string) (*Camera
 	}
 
 	if overlapJSON != "" {
-		json.Unmarshal([]byte(overlapJSON), &ct.OverlapZone)
+		_ = json.Unmarshal([]byte(overlapJSON), &ct.OverlapZone)
 	}
 	if exitJSON != "" {
-		json.Unmarshal([]byte(exitJSON), &ct.ExitZone)
+		_ = json.Unmarshal([]byte(exitJSON), &ct.ExitZone)
 	}
 	if entryJSON != "" {
-		json.Unmarshal([]byte(entryJSON), &ct.EntryZone)
+		_ = json.Unmarshal([]byte(entryJSON), &ct.EntryZone)
 	}
 
 	if expectedTime.Valid {
@@ -580,7 +580,7 @@ func (s *Store) ListTransitions() ([]CameraTransition, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var transitions []CameraTransition
 	for rows.Next() {
@@ -593,13 +593,13 @@ func (s *Store) ListTransitions() ([]CameraTransition, error) {
 		}
 
 		if overlapJSON != "" {
-			json.Unmarshal([]byte(overlapJSON), &ct.OverlapZone)
+			_ = json.Unmarshal([]byte(overlapJSON), &ct.OverlapZone)
 		}
 		if exitJSON != "" {
-			json.Unmarshal([]byte(exitJSON), &ct.ExitZone)
+			_ = json.Unmarshal([]byte(exitJSON), &ct.ExitZone)
 		}
 		if entryJSON != "" {
-			json.Unmarshal([]byte(entryJSON), &ct.EntryZone)
+			_ = json.Unmarshal([]byte(entryJSON), &ct.EntryZone)
 		}
 
 		if expectedTime.Valid {
@@ -632,7 +632,7 @@ func (s *Store) ListTransitionsFromCamera(cameraID string) ([]CameraTransition, 
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var transitions []CameraTransition
 	for rows.Next() {
@@ -645,13 +645,13 @@ func (s *Store) ListTransitionsFromCamera(cameraID string) ([]CameraTransition, 
 		}
 
 		if overlapJSON != "" {
-			json.Unmarshal([]byte(overlapJSON), &ct.OverlapZone)
+			_ = json.Unmarshal([]byte(overlapJSON), &ct.OverlapZone)
 		}
 		if exitJSON != "" {
-			json.Unmarshal([]byte(exitJSON), &ct.ExitZone)
+			_ = json.Unmarshal([]byte(exitJSON), &ct.ExitZone)
 		}
 		if entryJSON != "" {
-			json.Unmarshal([]byte(entryJSON), &ct.EntryZone)
+			_ = json.Unmarshal([]byte(entryJSON), &ct.EntryZone)
 		}
 
 		if expectedTime.Valid {
@@ -796,7 +796,7 @@ func (s *Store) GetTrack(id string) (*GlobalTrack, error) {
 		gt.EmbeddingConf = embeddingConf.Float64
 	}
 	if colorsJSON != "" {
-		json.Unmarshal([]byte(colorsJSON), &gt.DominantColors)
+		_ = json.Unmarshal([]byte(colorsJSON), &gt.DominantColors)
 	}
 	if estimatedHeight.Valid {
 		gt.EstimatedHeight = estimatedHeight.Float64
@@ -832,7 +832,7 @@ func (s *Store) listTracksByState(state string) ([]GlobalTrack, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var tracks []GlobalTrack
 	for rows.Next() {
@@ -858,7 +858,7 @@ func (s *Store) listTracksByState(state string) ([]GlobalTrack, error) {
 			gt.EmbeddingConf = embeddingConf.Float64
 		}
 		if colorsJSON != "" {
-			json.Unmarshal([]byte(colorsJSON), &gt.DominantColors)
+			_ = json.Unmarshal([]byte(colorsJSON), &gt.DominantColors)
 		}
 		if estimatedHeight.Valid {
 			gt.EstimatedHeight = estimatedHeight.Float64
@@ -953,7 +953,7 @@ func (s *Store) ListSegmentsByTrack(trackID string) ([]TrackSegment, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var segments []TrackSegment
 	for rows.Next() {
@@ -977,7 +977,7 @@ func (s *Store) ListSegmentsByTrack(trackID string) ([]TrackSegment, error) {
 			ts.ExitPosition = &Point{X: exitPosX.Float64, Y: exitPosY.Float64}
 		}
 		if bboxJSON != "" {
-			json.Unmarshal([]byte(bboxJSON), &ts.BoundingBoxes)
+			_ = json.Unmarshal([]byte(bboxJSON), &ts.BoundingBoxes)
 		}
 
 		segments = append(segments, ts)
@@ -1050,8 +1050,8 @@ func (s *Store) GetPendingHandoff(id string) (*PendingHandoff, error) {
 		return nil, err
 	}
 
-	json.Unmarshal([]byte(toCamerasJSON), &ph.ToCameraIDs)
-	json.Unmarshal([]byte(colorsJSON), &ph.DominantColors)
+	_ = json.Unmarshal([]byte(toCamerasJSON), &ph.ToCameraIDs)
+	_ = json.Unmarshal([]byte(colorsJSON), &ph.DominantColors)
 
 	return &ph, nil
 }
@@ -1065,7 +1065,7 @@ func (s *Store) ListPendingHandoffs() ([]PendingHandoff, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var handoffs []PendingHandoff
 	for rows.Next() {
@@ -1076,8 +1076,8 @@ func (s *Store) ListPendingHandoffs() ([]PendingHandoff, error) {
 			return nil, err
 		}
 
-		json.Unmarshal([]byte(toCamerasJSON), &ph.ToCameraIDs)
-		json.Unmarshal([]byte(colorsJSON), &ph.DominantColors)
+		_ = json.Unmarshal([]byte(toCamerasJSON), &ph.ToCameraIDs)
+		_ = json.Unmarshal([]byte(colorsJSON), &ph.DominantColors)
 
 		handoffs = append(handoffs, ph)
 	}
@@ -1094,7 +1094,7 @@ func (s *Store) ListPendingHandoffsForCamera(cameraID string) ([]PendingHandoff,
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var handoffs []PendingHandoff
 	for rows.Next() {
@@ -1105,8 +1105,8 @@ func (s *Store) ListPendingHandoffsForCamera(cameraID string) ([]PendingHandoff,
 			return nil, err
 		}
 
-		json.Unmarshal([]byte(toCamerasJSON), &ph.ToCameraIDs)
-		json.Unmarshal([]byte(colorsJSON), &ph.DominantColors)
+		_ = json.Unmarshal([]byte(toCamerasJSON), &ph.ToCameraIDs)
+		_ = json.Unmarshal([]byte(colorsJSON), &ph.DominantColors)
 
 		// Filter by camera ID
 		for _, camID := range ph.ToCameraIDs {
@@ -1172,7 +1172,7 @@ func (s *Store) GetAnalytics() (*Analytics, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	for rows.Next() {
 		var stat TransitionStat
@@ -1197,7 +1197,7 @@ func (s *Store) GetAnalytics() (*Analytics, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer hourlyRows.Close()
+	defer func() { _ = hourlyRows.Close() }()
 
 	hourlyMap := make(map[int]int)
 	for hourlyRows.Next() {
@@ -1207,7 +1207,7 @@ func (s *Store) GetAnalytics() (*Analytics, error) {
 			return nil, err
 		}
 		var hour int
-		fmt.Sscanf(hourStr, "%d", &hour)
+		_, _ = fmt.Sscanf(hourStr, "%d", &hour)
 		hourlyMap[hour] = count
 	}
 
@@ -1369,7 +1369,7 @@ func (s *Store) GetMapAnalytics(mapID string) (*MapAnalytics, error) {
 	if len(cameraIDs) > 0 {
 		for _, camID := range cameraIDs {
 			var count int
-			s.db.QueryRow(`SELECT COUNT(*) FROM camera_transitions WHERE from_camera_id = ? OR to_camera_id = ?`, camID, camID).Scan(&count)
+			_ = s.db.QueryRow(`SELECT COUNT(*) FROM camera_transitions WHERE from_camera_id = ? OR to_camera_id = ?`, camID, camID).Scan(&count)
 			if count == 0 {
 				analytics.CoverageGaps = append(analytics.CoverageGaps, camID)
 			}
@@ -1401,7 +1401,7 @@ func (s *Store) SaveMapImage(ctx context.Context, mapID string, file io.Reader, 
 	if err != nil {
 		return "", fmt.Errorf("failed to create image file: %w", err)
 	}
-	defer dst.Close()
+	defer func() { _ = dst.Close() }()
 
 	// Copy contents
 	if _, err := io.Copy(dst, file); err != nil {

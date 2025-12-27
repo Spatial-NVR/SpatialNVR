@@ -157,6 +157,7 @@ func (c *PluginClient) Call(ctx context.Context, method string, params interface
 	if err != nil {
 		c.mu.Lock()
 		delete(c.pending, id)
+		close(respCh)
 		c.mu.Unlock()
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -166,6 +167,7 @@ func (c *PluginClient) Call(ctx context.Context, method string, params interface
 	case <-ctx.Done():
 		c.mu.Lock()
 		delete(c.pending, id)
+		close(respCh)
 		c.mu.Unlock()
 		return nil, ctx.Err()
 	case resp, ok := <-respCh:
@@ -190,10 +192,10 @@ func (c *PluginClient) Close() error {
 	c.closed = true
 	c.mu.Unlock()
 
-	c.stdin.Close()
-	c.stdout.Close()
+	_ = c.stdin.Close()
+	_ = c.stdout.Close()
 	if c.stderr != nil {
-		c.stderr.Close()
+		_ = c.stderr.Close()
 	}
 	return nil
 }

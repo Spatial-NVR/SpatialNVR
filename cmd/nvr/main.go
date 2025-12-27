@@ -91,8 +91,8 @@ func main() {
 	slog.Info("Using configuration", "config_path", configPath, "data_path", dataPath)
 
 	// Ensure directories exist
-	os.MkdirAll(dataPath, 0755)
-	os.MkdirAll(pluginsDir, 0755)
+	_ = os.MkdirAll(dataPath, 0755)
+	_ = os.MkdirAll(pluginsDir, 0755)
 
 	// Open database
 	dbConfig := database.DefaultConfig(dataPath)
@@ -101,7 +101,7 @@ func main() {
 		slog.Error("Failed to open database", "error", err)
 		os.Exit(1)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// Run migrations
 	migrator := database.NewMigrator(db)
@@ -131,7 +131,7 @@ func main() {
 		slog.Error("Failed to start embedded detection server", "error", err)
 		os.Exit(1)
 	}
-	defer embeddedDetection.Stop(ctx)
+	defer func() { _ = embeddedDetection.Stop(ctx) }()
 	slog.Info("Embedded detection server started", "port", ports.Detection)
 
 	// Create plugin loader
@@ -153,7 +153,7 @@ func main() {
 		slog.Error("Failed to start plugin loader", "error", err)
 		os.Exit(1)
 	}
-	defer loader.Stop()
+	defer func() { _ = loader.Stop() }()
 
 	// Create API gateway
 	gateway := core.NewAPIGateway(loader, eventBus, logger)
@@ -401,7 +401,7 @@ func setupRouter(gateway *core.APIGateway, loader *core.PluginLoader, eventBus *
 		}
 
 		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprintf(w, `{"status":"%s","version":"0.2.1","plugins":%d,"mode":"plugin-based"}`, status, len(plugins))
+		_, _ = fmt.Fprintf(w, `{"status":"%s","version":"0.2.1","plugins":%d,"mode":"plugin-based"}`, status, len(plugins))
 	})
 
 	// API routes
@@ -499,16 +499,16 @@ func handleListPlugins(loader *core.PluginLoader) http.HandlerFunc {
 		})
 
 		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprint(w, "[")
+		_, _ = fmt.Fprint(w, "[")
 		for i, p := range plugins {
 			if i > 0 {
-				fmt.Fprint(w, ",")
+				_, _ = fmt.Fprint(w, ",")
 			}
 			health := p.Plugin.Health()
-			fmt.Fprintf(w, `{"id":"%s","name":"%s","version":"%s","state":"%s","health":"%s","builtin":%t}`,
+			_, _ = fmt.Fprintf(w, `{"id":"%s","name":"%s","version":"%s","state":"%s","health":"%s","builtin":%t}`,
 				p.Manifest.ID, p.Manifest.Name, p.Manifest.Version, p.State, health.State, p.IsBuiltin)
 		}
-		fmt.Fprint(w, "]")
+		_, _ = fmt.Fprint(w, "]")
 	}
 }
 
@@ -562,7 +562,7 @@ func handleGetPlugin(loader *core.PluginLoader) http.HandlerFunc {
 		}
 
 		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprintf(w, `{"id":"%s","name":"%s","version":"%s","description":"%s","category":"%s","state":"%s","enabled":%t,"builtin":%t,"critical":%t,"capabilities":%s,"dependencies":%s,"startedAt":%s,"lastError":%s,"health":{"state":"%s","message":"%s","lastChecked":"%s"}}`,
+		_, _ = fmt.Fprintf(w, `{"id":"%s","name":"%s","version":"%s","description":"%s","category":"%s","state":"%s","enabled":%t,"builtin":%t,"critical":%t,"capabilities":%s,"dependencies":%s,"startedAt":%s,"lastError":%s,"health":{"state":"%s","message":"%s","lastChecked":"%s"}}`,
 			p.Manifest.ID, p.Manifest.Name, p.Manifest.Version, p.Manifest.Description, category,
 			p.State, p.State == core.PluginStateRunning, p.IsBuiltin, p.Manifest.Critical,
 			capsJSON, depsJSON, startedAt, lastError,
@@ -575,7 +575,7 @@ func handleRescanPlugins(loader *core.PluginLoader) http.HandlerFunc {
 		if err := loader.ScanExternalPlugins(); err != nil {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusInternalServerError)
-			json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+			_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
 			return
 		}
 
@@ -593,7 +593,7 @@ func handleRescanPlugins(loader *core.PluginLoader) http.HandlerFunc {
 		}
 
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]interface{}{
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
 			"success": true,
 			"plugins": result,
 			"message": fmt.Sprintf("Scanned plugins directory, found %d plugins", len(plugins)),
@@ -617,11 +617,11 @@ func handleEnablePlugin(loader *core.PluginLoader) http.HandlerFunc {
 		if err != nil {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusInternalServerError)
-			json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+			_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]string{"id": id, "status": "enabled"})
+		_ = json.NewEncoder(w).Encode(map[string]string{"id": id, "status": "enabled"})
 	}
 }
 
@@ -633,7 +633,7 @@ func handleDisablePlugin(loader *core.PluginLoader) http.HandlerFunc {
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprintf(w, `{"id":"%s","status":"disabled"}`, id)
+		_, _ = fmt.Fprintf(w, `{"id":"%s","status":"disabled"}`, id)
 	}
 }
 
@@ -645,7 +645,7 @@ func handleRestartPlugin(loader *core.PluginLoader) http.HandlerFunc {
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprintf(w, `{"id":"%s","status":"restarted"}`, id)
+		_, _ = fmt.Fprintf(w, `{"id":"%s","status":"restarted"}`, id)
 	}
 }
 
@@ -665,7 +665,7 @@ func handleGetPluginConfig(loader *core.PluginLoader) http.HandlerFunc {
 		}
 
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]interface{}{
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
 			"pluginId": id,
 			"config":   config,
 		})
@@ -703,7 +703,7 @@ func handleSetPluginConfig(loader *core.PluginLoader) http.HandlerFunc {
 
 		// Restart plugin if running, or start if not running
 		if p.State == core.PluginStateRunning {
-			go loader.RestartPlugin(r.Context(), id)
+			go func() { _ = loader.RestartPlugin(r.Context(), id) }()
 		} else {
 			// Plugin not running - try to start it with new config
 			go func() {
@@ -714,7 +714,7 @@ func handleSetPluginConfig(loader *core.PluginLoader) http.HandlerFunc {
 		}
 
 		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprintf(w, `{"message":"Configuration updated"}`)
+		_, _ = fmt.Fprintf(w, `{"message":"Configuration updated"}`)
 	}
 }
 
@@ -742,7 +742,7 @@ func handleGetPluginLogs(loader *core.PluginLoader) http.HandlerFunc {
 		}
 
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]interface{}{
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
 			"pluginId": id,
 			"logs":     logs,
 			"total":    len(logs),
@@ -781,7 +781,7 @@ func handleSystemHealth(loader *core.PluginLoader, eventBus *core.EventBus, db *
 		}
 
 		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprintf(w, `{"plugins":{"total":%d,"healthy":%d,"degraded":%d,"unhealthy":%d},"database":"%s","event_bus":"connected"}`,
+		_, _ = fmt.Fprintf(w, `{"plugins":{"total":%d,"healthy":%d,"degraded":%d,"unhealthy":%d},"database":"%s","event_bus":"connected"}`,
 			len(plugins), healthy, degraded, unhealthy, dbHealth)
 	}
 }
@@ -790,7 +790,7 @@ func handleListEvents(eventBus *core.EventBus) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		// For now, return empty list - events are streamed via WebSocket
 		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprint(w, `{"events":[]}`)
+		_, _ = fmt.Fprint(w, `{"events":[]}`)
 	}
 }
 
@@ -800,7 +800,7 @@ func handleGetPorts() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ports := core.GetCurrentPortConfig()
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]interface{}{
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
 			"success": true,
 			"data":    ports,
 		})
@@ -968,7 +968,7 @@ func handleSystemMetrics() http.HandlerFunc {
 		}
 
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]interface{}{
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
 			"success": true,
 			"data":    metrics,
 		})
@@ -982,7 +982,7 @@ func handleGetStats(loader *core.PluginLoader, db *database.DB) http.HandlerFunc
 		var totalCameras, onlineCameras int
 		rows, err := db.Query("SELECT status FROM cameras WHERE enabled = 1")
 		if err == nil {
-			defer rows.Close()
+			defer func() { _ = rows.Close() }()
 			for rows.Next() {
 				var status string
 				if err := rows.Scan(&status); err == nil {
@@ -997,15 +997,15 @@ func handleGetStats(loader *core.PluginLoader, db *database.DB) http.HandlerFunc
 		// Count events today
 		var eventsToday, unacknowledged, totalEvents int
 		today := time.Now().Format("2006-01-02")
-		db.QueryRow("SELECT COUNT(*) FROM events WHERE date(timestamp) = ?", today).Scan(&eventsToday)
-		db.QueryRow("SELECT COUNT(*) FROM events WHERE acknowledged = 0").Scan(&unacknowledged)
-		db.QueryRow("SELECT COUNT(*) FROM events").Scan(&totalEvents)
+		_ = db.QueryRow("SELECT COUNT(*) FROM events WHERE date(timestamp) = ?", today).Scan(&eventsToday)
+		_ = db.QueryRow("SELECT COUNT(*) FROM events WHERE acknowledged = 0").Scan(&unacknowledged)
+		_ = db.QueryRow("SELECT COUNT(*) FROM events").Scan(&totalEvents)
 
 		// Get database size
 		var dbSize int64
 		var pageSizeStr, pageCountStr string
-		db.QueryRow("PRAGMA page_size").Scan(&pageSizeStr)
-		db.QueryRow("PRAGMA page_count").Scan(&pageCountStr)
+		_ = db.QueryRow("PRAGMA page_size").Scan(&pageSizeStr)
+		_ = db.QueryRow("PRAGMA page_count").Scan(&pageCountStr)
 		if pageSize, err := strconv.ParseInt(pageSizeStr, 10, 64); err == nil {
 			if pageCount, err := strconv.ParseInt(pageCountStr, 10, 64); err == nil {
 				dbSize = pageSize * pageCount
@@ -1029,7 +1029,7 @@ func handleGetStats(loader *core.PluginLoader, db *database.DB) http.HandlerFunc
 		}
 
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(stats)
+		_ = json.NewEncoder(w).Encode(stats)
 	}
 }
 
@@ -1052,7 +1052,7 @@ func handleLogStream() http.HandlerFunc {
 		// Send recent logs first
 		recent := logBuffer.GetRecent(50)
 		for _, entry := range recent {
-			fmt.Fprintf(w, "data: %s\n\n", logging.LogEntryToJSON(entry))
+			_, _ = fmt.Fprintf(w, "data: %s\n\n", logging.LogEntryToJSON(entry))
 		}
 		flusher.Flush()
 
@@ -1069,11 +1069,11 @@ func handleLogStream() http.HandlerFunc {
 			case <-r.Context().Done():
 				return
 			case entry := <-logCh:
-				fmt.Fprintf(w, "data: %s\n\n", logging.LogEntryToJSON(entry))
+				_, _ = fmt.Fprintf(w, "data: %s\n\n", logging.LogEntryToJSON(entry))
 				flusher.Flush()
 			case <-ticker.C:
 				// Send heartbeat to keep connection alive
-				fmt.Fprintf(w, ": heartbeat\n\n")
+				_, _ = fmt.Fprintf(w, ": heartbeat\n\n")
 				flusher.Flush()
 			}
 		}
@@ -1117,7 +1117,7 @@ func handleGetPluginCatalog(loader *core.PluginLoader) http.HandlerFunc {
 					slog.Warn("Failed to fetch plugin catalog, using fallback", "error", err)
 					catalog = getDefaultCatalog()
 				} else {
-					defer resp.Body.Close()
+					defer func() { _ = resp.Body.Close() }()
 
 					if resp.StatusCode != http.StatusOK {
 						slog.Warn("Plugin catalog returned non-200 status", "status", resp.StatusCode)
@@ -1196,7 +1196,7 @@ func handleGetPluginCatalog(loader *core.PluginLoader) http.HandlerFunc {
 		} else {
 			w.Header().Set("X-Cache", "MISS")
 		}
-		json.NewEncoder(w).Encode(catalog)
+		_ = json.NewEncoder(w).Encode(catalog)
 	}
 }
 
@@ -1250,7 +1250,7 @@ func handleReloadPluginCatalog() http.HandlerFunc {
 		if err != nil {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusInternalServerError)
-			json.NewEncoder(w).Encode(map[string]string{"error": "Failed to create request"})
+			_ = json.NewEncoder(w).Encode(map[string]string{"error": "Failed to create request"})
 			return
 		}
 
@@ -1258,16 +1258,16 @@ func handleReloadPluginCatalog() http.HandlerFunc {
 		if err != nil {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusServiceUnavailable)
-			json.NewEncoder(w).Encode(map[string]string{"error": "Failed to fetch catalog", "details": err.Error()})
+			_ = json.NewEncoder(w).Encode(map[string]string{"error": "Failed to fetch catalog", "details": err.Error()})
 			return
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		body, _ := io.ReadAll(resp.Body)
 		var yamlCatalog map[string]interface{}
 		if err := yaml.Unmarshal(body, &yamlCatalog); err != nil {
 			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(map[string]interface{}{
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{
 				"message": "Catalog refreshed (fallback)",
 				"source":  "fallback",
 			})
@@ -1284,7 +1284,7 @@ func handleReloadPluginCatalog() http.HandlerFunc {
 		}
 
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]interface{}{
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
 			"message":      "Catalog refreshed",
 			"plugin_count": pluginCount,
 			"source":       "remote",
@@ -1310,7 +1310,7 @@ func handleInstallFromCatalog(installer *plugin.Installer, loader *core.PluginLo
 			if err != nil {
 				w.Header().Set("Content-Type", "application/json")
 				w.WriteHeader(http.StatusInternalServerError)
-				json.NewEncoder(w).Encode(map[string]string{"error": "Failed to fetch catalog"})
+				_ = json.NewEncoder(w).Encode(map[string]string{"error": "Failed to fetch catalog"})
 				return
 			}
 
@@ -1318,16 +1318,16 @@ func handleInstallFromCatalog(installer *plugin.Installer, loader *core.PluginLo
 			if err != nil {
 				w.Header().Set("Content-Type", "application/json")
 				w.WriteHeader(http.StatusServiceUnavailable)
-				json.NewEncoder(w).Encode(map[string]string{"error": "Catalog unavailable"})
+				_ = json.NewEncoder(w).Encode(map[string]string{"error": "Catalog unavailable"})
 				return
 			}
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 
 			body, _ := io.ReadAll(resp.Body)
 			if err := yaml.Unmarshal(body, &catalog); err != nil {
 				w.Header().Set("Content-Type", "application/json")
 				w.WriteHeader(http.StatusInternalServerError)
-				json.NewEncoder(w).Encode(map[string]string{"error": "Invalid catalog format"})
+				_ = json.NewEncoder(w).Encode(map[string]string{"error": "Invalid catalog format"})
 				return
 			}
 
@@ -1340,7 +1340,7 @@ func handleInstallFromCatalog(installer *plugin.Installer, loader *core.PluginLo
 		if !ok {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusInternalServerError)
-			json.NewEncoder(w).Encode(map[string]string{"error": "Invalid catalog structure"})
+			_ = json.NewEncoder(w).Encode(map[string]string{"error": "Invalid catalog structure"})
 			return
 		}
 
@@ -1366,7 +1366,7 @@ func handleInstallFromCatalog(installer *plugin.Installer, loader *core.PluginLo
 		if repoURL == "" {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusNotFound)
-			json.NewEncoder(w).Encode(map[string]string{"error": "Plugin not found in catalog"})
+			_ = json.NewEncoder(w).Encode(map[string]string{"error": "Plugin not found in catalog"})
 			return
 		}
 
@@ -1379,7 +1379,7 @@ func handleInstallFromCatalog(installer *plugin.Installer, loader *core.PluginLo
 			slog.Error("Plugin installation failed", "plugin", pluginID, "repository", repoURL, "error", err)
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusInternalServerError)
-			json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+			_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
 			return
 		}
 
@@ -1395,7 +1395,7 @@ func handleInstallFromCatalog(installer *plugin.Installer, loader *core.PluginLo
 		}
 
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]interface{}{
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
 			"success": true,
 			"plugin": map[string]string{
 				"id":      manifest.ID,
@@ -1416,7 +1416,7 @@ func handlePluginRPC(loader *core.PluginLoader) http.HandlerFunc {
 		if !ok {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusNotFound)
-			json.NewEncoder(w).Encode(map[string]interface{}{
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{
 				"jsonrpc": "2.0",
 				"error": map[string]interface{}{
 					"code":    -32600,
@@ -1431,7 +1431,7 @@ func handlePluginRPC(loader *core.PluginLoader) http.HandlerFunc {
 		if err != nil {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusBadRequest)
-			json.NewEncoder(w).Encode(map[string]interface{}{
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{
 				"jsonrpc": "2.0",
 				"error": map[string]interface{}{
 					"code":    -32700,
@@ -1451,7 +1451,7 @@ func handlePluginRPC(loader *core.PluginLoader) http.HandlerFunc {
 		if err := json.Unmarshal(body, &req); err != nil {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusBadRequest)
-			json.NewEncoder(w).Encode(map[string]interface{}{
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{
 				"jsonrpc": "2.0",
 				"error": map[string]interface{}{
 					"code":    -32700,
@@ -1478,7 +1478,7 @@ func handlePluginRPC(loader *core.PluginLoader) http.HandlerFunc {
 						"message": err.Error(),
 					},
 				}
-				json.NewEncoder(w).Encode(resp)
+				_ = json.NewEncoder(w).Encode(resp)
 				return
 			}
 
@@ -1488,7 +1488,7 @@ func handlePluginRPC(loader *core.PluginLoader) http.HandlerFunc {
 				"id":      req.ID,
 				"result":  json.RawMessage(result),
 			}
-			json.NewEncoder(w).Encode(resp)
+			_ = json.NewEncoder(w).Encode(resp)
 			return
 		}
 
@@ -1504,7 +1504,7 @@ func handlePluginRPC(loader *core.PluginLoader) http.HandlerFunc {
 				"message": "Plugin does not support RPC. Make sure the plugin is installed from the catalog first.",
 			},
 		}
-		json.NewEncoder(w).Encode(resp)
+		_ = json.NewEncoder(w).Encode(resp)
 	}
 }
 
@@ -1519,7 +1519,7 @@ func handleInstallPlugin(installer *plugin.Installer, loader *core.PluginLoader)
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusBadRequest)
-			json.NewEncoder(w).Encode(map[string]string{"error": "Invalid request body"})
+			_ = json.NewEncoder(w).Encode(map[string]string{"error": "Invalid request body"})
 			return
 		}
 
@@ -1532,7 +1532,7 @@ func handleInstallPlugin(installer *plugin.Installer, loader *core.PluginLoader)
 		if repoURL == "" {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusBadRequest)
-			json.NewEncoder(w).Encode(map[string]string{"error": "Repository URL is required"})
+			_ = json.NewEncoder(w).Encode(map[string]string{"error": "Repository URL is required"})
 			return
 		}
 
@@ -1544,7 +1544,7 @@ func handleInstallPlugin(installer *plugin.Installer, loader *core.PluginLoader)
 			slog.Error("Plugin installation failed", "repository", repoURL, "error", err)
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusInternalServerError)
-			json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+			_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
 			return
 		}
 
@@ -1565,7 +1565,7 @@ func handleInstallPlugin(installer *plugin.Installer, loader *core.PluginLoader)
 		}
 
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]interface{}{
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
 			"success":      true,
 			"hot_reloaded": hotReloaded,
 			"plugin": map[string]string{
@@ -1599,12 +1599,12 @@ func handleUninstallPlugin(installer *plugin.Installer, loader *core.PluginLoade
 		if err := installer.UninstallPlugin(id); err != nil {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusInternalServerError)
-			json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+			_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
 			return
 		}
 
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]interface{}{
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
 			"success": true,
 			"id":      id,
 			"message": "Plugin uninstalled successfully",
@@ -1637,7 +1637,7 @@ func handleStartAudioSession(ports *core.PortConfig) http.HandlerFunc {
 		audioSessions[cameraID] = session
 
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]interface{}{
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
 			"success": true,
 			"session": session,
 		})
@@ -1654,7 +1654,7 @@ func handleStopAudioSession() http.HandlerFunc {
 		}
 
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]interface{}{
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
 			"success": true,
 		})
 	}
@@ -1667,14 +1667,14 @@ func handleGetAudioSession() http.HandlerFunc {
 		session, ok := audioSessions[cameraID]
 		if !ok {
 			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(map[string]interface{}{
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{
 				"active": false,
 			})
 			return
 		}
 
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(session)
+		_ = json.NewEncoder(w).Encode(session)
 	}
 }
 
@@ -1734,7 +1734,7 @@ func proxyWebSocket(w http.ResponseWriter, r *http.Request, targetHost, path, qu
 		http.Error(w, "Failed to connect to stream", http.StatusBadGateway)
 		return
 	}
-	defer targetConn.Close()
+	defer func() { _ = targetConn.Close() }()
 
 	// Upgrade client connection
 	clientConn, err := upgrader.Upgrade(w, r, nil)
@@ -1742,7 +1742,7 @@ func proxyWebSocket(w http.ResponseWriter, r *http.Request, targetHost, path, qu
 		slog.Error("Failed to upgrade WebSocket connection", "error", err)
 		return
 	}
-	defer clientConn.Close()
+	defer func() { _ = clientConn.Close() }()
 
 	// Bidirectional message forwarding
 	done := make(chan struct{})

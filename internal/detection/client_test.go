@@ -71,7 +71,7 @@ func TestClient_Detect_Success(t *testing.T) {
 		}
 
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(response)
+		_ = json.NewEncoder(w).Encode(response)
 	}))
 	defer server.Close()
 
@@ -112,7 +112,7 @@ func TestClient_Detect_Error(t *testing.T) {
 			"error":   "model not loaded",
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(response)
+		_ = json.NewEncoder(w).Encode(response)
 	}))
 	defer server.Close()
 
@@ -142,7 +142,7 @@ func TestClient_GetStatus(t *testing.T) {
 			"uptime":          3600.0,
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(response)
+		_ = json.NewEncoder(w).Encode(response)
 	}))
 	defer server.Close()
 
@@ -187,7 +187,7 @@ func TestClient_GetMotionStatus(t *testing.T) {
 			CamerasTracked:  3,
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(response)
+		_ = json.NewEncoder(w).Encode(response)
 	}))
 	defer server.Close()
 
@@ -213,7 +213,7 @@ func TestClient_ConfigureMotion(t *testing.T) {
 		if r.Method != "POST" || r.URL.Path != "/motion/config" {
 			t.Errorf("Unexpected request: %s %s", r.Method, r.URL.Path)
 		}
-		json.NewDecoder(r.Body).Decode(&receivedConfig)
+		_ = json.NewDecoder(r.Body).Decode(&receivedConfig)
 		w.WriteHeader(http.StatusOK)
 	}))
 	defer server.Close()
@@ -268,7 +268,7 @@ func TestClient_LoadModel(t *testing.T) {
 			"model_id": "model_123",
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(response)
+		_ = json.NewEncoder(w).Encode(response)
 	}))
 	defer server.Close()
 
@@ -292,7 +292,7 @@ func TestClient_LoadModel_Error(t *testing.T) {
 			"error":   "model file not found",
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(response)
+		_ = json.NewEncoder(w).Encode(response)
 	}))
 	defer server.Close()
 
@@ -344,7 +344,7 @@ func TestClient_GetBackends(t *testing.T) {
 			},
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(response)
+		_ = json.NewEncoder(w).Encode(response)
 	}))
 	defer server.Close()
 
@@ -379,7 +379,7 @@ func TestClient_GetModels(t *testing.T) {
 			},
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(response)
+		_ = json.NewEncoder(w).Encode(response)
 	}))
 	defer server.Close()
 
@@ -438,7 +438,7 @@ func TestClient_DetectAsync(t *testing.T) {
 			"process_time_ms": 10.0,
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(response)
+		_ = json.NewEncoder(w).Encode(response)
 	}))
 	defer server.Close()
 

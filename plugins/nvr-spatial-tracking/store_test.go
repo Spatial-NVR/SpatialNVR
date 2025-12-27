@@ -21,7 +21,7 @@ func setupTestDB(t *testing.T) (*Store, func()) {
 	}
 
 	cleanup := func() {
-		db.Close()
+		_ = db.Close()
 	}
 
 	return store, cleanup
@@ -128,7 +128,7 @@ func TestCameraPlacementCRUD(t *testing.T) {
 
 	// Create a map first
 	m := &SpatialMap{Name: "Test Map", Width: 100, Height: 100, Scale: 1.0}
-	store.CreateMap(m)
+	_ = store.CreateMap(m)
 
 	// Create placement
 	cp := &CameraPlacement{
@@ -355,7 +355,7 @@ func TestTrackSegmentCRUD(t *testing.T) {
 		ObjectType: "person",
 		State:      TrackStateActive,
 	}
-	store.CreateTrack(gt)
+	_ = store.CreateTrack(gt)
 
 	// Create segment
 	ts := &TrackSegment{
@@ -414,7 +414,7 @@ func TestPendingHandoffCRUD(t *testing.T) {
 		ObjectType: "person",
 		State:      TrackStateTransit,
 	}
-	store.CreateTrack(gt)
+	_ = store.CreateTrack(gt)
 
 	// Create pending handoff
 	ph := &PendingHandoff{
@@ -477,7 +477,7 @@ func TestAutoDetectTransitions(t *testing.T) {
 
 	// Create a map
 	m := &SpatialMap{Name: "Test Map", Width: 200, Height: 200, Scale: 1.0}
-	store.CreateMap(m)
+	_ = store.CreateMap(m)
 
 	// Create two camera placements that overlap
 	cp1 := &CameraPlacement{
@@ -488,7 +488,7 @@ func TestAutoDetectTransitions(t *testing.T) {
 		FOVAngle: 90,
 		FOVDepth: 80,
 	}
-	store.CreatePlacement(cp1)
+	_ = store.CreatePlacement(cp1)
 
 	cp2 := &CameraPlacement{
 		CameraID: "cam-2",
@@ -498,7 +498,7 @@ func TestAutoDetectTransitions(t *testing.T) {
 		FOVAngle: 90,
 		FOVDepth: 80,
 	}
-	store.CreatePlacement(cp2)
+	_ = store.CreatePlacement(cp2)
 
 	// Auto-detect transitions
 	transitions, err := store.AutoDetectTransitions(context.Background(), m.ID)
@@ -527,7 +527,7 @@ func TestGetAnalytics(t *testing.T) {
 		ObjectType: "person",
 		State:      TrackStateActive,
 	}
-	store.CreateTrack(gt)
+	_ = store.CreateTrack(gt)
 
 	ct := &CameraTransition{
 		FromCameraID:  "cam-1",
@@ -535,8 +535,8 @@ func TestGetAnalytics(t *testing.T) {
 		Type:          TransitionGap,
 		Bidirectional: true,
 	}
-	store.CreateTransition(ct)
-	store.RecordHandoff(ct.ID, 5.0, true)
+	_ = store.CreateTransition(ct)
+	_ = store.RecordHandoff(ct.ID, 5.0, true)
 
 	// Get analytics
 	analytics, err := store.GetAnalytics()

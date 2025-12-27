@@ -175,7 +175,7 @@ func TestGetCatalogEndpoint(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to get catalog: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		t.Errorf("Expected status 200, got %d", resp.StatusCode)
@@ -215,7 +215,7 @@ func TestCatalogPluginStatus(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to get catalog: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	var result api.Response
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
@@ -242,7 +242,7 @@ func TestListPluginsEndpoint(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to list plugins: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		t.Errorf("Expected status 200, got %d", resp.StatusCode)
@@ -272,7 +272,7 @@ func TestCatalogCategories(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to get catalog: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	var result api.Response
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
@@ -303,7 +303,7 @@ func TestCatalogFeaturedPlugin(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to get catalog: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	var result api.Response
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {

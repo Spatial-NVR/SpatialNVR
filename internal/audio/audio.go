@@ -142,7 +142,7 @@ func (t *TwoWayAudio) StartSession(ctx context.Context, cameraID, userID string)
 		select {
 		case <-ctx.Done():
 		case <-time.After(5 * time.Minute):
-			t.StopSession(sessionID)
+			_ = t.StopSession(sessionID)
 		}
 	}()
 
@@ -164,7 +164,7 @@ func (t *TwoWayAudio) StopSession(sessionID string) error {
 		session.cancel()
 	}
 	if session.conn != nil {
-		session.conn.Close()
+		_ = session.conn.Close()
 	}
 
 	delete(t.sessions, sessionID)
@@ -190,7 +190,7 @@ func (t *TwoWayAudio) handleGetCapabilities(w http.ResponseWriter, r *http.Reque
 	_ = cameraID // Would use this to query actual camera
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
 		"success": true,
 		"data":    caps,
 	})
@@ -200,7 +200,7 @@ func (t *TwoWayAudio) handleListSessions(w http.ResponseWriter, r *http.Request)
 	sessions := t.GetActiveSessions()
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
 		"success": true,
 		"data":    sessions,
 	})
@@ -234,7 +234,7 @@ func (t *TwoWayAudio) handleStartSession(w http.ResponseWriter, r *http.Request)
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
 		"success": true,
 		"data":    response,
 	})
@@ -265,7 +265,7 @@ func (t *TwoWayAudio) handleStopSession(w http.ResponseWriter, r *http.Request) 
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
 		"success": true,
 	})
 }
@@ -293,8 +293,8 @@ func (t *TwoWayAudio) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	t.mu.Unlock()
 
 	defer func() {
-		conn.Close()
-		t.StopSession(sessionID)
+		_ = conn.Close()
+		_ = t.StopSession(sessionID)
 	}()
 
 	t.logger.Info("WebSocket connected for audio session", "session_id", sessionID)
@@ -413,7 +413,7 @@ func (d *DoorbellHandler) handleRing(w http.ResponseWriter, r *http.Request) {
 	d.NotifyRing(cameraID)
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
 		"success": true,
 		"message": "Ring notification sent",
 	})
@@ -450,7 +450,7 @@ func (d *DoorbellHandler) handleAnswer(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
 		"success": true,
 		"data": map[string]interface{}{
 			"session_id":    session.ID,
@@ -493,7 +493,7 @@ func (p *AudioStreamProxy) ProxyAudio(w http.ResponseWriter, r *http.Request, au
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	// Copy headers
 	for key, values := range resp.Header {

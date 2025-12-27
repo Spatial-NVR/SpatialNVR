@@ -209,7 +209,7 @@ func (eb *EventBus) Unsubscribe(subject string) {
 
 	if subs, ok := eb.subs[subject]; ok {
 		for _, sub := range subs {
-			sub.Unsubscribe()
+			_ = sub.Unsubscribe()
 		}
 		delete(eb.subs, subject)
 	}
@@ -218,7 +218,7 @@ func (eb *EventBus) Unsubscribe(subject string) {
 // Stop shuts down the event bus
 func (eb *EventBus) Stop() {
 	// Drain connection
-	eb.conn.Drain()
+	_ = eb.conn.Drain()
 
 	// Shutdown NATS server
 	eb.server.Shutdown()

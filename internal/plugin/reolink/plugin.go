@@ -254,7 +254,7 @@ func (p *Plugin) Stop() error {
 	// Stop all camera event polling
 	p.mu.RLock()
 	for _, cam := range p.cameras {
-		cam.StopEventPolling()
+		_ = cam.StopEventPolling()
 	}
 	p.mu.RUnlock()
 
@@ -413,7 +413,7 @@ func (p *Plugin) RemoveCamera(ctx context.Context, id string) error {
 		return fmt.Errorf("camera not found: %s", id)
 	}
 
-	cam.StopEventPolling()
+	_ = cam.StopEventPolling()
 	delete(p.cameras, id)
 
 	p.logger.Info("Removed camera", "id", id)

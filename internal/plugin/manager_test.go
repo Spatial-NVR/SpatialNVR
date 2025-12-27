@@ -214,7 +214,7 @@ func TestManager_ListPlugins_WithPlugins(t *testing.T) {
 		},
 	}
 
-	mgr.RegisterBuiltinPlugin(plugin)
+	_ = mgr.RegisterBuiltinPlugin(plugin)
 	mgr.config.Plugins["test-plugin"] = config.PluginConfig{Enabled: true}
 
 	plugins := mgr.ListPlugins()
@@ -275,7 +275,7 @@ func TestManager_OnConfigChange(t *testing.T) {
 			Name: "Config Test Plugin",
 		},
 	}
-	mgr.RegisterBuiltinPlugin(plugin)
+	_ = mgr.RegisterBuiltinPlugin(plugin)
 
 	newCfg := &config.Config{
 		Plugins: config.PluginsConfig{
@@ -390,7 +390,7 @@ func TestManager_DiscoverCameras(t *testing.T) {
 			{ID: "cam1", Name: "Camera 1", Host: "192.168.1.100"},
 		},
 	}
-	mgr.RegisterBuiltinPlugin(plugin)
+	_ = mgr.RegisterBuiltinPlugin(plugin)
 	mgr.config.Plugins["discover-test"] = config.PluginConfig{Enabled: true}
 
 	cameras, err := mgr.DiscoverCameras(context.Background())
@@ -421,7 +421,7 @@ func TestManager_Stop(t *testing.T) {
 			Name: "Stop Test",
 		},
 	}
-	mgr.RegisterBuiltinPlugin(plugin)
+	_ = mgr.RegisterBuiltinPlugin(plugin)
 
 	// Stop should not panic
 	err := mgr.Stop()
@@ -440,7 +440,7 @@ func TestManager_Start(t *testing.T) {
 		},
 		healthState: HealthStateHealthy,
 	}
-	mgr.RegisterBuiltinPlugin(plugin)
+	_ = mgr.RegisterBuiltinPlugin(plugin)
 
 	err := mgr.Start(context.Background())
 	if err != nil {
@@ -448,7 +448,7 @@ func TestManager_Start(t *testing.T) {
 	}
 
 	// Cleanup
-	mgr.Stop()
+	_ = mgr.Stop()
 }
 
 func TestManager_GetCatalogWithStatus(t *testing.T) {

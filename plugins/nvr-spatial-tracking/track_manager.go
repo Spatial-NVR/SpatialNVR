@@ -140,7 +140,7 @@ func (tm *TrackManager) updateTrack(ctx context.Context, globalTrackID string, e
 
 	// Persist update periodically (every 10 seconds)
 	if event.Timestamp.Second()%10 == 0 {
-		tm.store.UpdateTrack(track)
+		_ = tm.store.UpdateTrack(track)
 	}
 }
 
@@ -191,7 +191,7 @@ func (tm *TrackManager) matchPendingHandoff(ctx context.Context, event *sdk.Even
 		transition, _ := tm.store.GetTransitionByCameras(handoff.FromCameraID, event.CameraID)
 		if transition != nil {
 			transitTime := event.Timestamp.Sub(handoff.ExitedAt).Seconds()
-			tm.store.RecordHandoff(transition.ID, transitTime, true)
+			_ = tm.store.RecordHandoff(transition.ID, transitTime, true)
 		}
 
 		tm.logger.Info("Handoff matched",
@@ -222,7 +222,7 @@ func (tm *TrackManager) continueTrack(ctx context.Context, handoff *PendingHando
 			exitTime := handoff.ExitedAt
 			lastSegment.ExitedAt = &exitTime
 			lastSegment.ExitDirection = handoff.ExitDirection
-			tm.store.UpdateSegment(lastSegment)
+			_ = tm.store.UpdateSegment(lastSegment)
 		}
 	}
 
@@ -235,7 +235,7 @@ func (tm *TrackManager) continueTrack(ctx context.Context, handoff *PendingHando
 		EnteredAt:     event.Timestamp,
 	}
 	track.Path = append(track.Path, segment)
-	tm.store.CreateSegment(&segment)
+	_ = tm.store.CreateSegment(&segment)
 
 	// Update track state
 	track.CurrentCameraID = event.CameraID
@@ -252,7 +252,7 @@ func (tm *TrackManager) continueTrack(ctx context.Context, handoff *PendingHando
 	tm.cameraToTrack[event.CameraID+":"+event.TrackID] = track.ID
 	tm.cameraToTrackMu.Unlock()
 
-	tm.store.UpdateTrack(track)
+	_ = tm.store.UpdateTrack(track)
 }
 
 // createNewTrack creates a new global track for a new detection
@@ -329,7 +329,7 @@ func (tm *TrackManager) HandleTrackExit(ctx context.Context, cameraID, localTrac
 		segment.ExitedAt = &now
 		segment.ExitDirection = exitDirection
 		segment.ExitPosition = &exitPosition
-		tm.store.UpdateSegment(segment)
+		_ = tm.store.UpdateSegment(segment)
 	}
 
 	// Find possible next cameras
@@ -391,7 +391,7 @@ func (tm *TrackManager) HandleTrackExit(ctx context.Context, cameraID, localTrac
 		tm.pendingHandoffs[handoff.ID] = handoff
 		tm.pendingHandoffsMu.Unlock()
 
-		tm.store.CreatePendingHandoff(handoff)
+		_ = tm.store.CreatePendingHandoff(handoff)
 
 		tm.logger.Debug("Created pending handoff",
 			"track_id", track.ID,
@@ -411,7 +411,7 @@ func (tm *TrackManager) HandleTrackExit(ctx context.Context, cameraID, localTrac
 	delete(tm.cameraToTrack, cameraID+":"+localTrackID)
 	tm.cameraToTrackMu.Unlock()
 
-	tm.store.UpdateTrack(track)
+	_ = tm.store.UpdateTrack(track)
 }
 
 // cleanupExpiredHandoffs removes handoffs that have timed out
@@ -428,14 +428,14 @@ func (tm *TrackManager) cleanupExpiredHandoffs() {
 			tm.tracksMu.Lock()
 			if track, exists := tm.tracks[handoff.GlobalTrackID]; exists {
 				track.State = TrackStateLost
-				tm.store.UpdateTrack(track)
+				_ = tm.store.UpdateTrack(track)
 			}
 			tm.tracksMu.Unlock()
 
 			// Record failed handoff
 			transition, _ := tm.store.GetTransitionByCameras(handoff.FromCameraID, handoff.ToCameraIDs[0])
 			if transition != nil {
-				tm.store.RecordHandoff(transition.ID, 0, false)
+				_ = tm.store.RecordHandoff(transition.ID, 0, false)
 			}
 
 			tm.logger.Debug("Handoff expired",
@@ -446,7 +446,7 @@ func (tm *TrackManager) cleanupExpiredHandoffs() {
 	}
 
 	// Also cleanup from database
-	tm.store.CleanupExpiredHandoffs()
+	_, _ = tm.store.CleanupExpiredHandoffs()
 }
 
 // cleanupStaleTransitTracks marks old transit tracks as completed
@@ -460,7 +460,7 @@ func (tm *TrackManager) cleanupStaleTransitTracks() {
 	for id, track := range tm.tracks {
 		if track.State == TrackStateLost && now.Sub(track.LastSeen) > ttl {
 			track.State = TrackStateCompleted
-			tm.store.UpdateTrack(track)
+			_ = tm.store.UpdateTrack(track)
 			delete(tm.tracks, id)
 		}
 	}

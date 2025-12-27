@@ -400,7 +400,7 @@ func (r *SQLiteRepository) GetOldestSegments(ctx context.Context, cameraID strin
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	return r.scanSegments(rows)
 }
@@ -433,7 +433,7 @@ func (r *SQLiteRepository) GetStorageByCamera(ctx context.Context) (map[string]i
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	result := make(map[string]int64)
 	for rows.Next() {
@@ -457,7 +457,7 @@ func (r *SQLiteRepository) GetStorageByTier(ctx context.Context) (map[StorageTie
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	result := make(map[StorageTier]int64)
 	for rows.Next() {

@@ -307,7 +307,7 @@ func (p *Plugin) handleUploadMapImage(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, jsonError("No image file provided"), http.StatusBadRequest)
 		return
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	// Store image and get URL
 	imageURL, err := p.store.SaveMapImage(r.Context(), mapID, file, header.Filename)
@@ -582,7 +582,7 @@ func (p *Plugin) handleGetMapAnalytics(w http.ResponseWriter, r *http.Request) {
 
 func jsonResponse(w http.ResponseWriter, data interface{}) {
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(data)
+	_ = json.NewEncoder(w).Encode(data)
 }
 
 func jsonError(message string) string {

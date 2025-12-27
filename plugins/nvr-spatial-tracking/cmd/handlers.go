@@ -237,7 +237,7 @@ func handleGetAnalytics(store *spatial.Store) http.HandlerFunc {
 // Helper functions
 func jsonResponse(w http.ResponseWriter, data interface{}) {
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(data)
+	_ = json.NewEncoder(w).Encode(data)
 }
 
 func jsonError(message string) string {

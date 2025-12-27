@@ -22,7 +22,7 @@ func createTestJPEG() []byte {
 	}
 
 	var buf bytes.Buffer
-	jpeg.Encode(&buf, img, &jpeg.Options{Quality: 80})
+	_ = jpeg.Encode(&buf, img, &jpeg.Options{Quality: 80})
 	return buf.Bytes()
 }
 
@@ -46,7 +46,7 @@ func TestGrabFrame(t *testing.T) {
 		}
 		w.Header().Set("Content-Type", "image/jpeg")
 		w.WriteHeader(http.StatusOK)
-		w.Write(jpegData)
+		_, _ = w.Write(jpegData)
 	}))
 	defer server.Close()
 
@@ -96,7 +96,7 @@ func TestGrabFrame_InvalidJPEG(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "image/jpeg")
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("not a valid jpeg"))
+		_, _ = w.Write([]byte("not a valid jpeg"))
 	}))
 	defer server.Close()
 
@@ -135,7 +135,7 @@ func TestStartStream(t *testing.T) {
 		requestCount++
 		w.Header().Set("Content-Type", "image/jpeg")
 		w.WriteHeader(http.StatusOK)
-		w.Write(jpegData)
+		_, _ = w.Write(jpegData)
 	}))
 	defer server.Close()
 
@@ -168,7 +168,7 @@ func TestStartStream_ZeroFPS(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "image/jpeg")
 		w.WriteHeader(http.StatusOK)
-		w.Write(jpegData)
+		_, _ = w.Write(jpegData)
 	}))
 	defer server.Close()
 
@@ -199,7 +199,7 @@ func TestStartStream_NegativeFPS(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "image/jpeg")
 		w.WriteHeader(http.StatusOK)
-		w.Write(jpegData)
+		_, _ = w.Write(jpegData)
 	}))
 	defer server.Close()
 
@@ -230,7 +230,7 @@ func TestStartStream_AlreadyRunning(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "image/jpeg")
 		w.WriteHeader(http.StatusOK)
-		w.Write(jpegData)
+		_, _ = w.Write(jpegData)
 	}))
 	defer server.Close()
 
@@ -251,7 +251,7 @@ func TestStartStream_AlreadyRunning(t *testing.T) {
 	}
 
 	// Clean up
-	fg.StopStream("test_camera")
+	_ = fg.StopStream("test_camera")
 }
 
 func TestStopStream(t *testing.T) {
@@ -259,7 +259,7 @@ func TestStopStream(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "image/jpeg")
 		w.WriteHeader(http.StatusOK)
-		w.Write(jpegData)
+		_, _ = w.Write(jpegData)
 	}))
 	defer server.Close()
 
@@ -289,15 +289,15 @@ func TestClose(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "image/jpeg")
 		w.WriteHeader(http.StatusOK)
-		w.Write(jpegData)
+		_, _ = w.Write(jpegData)
 	}))
 	defer server.Close()
 
 	fg := NewGo2RTCFrameGrabber(server.URL)
 
 	// Start multiple streams
-	fg.StartStream(context.Background(), "camera1", 5)
-	fg.StartStream(context.Background(), "camera2", 5)
+	_, _ = fg.StartStream(context.Background(), "camera1", 5)
+	_, _ = fg.StartStream(context.Background(), "camera2", 5)
 
 	// Close should stop all streams
 	err := fg.Close()
@@ -415,7 +415,7 @@ func TestCameraIDNormalization(t *testing.T) {
 		}
 		w.Header().Set("Content-Type", "image/jpeg")
 		w.WriteHeader(http.StatusOK)
-		w.Write(createTestJPEG())
+		_, _ = w.Write(createTestJPEG())
 	}))
 	defer server.Close()
 

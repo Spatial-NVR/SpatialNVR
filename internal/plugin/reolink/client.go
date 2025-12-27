@@ -503,7 +503,7 @@ func (c *Client) GetSnapshot(ctx context.Context, channel int) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("snapshot failed: %s", resp.Status)
@@ -539,7 +539,7 @@ func (c *Client) doRequest(ctx context.Context, commands []apiCommand, useToken 
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("API request failed: %s", resp.Status)

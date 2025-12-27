@@ -22,7 +22,7 @@ func setupServiceTestDB(t *testing.T) (*sql.DB, string, func()) {
 	}
 
 	cleanup := func() {
-		db.Close()
+		_ = db.Close()
 	}
 
 	return db, tmpDir, cleanup

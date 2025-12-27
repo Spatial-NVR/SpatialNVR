@@ -150,7 +150,7 @@ func SetupTestEnv(t *testing.T) *TestEnv {
 // Cleanup cleans up the test environment
 func (e *TestEnv) Cleanup() {
 	e.Server.Close()
-	e.DB.Close()
+	_ = e.DB.Close()
 }
 
 // Handler factories
@@ -257,7 +257,7 @@ func TestHealthEndpoint(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to make request: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		t.Errorf("Expected status 200, got %d", resp.StatusCode)
@@ -273,7 +273,7 @@ func TestCameraWorkflow(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to list cameras: %v", err)
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
 		t.Errorf("Expected status 200, got %d", resp.StatusCode)
@@ -298,8 +298,8 @@ func TestCameraWorkflow(t *testing.T) {
 	}
 
 	var createResp api.Response
-	json.NewDecoder(resp.Body).Decode(&createResp)
-	resp.Body.Close()
+	_ = json.NewDecoder(resp.Body).Decode(&createResp)
+	_ = resp.Body.Close()
 
 	if !createResp.Success {
 		t.Error("Create camera should succeed")
@@ -314,7 +314,7 @@ func TestCameraWorkflow(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to get camera: %v", err)
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
 		t.Errorf("Expected status 200, got %d", resp.StatusCode)
@@ -327,8 +327,8 @@ func TestCameraWorkflow(t *testing.T) {
 	}
 
 	var listResp api.Response
-	json.NewDecoder(resp.Body).Decode(&listResp)
-	resp.Body.Close()
+	_ = json.NewDecoder(resp.Body).Decode(&listResp)
+	_ = resp.Body.Close()
 
 	// 5. Delete the camera
 	req, _ := http.NewRequest(http.MethodDelete, env.Server.URL+"/api/v1/cameras/"+cameraID, nil)
@@ -336,7 +336,7 @@ func TestCameraWorkflow(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to delete camera: %v", err)
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close()
 
 	if resp.StatusCode != http.StatusNoContent {
 		t.Errorf("Expected status 204, got %d", resp.StatusCode)
@@ -347,7 +347,7 @@ func TestCameraWorkflow(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to get camera: %v", err)
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close()
 
 	if resp.StatusCode != http.StatusNotFound {
 		t.Errorf("Expected status 404, got %d", resp.StatusCode)
@@ -381,8 +381,8 @@ func TestEventWorkflow(t *testing.T) {
 	}
 
 	var listResp api.Response
-	json.NewDecoder(resp.Body).Decode(&listResp)
-	resp.Body.Close()
+	_ = json.NewDecoder(resp.Body).Decode(&listResp)
+	_ = resp.Body.Close()
 
 	if !listResp.Success {
 		t.Error("List events should succeed")
@@ -397,7 +397,7 @@ func TestEventWorkflow(t *testing.T) {
 	if resp.StatusCode != http.StatusOK {
 		t.Errorf("Expected status 200, got %d", resp.StatusCode)
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close()
 
 	// 3. Acknowledge event
 	req, _ := http.NewRequest(http.MethodPut, env.Server.URL+"/api/v1/events/"+event.ID+"/acknowledge", nil)
@@ -409,7 +409,7 @@ func TestEventWorkflow(t *testing.T) {
 	if resp.StatusCode != http.StatusOK {
 		t.Errorf("Expected status 200, got %d", resp.StatusCode)
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close()
 
 	// 4. Verify event is acknowledged
 	retrieved, err := env.EventService.Get(context.Background(), event.ID)
@@ -439,14 +439,14 @@ func TestValidationErrors(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create camera: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusBadRequest {
 		t.Errorf("Expected status 400, got %d", resp.StatusCode)
 	}
 
 	var errResp api.Response
-	json.NewDecoder(resp.Body).Decode(&errResp)
+	_ = json.NewDecoder(resp.Body).Decode(&errResp)
 
 	if errResp.Success {
 		t.Error("Request should fail")
@@ -466,7 +466,7 @@ func TestNotFoundErrors(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to get camera: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusNotFound {
 		t.Errorf("Expected status 404, got %d", resp.StatusCode)
@@ -477,7 +477,7 @@ func TestNotFoundErrors(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to get event: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusNotFound {
 		t.Errorf("Expected status 404, got %d", resp.StatusCode)
@@ -507,7 +507,7 @@ func TestConcurrentRequests(t *testing.T) {
 				done <- false
 				return
 			}
-			resp.Body.Close()
+			_ = resp.Body.Close()
 
 			done <- resp.StatusCode == http.StatusCreated
 		}(i)

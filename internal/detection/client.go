@@ -95,7 +95,7 @@ func (c *Client) Detect(ctx context.Context, req *DetectRequest) (*DetectRespons
 		c.mu.Unlock()
 		return nil, fmt.Errorf("detection request failed: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	latency := time.Since(start)
 
@@ -183,7 +183,7 @@ func (c *Client) GetMotionStatus(ctx context.Context) (*MotionStatus, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	var result MotionStatus
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
@@ -210,7 +210,7 @@ func (c *Client) ConfigureMotion(ctx context.Context, config MotionConfig) error
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	return nil
 }
@@ -233,7 +233,7 @@ func (c *Client) ResetMotion(ctx context.Context, cameraID string) error {
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	return nil
 }
@@ -266,7 +266,7 @@ func (c *Client) GetStatus(ctx context.Context) (*ServiceStatus, error) {
 	if err != nil {
 		return &ServiceStatus{Connected: false}, nil
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	var result struct {
 		Connected      bool    `json:"connected"`
@@ -311,7 +311,7 @@ func (c *Client) LoadModel(ctx context.Context, path string, modelType ModelType
 	if err != nil {
 		return "", fmt.Errorf("failed to load model: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	var result struct {
 		Success bool   `json:"success"`
@@ -345,7 +345,7 @@ func (c *Client) UnloadModel(ctx context.Context, modelID string) error {
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	return nil
 }
@@ -361,7 +361,7 @@ func (c *Client) GetBackends(ctx context.Context) ([]BackendInfo, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	var result struct {
 		Backends []struct {
@@ -400,7 +400,7 @@ func (c *Client) GetModels(ctx context.Context) ([]ModelInfo, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	var result struct {
 		Models []struct {

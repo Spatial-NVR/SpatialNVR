@@ -152,7 +152,7 @@ func (i *Installer) installFromAsset(ctx context.Context, owner, repo, tag strin
 	if err := i.downloadFile(ctx, asset.BrowserDownloadURL, cachePath); err != nil {
 		return nil, fmt.Errorf("failed to download asset: %w", err)
 	}
-	defer os.Remove(cachePath)
+	defer func() { _ = os.Remove(cachePath) }()
 
 	// Create plugin directory
 	pluginDir := filepath.Join(i.pluginsDir, repo)
@@ -175,7 +175,7 @@ func (i *Installer) installFromAsset(ctx context.Context, owner, repo, tag strin
 		if err := copyFile(cachePath, destPath); err != nil {
 			return nil, fmt.Errorf("failed to copy binary: %w", err)
 		}
-		os.Chmod(destPath, 0755)
+		_ = os.Chmod(destPath, 0755)
 	}
 
 	// Read manifest
@@ -189,7 +189,7 @@ func (i *Installer) installFromAsset(ctx context.Context, owner, repo, tag strin
 			Runtime: PluginRuntime{Type: "binary", Binary: asset.Name},
 		}
 		// Write the generated manifest
-		i.writeManifest(pluginDir, manifest)
+		_ = i.writeManifest(pluginDir, manifest)
 	}
 
 	// Track the repo for updates
@@ -209,7 +209,7 @@ func (i *Installer) installFromSource(ctx context.Context, owner, repo, tag stri
 	cloneURL := fmt.Sprintf("https://github.com/%s/%s.git", owner, repo)
 
 	// Remove existing directory if present
-	os.RemoveAll(pluginDir)
+	_ = os.RemoveAll(pluginDir)
 
 	cmd := exec.CommandContext(ctx, "git", "clone", "--depth", "1", "--branch", tag, cloneURL, pluginDir)
 	cmd.Stdout = io.Discard
@@ -261,7 +261,7 @@ func (i *Installer) getLatestRelease(ctx context.Context, owner, repo string) (*
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode == 404 {
 		// No releases, return a dummy release for the default branch
@@ -324,7 +324,7 @@ func (i *Installer) downloadFile(ctx context.Context, url, destPath string) erro
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != 200 {
 		return fmt.Errorf("download failed: %s", resp.Status)
@@ -334,7 +334,7 @@ func (i *Installer) downloadFile(ctx context.Context, url, destPath string) erro
 	if err != nil {
 		return err
 	}
-	defer out.Close()
+	defer func() { _ = out.Close() }()
 
 	_, err = io.Copy(out, resp.Body)
 	return err
@@ -390,7 +390,7 @@ func (i *Installer) trackRepo(owner, repo, tag, pluginID string) {
 		PluginID:     pluginID,
 	}
 
-	i.saveTrackedRepos()
+	_ = i.saveTrackedRepos()
 }
 
 // loadTrackedRepos loads the tracked repos from disk
@@ -468,7 +468,7 @@ func (i *Installer) checkForUpdates() {
 	}
 
 	i.mu.Lock()
-	i.saveTrackedRepos()
+	_ = i.saveTrackedRepos()
 	i.mu.Unlock()
 }
 
@@ -519,7 +519,7 @@ func (i *Installer) UninstallPlugin(pluginID string) error {
 
 	if repoKey != "" {
 		delete(i.repos, repoKey)
-		i.saveTrackedRepos()
+		_ = i.saveTrackedRepos()
 	}
 
 	// Remove plugin directory
@@ -568,13 +568,13 @@ func copyFile(src, dest string) error {
 	if err != nil {
 		return err
 	}
-	defer in.Close()
+	defer func() { _ = in.Close() }()
 
 	out, err := os.Create(dest)
 	if err != nil {
 		return err
 	}
-	defer out.Close()
+	defer func() { _ = out.Close() }()
 
 	_, err = io.Copy(out, in)
 	return err

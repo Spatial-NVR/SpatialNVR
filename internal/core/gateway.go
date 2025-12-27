@@ -110,7 +110,7 @@ func (gw *APIGateway) routeToPlugin(pluginID string) func(chi.Router) {
 func (gw *APIGateway) respondError(w http.ResponseWriter, status int, message string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(map[string]string{
+	_ = json.NewEncoder(w).Encode(map[string]string{
 		"error": message,
 	})
 }

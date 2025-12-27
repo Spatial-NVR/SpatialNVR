@@ -46,7 +46,7 @@ func setupTestDB(t *testing.T) *database.DB {
 
 func TestNewService(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	service := NewService(db)
 	if service == nil {
@@ -60,7 +60,7 @@ func TestNewService(t *testing.T) {
 
 func TestCreate(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	service := NewService(db)
 
@@ -88,7 +88,7 @@ func TestCreate(t *testing.T) {
 
 func TestGet(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	service := NewService(db)
 
@@ -123,7 +123,7 @@ func TestGet(t *testing.T) {
 
 func TestGetNotFound(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	service := NewService(db)
 
@@ -135,7 +135,7 @@ func TestGetNotFound(t *testing.T) {
 
 func TestList(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	service := NewService(db)
 
@@ -167,7 +167,7 @@ func TestList(t *testing.T) {
 
 func TestListWithFilters(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	service := NewService(db)
 
@@ -214,7 +214,7 @@ func TestListWithFilters(t *testing.T) {
 
 func TestListPagination(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	service := NewService(db)
 
@@ -226,7 +226,7 @@ func TestListPagination(t *testing.T) {
 			Timestamp:  time.Now().Add(-time.Duration(i) * time.Minute),
 			Confidence: 0.9,
 		}
-		service.Create(context.Background(), event)
+		_ = service.Create(context.Background(), event)
 	}
 
 	// Get first page
@@ -263,7 +263,7 @@ func TestListPagination(t *testing.T) {
 
 func TestAcknowledge(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	service := NewService(db)
 
@@ -273,7 +273,7 @@ func TestAcknowledge(t *testing.T) {
 		Timestamp:  time.Now(),
 		Confidence: 0.9,
 	}
-	service.Create(context.Background(), event)
+	_ = service.Create(context.Background(), event)
 
 	// Verify not acknowledged initially
 	retrieved, _ := service.Get(context.Background(), event.ID)
@@ -296,7 +296,7 @@ func TestAcknowledge(t *testing.T) {
 
 func TestSubscribe(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	service := NewService(db)
 
@@ -326,7 +326,7 @@ func TestSubscribe(t *testing.T) {
 	}()
 
 	// Create event
-	service.Create(context.Background(), event)
+	_ = service.Create(context.Background(), event)
 
 	// Wait for notification
 	result := <-received
@@ -342,7 +342,7 @@ func TestSubscribe(t *testing.T) {
 
 func TestGetStats(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	service := NewService(db)
 
@@ -359,7 +359,7 @@ func TestGetStats(t *testing.T) {
 			Confidence:   0.9,
 			Acknowledged: i%2 == 0, // Some acknowledged, some not
 		}
-		service.Create(context.Background(), event)
+		_ = service.Create(context.Background(), event)
 	}
 
 	// Yesterday's event
@@ -369,7 +369,7 @@ func TestGetStats(t *testing.T) {
 		Timestamp:  todayStart.Add(-24 * time.Hour),
 		Confidence: 0.9,
 	}
-	service.Create(context.Background(), event)
+	_ = service.Create(context.Background(), event)
 
 	stats, err := service.GetStats(context.Background(), "")
 	if err != nil {
@@ -472,7 +472,7 @@ func setupTestDBWithZones(t *testing.T) *database.DB {
 
 func TestCreateZone(t *testing.T) {
 	db := setupTestDBWithZones(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	service := NewService(db)
 
@@ -506,7 +506,7 @@ func TestCreateZone(t *testing.T) {
 
 func TestGetZone(t *testing.T) {
 	db := setupTestDBWithZones(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	service := NewService(db)
 
@@ -547,7 +547,7 @@ func TestGetZone(t *testing.T) {
 
 func TestGetZoneNotFound(t *testing.T) {
 	db := setupTestDBWithZones(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	service := NewService(db)
 
@@ -559,7 +559,7 @@ func TestGetZoneNotFound(t *testing.T) {
 
 func TestListZones(t *testing.T) {
 	db := setupTestDBWithZones(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	service := NewService(db)
 
@@ -594,7 +594,7 @@ func TestListZones(t *testing.T) {
 
 func TestUpdateZone(t *testing.T) {
 	db := setupTestDBWithZones(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	service := NewService(db)
 
@@ -635,7 +635,7 @@ func TestUpdateZone(t *testing.T) {
 
 func TestDeleteZone(t *testing.T) {
 	db := setupTestDBWithZones(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	service := NewService(db)
 
@@ -648,7 +648,7 @@ func TestDeleteZone(t *testing.T) {
 		Sensitivity:   5,
 		Cooldown:      30,
 	}
-	service.CreateZone(context.Background(), zone)
+	_ = service.CreateZone(context.Background(), zone)
 
 	// Delete the zone
 	err := service.DeleteZone(context.Background(), zone.ID)
@@ -665,7 +665,7 @@ func TestDeleteZone(t *testing.T) {
 
 func TestDeleteZoneNotFound(t *testing.T) {
 	db := setupTestDBWithZones(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	service := NewService(db)
 
@@ -677,7 +677,7 @@ func TestDeleteZoneNotFound(t *testing.T) {
 
 func TestGetEnabledZonesForCamera(t *testing.T) {
 	db := setupTestDBWithZones(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	service := NewService(db)
 
@@ -710,7 +710,7 @@ func TestGetEnabledZonesForCamera(t *testing.T) {
 
 func TestDelete(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	service := NewService(db)
 
@@ -720,7 +720,7 @@ func TestDelete(t *testing.T) {
 		Timestamp:  time.Now(),
 		Confidence: 0.9,
 	}
-	service.Create(context.Background(), event)
+	_ = service.Create(context.Background(), event)
 
 	// Delete the event
 	err := service.Delete(context.Background(), event.ID)
@@ -737,7 +737,7 @@ func TestDelete(t *testing.T) {
 
 func TestCreateMotionEvent(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	service := NewService(db)
 
@@ -759,7 +759,7 @@ func TestCreateMotionEvent(t *testing.T) {
 
 func TestCreateDoorbellEvent(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	service := NewService(db)
 
@@ -778,7 +778,7 @@ func TestCreateDoorbellEvent(t *testing.T) {
 
 func TestCreateAudioEvent(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	service := NewService(db)
 
@@ -797,7 +797,7 @@ func TestCreateAudioEvent(t *testing.T) {
 
 func TestListWithTimeFilters(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	service := NewService(db)
 
@@ -812,7 +812,7 @@ func TestListWithTimeFilters(t *testing.T) {
 		{CameraID: "cam1", EventType: EventPerson, Timestamp: now, Confidence: 0.9},
 	}
 	for _, e := range events {
-		service.Create(context.Background(), e)
+		_ = service.Create(context.Background(), e)
 	}
 
 	// Filter by start time
@@ -830,7 +830,7 @@ func TestListWithTimeFilters(t *testing.T) {
 
 func TestEventWithTags(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	service := NewService(db)
 
@@ -841,7 +841,7 @@ func TestEventWithTags(t *testing.T) {
 		Confidence: 0.9,
 		Tags:       []string{"important", "front_door"},
 	}
-	service.Create(context.Background(), event)
+	_ = service.Create(context.Background(), event)
 
 	retrieved, _ := service.Get(context.Background(), event.ID)
 	if len(retrieved.Tags) != 2 {
@@ -851,7 +851,7 @@ func TestEventWithTags(t *testing.T) {
 
 func TestEventWithEndTimestamp(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	service := NewService(db)
 
@@ -865,7 +865,7 @@ func TestEventWithEndTimestamp(t *testing.T) {
 		EndTimestamp: &endTime,
 		Confidence:   0.9,
 	}
-	service.Create(context.Background(), event)
+	_ = service.Create(context.Background(), event)
 
 	retrieved, _ := service.Get(context.Background(), event.ID)
 	if retrieved.EndTimestamp == nil {
@@ -875,7 +875,7 @@ func TestEventWithEndTimestamp(t *testing.T) {
 
 func TestEventWithOptionalFields(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	service := NewService(db)
 
@@ -889,7 +889,7 @@ func TestEventWithOptionalFields(t *testing.T) {
 		VideoSegmentID: "seg_123",
 		Notes:          "Test notes",
 	}
-	service.Create(context.Background(), event)
+	_ = service.Create(context.Background(), event)
 
 	retrieved, _ := service.Get(context.Background(), event.ID)
 	if retrieved.ThumbnailPath != "/thumb/1.jpg" {
@@ -905,7 +905,7 @@ func TestEventWithOptionalFields(t *testing.T) {
 
 func TestMultipleSubscribers(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	service := NewService(db)
 
@@ -937,7 +937,7 @@ func TestMultipleSubscribers(t *testing.T) {
 		}
 	}()
 
-	service.Create(context.Background(), event)
+	_ = service.Create(context.Background(), event)
 
 	// Wait for all to receive
 	count := 0
@@ -959,7 +959,7 @@ func TestMultipleSubscribers(t *testing.T) {
 
 func TestGetStatsWithCameraFilter(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	service := NewService(db)
 
@@ -968,7 +968,7 @@ func TestGetStatsWithCameraFilter(t *testing.T) {
 
 	// Create events for different cameras
 	for i := 0; i < 3; i++ {
-		service.Create(context.Background(), &Event{
+		_ = service.Create(context.Background(), &Event{
 			CameraID:   "cam1",
 			EventType:  EventPerson,
 			Timestamp:  todayStart.Add(time.Duration(i) * time.Hour),
@@ -976,7 +976,7 @@ func TestGetStatsWithCameraFilter(t *testing.T) {
 		})
 	}
 	for i := 0; i < 2; i++ {
-		service.Create(context.Background(), &Event{
+		_ = service.Create(context.Background(), &Event{
 			CameraID:   "cam2",
 			EventType:  EventPerson,
 			Timestamp:  todayStart.Add(time.Duration(i) * time.Hour),
@@ -999,7 +999,7 @@ func TestGetStatsWithCameraFilter(t *testing.T) {
 
 func TestZoneWithObjectTypes(t *testing.T) {
 	db := setupTestDBWithZones(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	service := NewService(db)
 
@@ -1013,7 +1013,7 @@ func TestZoneWithObjectTypes(t *testing.T) {
 		Sensitivity:   5,
 		Cooldown:      30,
 	}
-	service.CreateZone(context.Background(), zone)
+	_ = service.CreateZone(context.Background(), zone)
 
 	retrieved, _ := service.GetZone(context.Background(), zone.ID)
 	if len(retrieved.ObjectTypes) != 3 {
@@ -1023,7 +1023,7 @@ func TestZoneWithObjectTypes(t *testing.T) {
 
 func TestZoneWithAllFields(t *testing.T) {
 	db := setupTestDBWithZones(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	service := NewService(db)
 
@@ -1041,7 +1041,7 @@ func TestZoneWithAllFields(t *testing.T) {
 		Recording:     true,
 		Color:         "#00FF00",
 	}
-	service.CreateZone(context.Background(), zone)
+	_ = service.CreateZone(context.Background(), zone)
 
 	retrieved, _ := service.GetZone(context.Background(), zone.ID)
 	if retrieved.MinSize != 0.05 {

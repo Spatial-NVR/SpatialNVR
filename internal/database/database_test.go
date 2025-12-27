@@ -129,7 +129,7 @@ func TestHealth(t *testing.T) {
 	}
 
 	// Close and test health
-	db.Close()
+	_ = db.Close()
 	err = db.Health(context.Background())
 	if err == nil {
 		t.Error("Health check should fail on closed database")
@@ -144,7 +144,7 @@ func TestGetSize(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to open database: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// Insert some data to create file size
 	_, err = db.Exec(`CREATE TABLE test_table (id INTEGER PRIMARY KEY, data BLOB)`)
@@ -175,7 +175,7 @@ func TestVacuum(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to open database: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// Create and populate table
 	_, err = db.Exec(`CREATE TABLE test_table (id INTEGER PRIMARY KEY, data TEXT)`)
@@ -211,7 +211,7 @@ func TestContextCancellation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to open database: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// Create a cancelled context
 	ctx, cancel := context.WithCancel(context.Background())
@@ -232,7 +232,7 @@ func TestPath(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to open database: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	if db.Path() != dbPath {
 		t.Errorf("Expected path %s, got %s", dbPath, db.Path())
@@ -247,7 +247,7 @@ func TestStats(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to open database: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	stats := db.Stats()
 
@@ -264,7 +264,7 @@ func TestAnalyze(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to open database: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// Create a table with data
 	_, err = db.Exec(`CREATE TABLE test_table (id INTEGER PRIMARY KEY, value TEXT)`)
@@ -294,7 +294,7 @@ func TestCheckpoint(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to open database: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// Insert some data to create WAL entries
 	_, err = db.Exec(`CREATE TABLE test_table (id INTEGER PRIMARY KEY, value TEXT)`)

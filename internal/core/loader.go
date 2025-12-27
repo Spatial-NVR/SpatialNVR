@@ -331,7 +331,7 @@ func (l *PluginLoader) startPlugin(pluginID string) error {
 		lp.State = PluginStateError
 		lp.LastError = err.Error()
 		l.pluginsMu.Unlock()
-		l.eventBus.PublishPluginError(pluginID, err)
+		_ = l.eventBus.PublishPluginError(pluginID, err)
 		return fmt.Errorf("failed to initialize plugin: %w", err)
 	}
 
@@ -341,7 +341,7 @@ func (l *PluginLoader) startPlugin(pluginID string) error {
 		lp.State = PluginStateError
 		lp.LastError = err.Error()
 		l.pluginsMu.Unlock()
-		l.eventBus.PublishPluginError(pluginID, err)
+		_ = l.eventBus.PublishPluginError(pluginID, err)
 		return fmt.Errorf("failed to start plugin: %w", err)
 	}
 
@@ -353,7 +353,7 @@ func (l *PluginLoader) startPlugin(pluginID string) error {
 	lp.LastError = ""
 	l.pluginsMu.Unlock()
 
-	l.eventBus.PublishPluginStarted(pluginID, lp.Manifest.Version)
+	_ = l.eventBus.PublishPluginStarted(pluginID, lp.Manifest.Version)
 	l.logger.Info("Plugin started", "id", pluginID, "version", lp.Manifest.Version)
 
 	return nil
@@ -399,7 +399,7 @@ func (l *PluginLoader) stopPlugin(pluginID string) error {
 	lp.Runtime = nil
 	l.pluginsMu.Unlock()
 
-	l.eventBus.PublishPluginStopped(pluginID)
+	_ = l.eventBus.PublishPluginStopped(pluginID)
 	l.logger.Info("Plugin stopped", "id", pluginID)
 
 	return nil
@@ -657,7 +657,7 @@ func (l *PluginLoader) checkHealth() {
 				"message", health.Message)
 
 			// Publish health event
-			l.eventBus.Publish(SubjectPluginHealth, map[string]interface{}{
+			_ = l.eventBus.Publish(SubjectPluginHealth, map[string]interface{}{
 				"plugin_id": id,
 				"state":     health.State,
 				"message":   health.Message,

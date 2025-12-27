@@ -70,7 +70,7 @@ func IsPortAvailable(port int) bool {
 	if err != nil {
 		return false
 	}
-	ln.Close()
+	_ = ln.Close()
 	return true
 }
 

@@ -401,7 +401,7 @@ func (h *RecordingHandler) StreamSegment(w http.ResponseWriter, r *http.Request)
 		InternalError(w, "Failed to open recording file")
 		return
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	// Set content type based on file extension
 	contentType := "video/mp4"
@@ -427,7 +427,7 @@ func (h *RecordingHandler) StreamSegment(w http.ResponseWriter, r *http.Request)
 		w.Header().Set("Content-Length", strconv.FormatInt(fileSize, 10))
 		w.Header().Set("Accept-Ranges", "bytes")
 		w.WriteHeader(http.StatusOK)
-		io.Copy(w, file)
+		_, _ = io.Copy(w, file)
 		return
 	}
 
@@ -484,7 +484,7 @@ func (h *RecordingHandler) StreamSegment(w http.ResponseWriter, r *http.Request)
 	w.WriteHeader(http.StatusPartialContent)
 
 	// Copy the requested range
-	io.CopyN(w, file, contentLength)
+	_, _ = io.CopyN(w, file, contentLength)
 }
 
 // DownloadSegment serves a video segment as a download
@@ -511,7 +511,7 @@ func (h *RecordingHandler) DownloadSegment(w http.ResponseWriter, r *http.Reques
 		InternalError(w, "Failed to open recording file")
 		return
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	// Generate a nice filename
 	filename := fmt.Sprintf("%s_%s.mp4",
@@ -524,7 +524,7 @@ func (h *RecordingHandler) DownloadSegment(w http.ResponseWriter, r *http.Reques
 	w.Header().Set("Content-Length", strconv.FormatInt(fileInfo.Size(), 10))
 	w.WriteHeader(http.StatusOK)
 
-	io.Copy(w, file)
+	_, _ = io.Copy(w, file)
 }
 
 // GetThumbnail serves the thumbnail image for a segment
@@ -555,7 +555,7 @@ func (h *RecordingHandler) GetThumbnail(w http.ResponseWriter, r *http.Request) 
 		InternalError(w, "Failed to open thumbnail file")
 		return
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	// Determine content type
 	contentType := "image/jpeg"
@@ -572,7 +572,7 @@ func (h *RecordingHandler) GetThumbnail(w http.ResponseWriter, r *http.Request) 
 	w.Header().Set("Cache-Control", "public, max-age=86400") // Cache for 24 hours
 	w.WriteHeader(http.StatusOK)
 
-	io.Copy(w, file)
+	_, _ = io.Copy(w, file)
 }
 
 // parseTimeRange parses start and end time from query parameters
@@ -648,7 +648,7 @@ func (h *RecordingHandler) StreamFromTimestamp(w http.ResponseWriter, r *http.Re
 		InternalError(w, "Failed to open recording file")
 		return
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	// For now, we stream the segment that contains the timestamp
 	// TODO: Implement on-the-fly segment stitching for seamless playback
@@ -680,7 +680,7 @@ func (h *RecordingHandler) StreamFromTimestamp(w http.ResponseWriter, r *http.Re
 		w.Header().Set("Content-Length", strconv.FormatInt(fileSize, 10))
 		w.Header().Set("Accept-Ranges", "bytes")
 		w.WriteHeader(http.StatusOK)
-		io.Copy(w, file)
+		_, _ = io.Copy(w, file)
 		return
 	}
 
@@ -735,5 +735,5 @@ func (h *RecordingHandler) StreamFromTimestamp(w http.ResponseWriter, r *http.Re
 	w.Header().Set("Accept-Ranges", "bytes")
 	w.WriteHeader(http.StatusPartialContent)
 
-	io.CopyN(w, file, contentLength)
+	_, _ = io.CopyN(w, file, contentLength)
 }

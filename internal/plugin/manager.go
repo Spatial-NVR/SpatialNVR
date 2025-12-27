@@ -292,11 +292,12 @@ func (m *Manager) ListPlugins() []PluginStatus {
 
 		state := PluginStateStopped
 		if enabled {
-			if health.State == HealthStateHealthy {
+			switch health.State {
+			case HealthStateHealthy:
 				state = PluginStateRunning
-			} else if health.State == HealthStateUnhealthy {
+			case HealthStateUnhealthy:
 				state = PluginStateError
-			} else {
+			default:
 				state = PluginStateRunning
 			}
 		}
@@ -1135,7 +1136,7 @@ func (m *Manager) InstallAndStart(ctx context.Context, repoURL string) (*PluginM
 		pluginCfg := m.config.Plugins[manifest.ID]
 		pluginCfg.Enabled = true
 		m.config.Plugins[manifest.ID] = pluginCfg
-		m.config.Save()
+		_ = m.config.Save()
 
 		// Start the plugin
 		if err := m.startExternalPlugin(plugin); err != nil {

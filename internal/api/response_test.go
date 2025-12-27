@@ -249,7 +249,7 @@ func TestListTotalPagesCalculation(t *testing.T) {
 		List(w, []string{}, tc.total, 1, tc.perPage)
 
 		var response Response
-		json.NewDecoder(w.Result().Body).Decode(&response)
+		_ = json.NewDecoder(w.Result().Body).Decode(&response)
 
 		if response.Meta.TotalPages != tc.expectedPages {
 			t.Errorf("total=%d, perPage=%d: expected pages %d, got %d",
@@ -264,7 +264,7 @@ func TestListDefaultsForZeroValues(t *testing.T) {
 	List(w, []string{"a", "b"}, 50, 0, 0)
 
 	var response Response
-	json.NewDecoder(w.Result().Body).Decode(&response)
+	_ = json.NewDecoder(w.Result().Body).Decode(&response)
 
 	if response.Meta == nil {
 		t.Fatal("Response should have meta")

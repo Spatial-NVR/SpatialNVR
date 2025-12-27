@@ -245,7 +245,7 @@ func (p *EventsPlugin) subscribeToEvents() error {
 
 	return runtime.SubscribeEvents(func(event *sdk.Event) {
 		ctx := context.Background()
-		p.HandleEvent(ctx, event)
+		_ = p.HandleEvent(ctx, event)
 	}, p.EventSubscriptions()...)
 }
 
@@ -441,9 +441,9 @@ func (p *EventsPlugin) handleSSE(w http.ResponseWriter, r *http.Request) {
 			}
 
 			data, _ := json.Marshal(event)
-			w.Write([]byte("data: "))
-			w.Write(data)
-			w.Write([]byte("\n\n"))
+			_, _ = w.Write([]byte("data: "))
+			_, _ = w.Write(data)
+			_, _ = w.Write([]byte("\n\n"))
 			flusher.Flush()
 		}
 	}
@@ -502,13 +502,13 @@ func (p *EventsPlugin) handleGetCameraEvents(w http.ResponseWriter, r *http.Requ
 
 func (p *EventsPlugin) respondJSON(w http.ResponseWriter, data interface{}) {
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(data)
+	_ = json.NewEncoder(w).Encode(data)
 }
 
 func (p *EventsPlugin) respondError(w http.ResponseWriter, status int, message string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(map[string]string{
+	_ = json.NewEncoder(w).Encode(map[string]string{
 		"error": message,
 	})
 }

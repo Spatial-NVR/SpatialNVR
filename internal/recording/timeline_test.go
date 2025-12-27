@@ -24,7 +24,7 @@ func setupTimelineTestRepo(t *testing.T) (*SQLiteRepository, *sql.DB) {
 
 func TestNewTimelineBuilder(t *testing.T) {
 	repo, db := setupTimelineTestRepo(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	builder := NewTimelineBuilder(repo)
 	if builder == nil {
@@ -34,7 +34,7 @@ func TestNewTimelineBuilder(t *testing.T) {
 
 func TestTimelineBuilder_BuildTimeline_Empty(t *testing.T) {
 	repo, db := setupTimelineTestRepo(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	builder := NewTimelineBuilder(repo)
 
@@ -61,7 +61,7 @@ func TestTimelineBuilder_BuildTimeline_Empty(t *testing.T) {
 
 func TestTimelineBuilder_BuildTimeline_WithSegments(t *testing.T) {
 	repo, db := setupTimelineTestRepo(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	builder := NewTimelineBuilder(repo)
 
@@ -94,9 +94,10 @@ func TestTimelineBuilder_BuildTimeline_WithSegments(t *testing.T) {
 	recordingCount := 0
 	gapCount := 0
 	for _, seg := range timeline.Segments {
-		if seg.Type == "recording" {
+		switch seg.Type {
+		case "recording":
 			recordingCount++
-		} else if seg.Type == "gap" {
+		case "gap":
 			gapCount++
 		}
 	}
@@ -108,7 +109,7 @@ func TestTimelineBuilder_BuildTimeline_WithSegments(t *testing.T) {
 
 func TestTimelineBuilder_BuildTimeline_WithEvents(t *testing.T) {
 	repo, db := setupTimelineTestRepo(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	builder := NewTimelineBuilder(repo)
 
@@ -156,7 +157,7 @@ func TestTimelineBuilder_BuildTimeline_WithEvents(t *testing.T) {
 
 func TestTimelineBuilder_GetTimelineSegments(t *testing.T) {
 	repo, db := setupTimelineTestRepo(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	builder := NewTimelineBuilder(repo)
 
@@ -173,7 +174,7 @@ func TestTimelineBuilder_GetTimelineSegments(t *testing.T) {
 
 func TestTimelineBuilder_GetCoverage(t *testing.T) {
 	repo, db := setupTimelineTestRepo(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	builder := NewTimelineBuilder(repo)
 
@@ -205,7 +206,7 @@ func TestTimelineBuilder_GetCoverage(t *testing.T) {
 
 func TestTimelineBuilder_GetCoverage_Empty(t *testing.T) {
 	repo, db := setupTimelineTestRepo(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	builder := NewTimelineBuilder(repo)
 
@@ -222,7 +223,7 @@ func TestTimelineBuilder_GetCoverage_Empty(t *testing.T) {
 
 func TestTimelineBuilder_GetCoverage_ZeroDuration(t *testing.T) {
 	repo, db := setupTimelineTestRepo(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	builder := NewTimelineBuilder(repo)
 
@@ -239,7 +240,7 @@ func TestTimelineBuilder_GetCoverage_ZeroDuration(t *testing.T) {
 
 func TestTimelineBuilder_GetEventTimeline(t *testing.T) {
 	repo, db := setupTimelineTestRepo(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	builder := NewTimelineBuilder(repo)
 
@@ -274,7 +275,7 @@ func TestTimelineBuilder_GetEventTimeline(t *testing.T) {
 
 func TestTimelineBuilder_GetDailyStats(t *testing.T) {
 	repo, db := setupTimelineTestRepo(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	builder := NewTimelineBuilder(repo)
 
@@ -319,7 +320,7 @@ func TestTimelineBuilder_GetDailyStats(t *testing.T) {
 
 func TestTimelineBuilder_GetWeeklyStats(t *testing.T) {
 	repo, db := setupTimelineTestRepo(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	builder := NewTimelineBuilder(repo)
 
@@ -356,7 +357,7 @@ func TestTimelineBuilder_GetWeeklyStats(t *testing.T) {
 
 func TestTimelineBuilder_FindSegmentsContaining(t *testing.T) {
 	repo, db := setupTimelineTestRepo(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	builder := NewTimelineBuilder(repo)
 
@@ -389,7 +390,7 @@ func TestTimelineBuilder_FindSegmentsContaining(t *testing.T) {
 
 func TestTimelineBuilder_FindSegmentsContaining_NotFound(t *testing.T) {
 	repo, db := setupTimelineTestRepo(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	builder := NewTimelineBuilder(repo)
 
@@ -405,7 +406,7 @@ func TestTimelineBuilder_FindSegmentsContaining_NotFound(t *testing.T) {
 
 func TestTimelineBuilder_GetPlaybackURL(t *testing.T) {
 	repo, db := setupTimelineTestRepo(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	builder := NewTimelineBuilder(repo)
 
@@ -441,7 +442,7 @@ func TestTimelineBuilder_GetPlaybackURL(t *testing.T) {
 
 func TestTimelineBuilder_GetPlaybackURL_NotFound(t *testing.T) {
 	repo, db := setupTimelineTestRepo(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	builder := NewTimelineBuilder(repo)
 

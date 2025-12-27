@@ -139,7 +139,7 @@ func (p *ExternalPlugin) Initialize(ctx context.Context, runtime *sdk.PluginRunt
 	// Send initialize command
 	_, err = p.Call(ctx, "initialize", p.config)
 	if err != nil {
-		p.Stop(ctx)
+		_ = p.Stop(ctx)
 		return fmt.Errorf("failed to initialize plugin: %w", err)
 	}
 
@@ -167,11 +167,11 @@ func (p *ExternalPlugin) Stop(ctx context.Context) error {
 	})
 
 	// Send shutdown command
-	p.Call(ctx, "shutdown", nil)
+	_, _ = p.Call(ctx, "shutdown", nil)
 
 	// Close stdin to signal EOF
 	if p.stdin != nil {
-		p.stdin.Close()
+		_ = p.stdin.Close()
 	}
 
 	// Wait for process with timeout
@@ -183,7 +183,7 @@ func (p *ExternalPlugin) Stop(ctx context.Context) error {
 	select {
 	case <-done:
 	case <-time.After(5 * time.Second):
-		p.cmd.Process.Kill()
+		_ = p.cmd.Process.Kill()
 	}
 
 	return nil

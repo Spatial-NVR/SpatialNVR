@@ -185,9 +185,8 @@ func (h *DefaultSegmentHandler) Delete(segment *Segment) error {
 
 	// Delete thumbnail if exists
 	if segment.Thumbnail != "" {
-		if err := os.Remove(segment.Thumbnail); err != nil && !os.IsNotExist(err) {
-			// Log but don't fail if thumbnail deletion fails
-		}
+		// Ignore error - thumbnail deletion is best effort
+		_ = os.Remove(segment.Thumbnail)
 	}
 
 	return nil

@@ -186,7 +186,7 @@ func TestPluginClient_Events(t *testing.T) {
 	stderr := &mockReadCloser{Reader: strings.NewReader("")}
 
 	client := NewPluginClient(stdin, stdout, stderr)
-	defer client.Close()
+	defer func() { _ = client.Close() }()
 
 	events := client.Events()
 	if events == nil {
@@ -201,7 +201,7 @@ func TestPluginClient_Call_ContextCancelled(t *testing.T) {
 	stderr := &mockReadCloser{Reader: strings.NewReader("")}
 
 	client := NewPluginClient(stdin, stdout, stderr)
-	defer client.Close()
+	defer func() { _ = client.Close() }()
 
 	// Cancel context immediately
 	ctx, cancel := context.WithCancel(context.Background())
@@ -219,7 +219,7 @@ func TestPluginClient_Call_Closed(t *testing.T) {
 	stderr := &mockReadCloser{Reader: strings.NewReader("")}
 
 	client := NewPluginClient(stdin, stdout, stderr)
-	client.Close()
+	_ = client.Close()
 
 	_, err := client.Call(context.Background(), "test", nil)
 	if err == nil {
@@ -255,7 +255,7 @@ func TestPluginProxy_Events(t *testing.T) {
 
 	client := NewPluginClient(stdin, stdout, stderr)
 	proxy := NewPluginProxy(client)
-	defer proxy.Close()
+	defer func() { _ = proxy.Close() }()
 
 	events := proxy.Events()
 	if events == nil {
@@ -270,7 +270,7 @@ func TestPluginProxy_Methods_ClosedClient(t *testing.T) {
 
 	client := NewPluginClient(stdin, stdout, stderr)
 	proxy := NewPluginProxy(client)
-	client.Close()
+	_ = client.Close()
 
 	ctx := context.Background()
 
@@ -333,7 +333,7 @@ func TestPluginProxy_ContextTimeout(t *testing.T) {
 
 	client := NewPluginClient(stdin, stdout, stderr)
 	proxy := NewPluginProxy(client)
-	defer proxy.Close()
+	defer func() { _ = proxy.Close() }()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Millisecond)
 	defer cancel()

@@ -302,10 +302,10 @@ func (r *PluginRuntime) HandleRequests(method string, handler func([]byte) ([]by
 		if err != nil {
 			r.logger.Error("Request handler failed", "method", method, "error", err)
 			errResp, _ := json.Marshal(map[string]string{"error": err.Error()})
-			msg.Respond(errResp)
+			_ = msg.Respond(errResp)
 			return
 		}
-		msg.Respond(response)
+		_ = msg.Respond(response)
 	})
 
 	return err
@@ -328,7 +328,7 @@ func (r *PluginRuntime) Stop() {
 	defer r.subsMu.Unlock()
 
 	for _, sub := range r.subs {
-		sub.Unsubscribe()
+		_ = sub.Unsubscribe()
 	}
 	r.subs = nil
 }

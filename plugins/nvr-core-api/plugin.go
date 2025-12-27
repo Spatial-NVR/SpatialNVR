@@ -133,7 +133,7 @@ func (p *CoreAPIPlugin) Start(ctx context.Context) error {
 	runtime.Logger().Info("Core API plugin started")
 
 	// Publish started event
-	p.PublishEvent(sdk.EventTypePluginStarted, map[string]string{
+	_ = p.PublishEvent(sdk.EventTypePluginStarted, map[string]string{
 		"plugin_id": "nvr-core-api",
 	})
 
@@ -270,7 +270,7 @@ func (p *CoreAPIPlugin) handleCreateCamera(w http.ResponseWriter, r *http.Reques
 	}
 
 	// Publish camera added event with full config for other plugins
-	p.PublishEvent(sdk.EventTypeCameraAdded, map[string]interface{}{
+	_ = p.PublishEvent(sdk.EventTypeCameraAdded, map[string]interface{}{
 		"camera_id":   cam.ID,
 		"name":        cam.Name,
 		"main_stream": cam.StreamURL,
@@ -333,7 +333,7 @@ func (p *CoreAPIPlugin) handleUpdateCamera(w http.ResponseWriter, r *http.Reques
 	}
 
 	// Publish camera updated event with full config for other plugins
-	p.PublishEvent(sdk.EventTypeCameraUpdated, map[string]interface{}{
+	_ = p.PublishEvent(sdk.EventTypeCameraUpdated, map[string]interface{}{
 		"camera_id":   cam.ID,
 		"name":        cam.Name,
 		"main_stream": cam.StreamURL,
@@ -357,7 +357,7 @@ func (p *CoreAPIPlugin) handleDeleteCamera(w http.ResponseWriter, r *http.Reques
 	}
 
 	// Publish camera removed event
-	p.PublishEvent(sdk.EventTypeCameraRemoved, map[string]string{
+	_ = p.PublishEvent(sdk.EventTypeCameraRemoved, map[string]string{
 		"camera_id": id,
 	})
 
@@ -432,7 +432,7 @@ func (p *CoreAPIPlugin) handleGetSnapshot(w http.ResponseWriter, r *http.Request
 	}
 
 	w.Header().Set("Content-Type", "image/jpeg")
-	w.Write(data)
+	_, _ = w.Write(data)
 }
 
 func (p *CoreAPIPlugin) handleGetStreamURLs(w http.ResponseWriter, r *http.Request) {
@@ -477,13 +477,13 @@ func (p *CoreAPIPlugin) handleGetConfig(w http.ResponseWriter, r *http.Request) 
 
 func (p *CoreAPIPlugin) respondJSON(w http.ResponseWriter, data interface{}) {
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(data)
+	_ = json.NewEncoder(w).Encode(data)
 }
 
 func (p *CoreAPIPlugin) respondError(w http.ResponseWriter, status int, message string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(map[string]string{
+	_ = json.NewEncoder(w).Encode(map[string]string{
 		"error": message,
 	})
 }

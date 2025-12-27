@@ -55,7 +55,7 @@ func setupZoneTest(t *testing.T) (*ZoneHandler, *events.Service, func()) {
 	handler := NewZoneHandler(eventService)
 
 	cleanup := func() {
-		db.Close()
+		_ = db.Close()
 	}
 
 	return handler, eventService, cleanup
@@ -204,7 +204,7 @@ func TestZoneHandler_Create(t *testing.T) {
 			}
 
 			var resp Response
-			json.Unmarshal(w.Body.Bytes(), &resp)
+			_ = json.Unmarshal(w.Body.Bytes(), &resp)
 
 			if tt.wantError && resp.Success {
 				t.Error("Expected error response, got success")
@@ -247,7 +247,7 @@ func TestZoneHandler_Get(t *testing.T) {
 	}
 
 	var resp Response
-	json.Unmarshal(w.Body.Bytes(), &resp)
+	_ = json.Unmarshal(w.Body.Bytes(), &resp)
 
 	if !resp.Success {
 		t.Errorf("Expected success, got error: %v", resp.Error)
@@ -308,7 +308,7 @@ func TestZoneHandler_List(t *testing.T) {
 	}
 
 	var resp Response
-	json.Unmarshal(w.Body.Bytes(), &resp)
+	_ = json.Unmarshal(w.Body.Bytes(), &resp)
 
 	data := resp.Data.([]interface{})
 	if len(data) != 3 {
@@ -324,7 +324,7 @@ func TestZoneHandler_List(t *testing.T) {
 		t.Errorf("Expected status 200, got %d", w.Code)
 	}
 
-	json.Unmarshal(w.Body.Bytes(), &resp)
+	_ = json.Unmarshal(w.Body.Bytes(), &resp)
 	data = resp.Data.([]interface{})
 	if len(data) != 2 {
 		t.Errorf("Expected 2 zones for cam_1, got %d", len(data))

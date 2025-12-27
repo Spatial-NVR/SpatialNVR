@@ -43,7 +43,7 @@ type Manager struct {
 // NewManager creates a new model manager
 func NewManager(dataPath string) *Manager {
 	modelsDir := filepath.Join(dataPath, "models")
-	os.MkdirAll(modelsDir, 0755)
+	_ = os.MkdirAll(modelsDir, 0755)
 
 	return &Manager{
 		modelsDir: modelsDir,
@@ -260,7 +260,7 @@ func (m *Manager) downloadFile(ctx context.Context, modelID string, info ModelIn
 	if err != nil {
 		return fmt.Errorf("failed to download: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("download failed with status: %d", resp.StatusCode)
@@ -280,7 +280,7 @@ func (m *Manager) downloadFile(ctx context.Context, modelID string, info ModelIn
 	if err != nil {
 		return fmt.Errorf("failed to create file: %w", err)
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	// Download with progress tracking
 	var downloaded int64
@@ -289,7 +289,7 @@ func (m *Manager) downloadFile(ctx context.Context, modelID string, info ModelIn
 	for {
 		select {
 		case <-ctx.Done():
-			os.Remove(tmpPath)
+			_ = os.Remove(tmpPath)
 			return ctx.Err()
 		default:
 		}
@@ -298,7 +298,7 @@ func (m *Manager) downloadFile(ctx context.Context, modelID string, info ModelIn
 		if n > 0 {
 			_, writeErr := file.Write(buf[:n])
 			if writeErr != nil {
-				os.Remove(tmpPath)
+				_ = os.Remove(tmpPath)
 				return fmt.Errorf("failed to write: %w", writeErr)
 			}
 
@@ -319,14 +319,14 @@ func (m *Manager) downloadFile(ctx context.Context, modelID string, info ModelIn
 			break
 		}
 		if err != nil {
-			os.Remove(tmpPath)
+			_ = os.Remove(tmpPath)
 			return fmt.Errorf("download error: %w", err)
 		}
 	}
 
 	// Rename temp file to final name
 	if err := os.Rename(tmpPath, destPath); err != nil {
-		os.Remove(tmpPath)
+		_ = os.Remove(tmpPath)
 		return fmt.Errorf("failed to finalize: %w", err)
 	}
 

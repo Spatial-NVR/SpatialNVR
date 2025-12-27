@@ -136,7 +136,7 @@ func (s *Service) List(ctx context.Context) ([]*Camera, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var cameras []*Camera
 	for rows.Next() {
@@ -551,7 +551,7 @@ func (s *Service) GetSnapshot(ctx context.Context, id string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("failed to get snapshot: %s", resp.Status)
@@ -581,6 +581,7 @@ func (s *Service) upsertCameraDB(ctx context.Context, cam *Camera) error {
 
 // updateGo2RTCConfig updates the go2rtc configuration
 func (s *Service) updateGo2RTCConfig() error {
+	s.mu.RLock()
 	var streams []streaming.CameraStream
 
 	for _, cam := range s.cfg.Cameras {
@@ -596,6 +597,7 @@ func (s *Service) updateGo2RTCConfig() error {
 			SubURL:   cam.Stream.SubURL,
 		})
 	}
+	s.mu.RUnlock()
 
 	generator := streaming.NewConfigGenerator()
 	config := generator.Generate(streams)
@@ -684,7 +686,7 @@ func (s *Service) startCameraStream(ctx context.Context, cameraID string) error 
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	// Read and discard the frame data
 	_, _ = io.Copy(io.Discard, resp.Body)
@@ -818,7 +820,7 @@ func (s *Service) fetchGo2RTCStreams(ctx context.Context) (map[string]StreamStat
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("go2rtc returned status %d", resp.StatusCode)

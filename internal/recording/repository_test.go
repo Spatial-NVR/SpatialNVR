@@ -29,7 +29,7 @@ func setupTestRepo(t *testing.T) (*SQLiteRepository, *sql.DB) {
 
 func TestNewSQLiteRepository(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	repo := NewSQLiteRepository(db)
 	if repo == nil {
@@ -39,7 +39,7 @@ func TestNewSQLiteRepository(t *testing.T) {
 
 func TestSQLiteRepository_InitSchema(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	repo := NewSQLiteRepository(db)
 	err := repo.InitSchema(context.Background())
@@ -57,7 +57,7 @@ func TestSQLiteRepository_InitSchema(t *testing.T) {
 
 func TestSQLiteRepository_Create(t *testing.T) {
 	repo, db := setupTestRepo(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	segment := &Segment{
 		CameraID:    "cam_1",
@@ -89,7 +89,7 @@ func TestSQLiteRepository_Create(t *testing.T) {
 
 func TestSQLiteRepository_Get(t *testing.T) {
 	repo, db := setupTestRepo(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// Create a segment
 	segment := &Segment{
@@ -122,7 +122,7 @@ func TestSQLiteRepository_Get(t *testing.T) {
 
 func TestSQLiteRepository_Get_NotFound(t *testing.T) {
 	repo, db := setupTestRepo(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	_, err := repo.Get(context.Background(), "nonexistent")
 	if err == nil {
@@ -132,7 +132,7 @@ func TestSQLiteRepository_Get_NotFound(t *testing.T) {
 
 func TestSQLiteRepository_Update(t *testing.T) {
 	repo, db := setupTestRepo(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// Create a segment
 	segment := &Segment{
@@ -172,7 +172,7 @@ func TestSQLiteRepository_Update(t *testing.T) {
 
 func TestSQLiteRepository_Update_NotFound(t *testing.T) {
 	repo, db := setupTestRepo(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	segment := &Segment{
 		ID:          "nonexistent",
@@ -192,7 +192,7 @@ func TestSQLiteRepository_Update_NotFound(t *testing.T) {
 
 func TestSQLiteRepository_Delete(t *testing.T) {
 	repo, db := setupTestRepo(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// Create a segment
 	segment := &Segment{
@@ -223,7 +223,7 @@ func TestSQLiteRepository_Delete(t *testing.T) {
 
 func TestSQLiteRepository_Delete_NotFound(t *testing.T) {
 	repo, db := setupTestRepo(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	err := repo.Delete(context.Background(), "nonexistent")
 	if err == nil {
@@ -233,7 +233,7 @@ func TestSQLiteRepository_Delete_NotFound(t *testing.T) {
 
 func TestSQLiteRepository_List(t *testing.T) {
 	repo, db := setupTestRepo(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// Create multiple segments
 	for i := 0; i < 5; i++ {
@@ -265,7 +265,7 @@ func TestSQLiteRepository_List(t *testing.T) {
 
 func TestSQLiteRepository_List_WithFilters(t *testing.T) {
 	repo, db := setupTestRepo(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// Create segments for different cameras
 	for _, camID := range []string{"cam_1", "cam_1", "cam_2"} {
@@ -297,7 +297,7 @@ func TestSQLiteRepository_List_WithFilters(t *testing.T) {
 
 func TestSQLiteRepository_List_WithTimeRange(t *testing.T) {
 	repo, db := setupTestRepo(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	now := time.Now()
 
@@ -329,7 +329,7 @@ func TestSQLiteRepository_List_WithTimeRange(t *testing.T) {
 
 func TestSQLiteRepository_List_WithPagination(t *testing.T) {
 	repo, db := setupTestRepo(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// Create 10 segments
 	for i := 0; i < 10; i++ {
@@ -361,7 +361,7 @@ func TestSQLiteRepository_List_WithPagination(t *testing.T) {
 
 func TestSQLiteRepository_List_WithOrder(t *testing.T) {
 	repo, db := setupTestRepo(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	now := time.Now()
 
@@ -394,7 +394,7 @@ func TestSQLiteRepository_List_WithOrder(t *testing.T) {
 
 func TestSQLiteRepository_DeleteBefore(t *testing.T) {
 	repo, db := setupTestRepo(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	now := time.Now()
 
@@ -434,7 +434,7 @@ func TestSQLiteRepository_DeleteBefore(t *testing.T) {
 
 func TestSQLiteRepository_UpdateTier(t *testing.T) {
 	repo, db := setupTestRepo(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// Create segments
 	var ids []string
@@ -473,7 +473,7 @@ func TestSQLiteRepository_UpdateTier(t *testing.T) {
 
 func TestSQLiteRepository_UpdateTier_Empty(t *testing.T) {
 	repo, db := setupTestRepo(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// Should not error on empty list
 	err := repo.UpdateTier(context.Background(), []string{}, StorageTierWarm)
@@ -484,7 +484,7 @@ func TestSQLiteRepository_UpdateTier_Empty(t *testing.T) {
 
 func TestSQLiteRepository_GetByTimeRange(t *testing.T) {
 	repo, db := setupTestRepo(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	now := time.Now()
 
@@ -518,7 +518,7 @@ func TestSQLiteRepository_GetByTimeRange(t *testing.T) {
 
 func TestSQLiteRepository_GetOldestSegments(t *testing.T) {
 	repo, db := setupTestRepo(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	now := time.Now()
 
@@ -555,7 +555,7 @@ func TestSQLiteRepository_GetOldestSegments(t *testing.T) {
 
 func TestSQLiteRepository_GetTotalSize(t *testing.T) {
 	repo, db := setupTestRepo(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// Create segments with known sizes
 	for i := 0; i < 3; i++ {
@@ -585,7 +585,7 @@ func TestSQLiteRepository_GetTotalSize(t *testing.T) {
 
 func TestSQLiteRepository_GetSegmentCount(t *testing.T) {
 	repo, db := setupTestRepo(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// Create segments
 	for i := 0; i < 5; i++ {
@@ -614,7 +614,7 @@ func TestSQLiteRepository_GetSegmentCount(t *testing.T) {
 
 func TestSQLiteRepository_GetStorageByCamera(t *testing.T) {
 	repo, db := setupTestRepo(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// Create segments for different cameras
 	for _, camID := range []string{"cam_1", "cam_1", "cam_2"} {
@@ -647,7 +647,7 @@ func TestSQLiteRepository_GetStorageByCamera(t *testing.T) {
 
 func TestSQLiteRepository_GetStorageByTier(t *testing.T) {
 	repo, db := setupTestRepo(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// Create segments for different tiers
 	tiers := []StorageTier{StorageTierHot, StorageTierHot, StorageTierWarm}
@@ -681,7 +681,7 @@ func TestSQLiteRepository_GetStorageByTier(t *testing.T) {
 
 func TestSQLiteRepository_List_WithHasEvents(t *testing.T) {
 	repo, db := setupTestRepo(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// Create segments with and without events
 	for _, hasEvents := range []bool{true, false, true} {

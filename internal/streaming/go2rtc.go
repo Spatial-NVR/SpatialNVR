@@ -95,7 +95,7 @@ func (m *Go2RTCManager) Start(ctx context.Context) error {
 
 	// Wait for go2rtc to be ready
 	if err := m.waitForReady(ctx, 10*time.Second); err != nil {
-		m.Stop()
+		_ = m.Stop()
 		return fmt.Errorf("go2rtc failed to start: %w", err)
 	}
 
@@ -164,7 +164,7 @@ func (m *Go2RTCManager) Reload() error {
 		m.logger.Warn("API reload failed, restarting go2rtc", "error", err)
 		return m.Restart()
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return m.Restart()
@@ -201,7 +201,7 @@ func (m *Go2RTCManager) GetStreams() (map[string]interface{}, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	// For now, just return empty map - will implement proper parsing
 	return make(map[string]interface{}), nil
@@ -214,7 +214,7 @@ func (m *Go2RTCManager) AddStream(name, url string) error {
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
@@ -235,7 +235,7 @@ func (m *Go2RTCManager) RemoveStream(name string) error {
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	return nil
 }
@@ -257,7 +257,7 @@ func (m *Go2RTCManager) GetStreamInfo(name string) (map[string]interface{}, erro
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	var result map[string]interface{}
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
@@ -282,7 +282,7 @@ func (m *Go2RTCManager) waitForReady(ctx context.Context, timeout time.Duration)
 		case <-ticker.C:
 			resp, err := http.Get(m.apiURL + "/api")
 			if err == nil {
-				resp.Body.Close()
+				_ = resp.Body.Close()
 				if resp.StatusCode == http.StatusOK {
 					return nil
 				}

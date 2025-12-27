@@ -92,7 +92,7 @@ func (p *ConfigPlugin) Start(ctx context.Context) error {
 			p.mu.Unlock()
 
 			// Publish config changed event
-			p.PublishEvent(sdk.EventTypeConfigChanged, map[string]string{
+			_ = p.PublishEvent(sdk.EventTypeConfigChanged, map[string]string{
 				"path": p.configPath,
 			})
 		})
@@ -366,7 +366,7 @@ func (p *ConfigPlugin) handleUpdateConfig(w http.ResponseWriter, r *http.Request
 	p.respondJSON(w, map[string]string{"status": "updated"})
 
 	// Publish config changed event
-	p.PublishEvent(sdk.EventTypeConfigChanged, map[string]string{
+	_ = p.PublishEvent(sdk.EventTypeConfigChanged, map[string]string{
 		"path": p.configPath,
 	})
 }
@@ -383,7 +383,7 @@ func (p *ConfigPlugin) handleReload(w http.ResponseWriter, r *http.Request) {
 	p.mu.Unlock()
 
 	// Publish config changed event
-	p.PublishEvent(sdk.EventTypeConfigChanged, map[string]string{
+	_ = p.PublishEvent(sdk.EventTypeConfigChanged, map[string]string{
 		"path": p.configPath,
 	})
 
@@ -478,7 +478,7 @@ func (p *ConfigPlugin) handleUpdateCameraConfig(w http.ResponseWriter, r *http.R
 	}
 
 	// Publish camera updated event
-	p.PublishEvent(sdk.EventTypeCameraUpdated, map[string]string{
+	_ = p.PublishEvent(sdk.EventTypeCameraUpdated, map[string]string{
 		"camera_id": id,
 	})
 
@@ -514,7 +514,7 @@ func (p *ConfigPlugin) handleUpdateSystemConfig(w http.ResponseWriter, r *http.R
 	p.respondJSON(w, map[string]string{"status": "updated"})
 
 	// Publish config changed event
-	p.PublishEvent(sdk.EventTypeConfigChanged, map[string]string{
+	_ = p.PublishEvent(sdk.EventTypeConfigChanged, map[string]string{
 		"path": p.configPath,
 	})
 }
@@ -523,13 +523,13 @@ func (p *ConfigPlugin) handleUpdateSystemConfig(w http.ResponseWriter, r *http.R
 
 func (p *ConfigPlugin) respondJSON(w http.ResponseWriter, data interface{}) {
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(data)
+	_ = json.NewEncoder(w).Encode(data)
 }
 
 func (p *ConfigPlugin) respondError(w http.ResponseWriter, status int, message string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(map[string]string{
+	_ = json.NewEncoder(w).Encode(map[string]string{
 		"error": message,
 	})
 }

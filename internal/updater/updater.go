@@ -631,8 +631,8 @@ func (u *Updater) maybeAutoUpdate(ctx context.Context) {
 	}
 
 	var hour, minute int
-	fmt.Sscanf(parts[0], "%d", &hour)
-	fmt.Sscanf(parts[1], "%d", &minute)
+	_, _ = fmt.Sscanf(parts[0], "%d", &hour)
+	_, _ = fmt.Sscanf(parts[1], "%d", &minute)
 
 	// Check if we're within 5 minutes of the scheduled time
 	if now.Hour() == hour && now.Minute() >= minute && now.Minute() < minute+5 {

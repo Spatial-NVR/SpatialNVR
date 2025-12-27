@@ -100,7 +100,7 @@ func TestGo2RTCManager_GetStreams_MockServer(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/api/streams" {
 			w.Header().Set("Content-Type", "application/json")
-			w.Write([]byte(`{"camera1": {"url": "rtsp://localhost/stream1"}}`))
+			_, _ = w.Write([]byte(`{"camera1": {"url": "rtsp://localhost/stream1"}}`))
 			return
 		}
 		http.NotFound(w, r)
@@ -141,7 +141,7 @@ func TestGo2RTCManager_AddStream_MockServer(t *testing.T) {
 func TestGo2RTCManager_AddStream_Error(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusBadRequest)
-		w.Write([]byte("invalid stream"))
+		_, _ = w.Write([]byte("invalid stream"))
 	}))
 	defer server.Close()
 
@@ -177,7 +177,7 @@ func TestGo2RTCManager_GetStreamInfo_MockServer(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/api/streams" {
 			w.Header().Set("Content-Type", "application/json")
-			w.Write([]byte(`{"name": "camera1", "status": "active"}`))
+			_, _ = w.Write([]byte(`{"name": "camera1", "status": "active"}`))
 			return
 		}
 		http.NotFound(w, r)
@@ -314,14 +314,18 @@ func TestConfigGenerator_Generate(t *testing.T) {
 		t.Errorf("Expected 3 streams, got %d", len(config.Streams))
 	}
 
-	// Check camera1 stream has credentials
+	// Check camera1 stream has credentials and audio transcoding
 	if streams, ok := config.Streams["camera1"]; ok {
-		if len(streams) != 1 {
-			t.Errorf("Expected 1 source for camera1, got %d", len(streams))
+		if len(streams) != 2 {
+			t.Errorf("Expected 2 sources for camera1 (main + opus transcode), got %d", len(streams))
 		}
 		// URL should contain credentials
 		if streams[0] != "rtsp://admin:password@192.168.1.100/stream" {
 			t.Errorf("Unexpected stream URL: %s", streams[0])
+		}
+		// Second source should be opus transcode
+		if len(streams) > 1 && streams[1] != "ffmpeg:camera1#audio=opus" {
+			t.Errorf("Unexpected opus transcode source: %s", streams[1])
 		}
 	} else {
 		t.Error("camera1 stream not found")
@@ -545,7 +549,7 @@ func TestGo2RTCManager_GetStreamInfo_Error(t *testing.T) {
 func TestGo2RTCManager_GetStreamInfo_InvalidJSON(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte("not valid json"))
+		_, _ = w.Write([]byte("not valid json"))
 	}))
 	defer server.Close()
 
@@ -621,7 +625,7 @@ func TestGo2RTCManager_Start_NoBinary(t *testing.T) {
 func TestGo2RTCManager_Start_InvalidBinary(t *testing.T) {
 	// Create a temp file that's not executable
 	tmpFile := filepath.Join(t.TempDir(), "fake_go2rtc")
-	os.WriteFile(tmpFile, []byte("not a binary"), 0644)
+	_ = os.WriteFile(tmpFile, []byte("not a binary"), 0644)
 
 	manager := NewGo2RTCManager("", tmpFile)
 
@@ -648,12 +652,12 @@ func TestGo2RTCManager_findBinary_InPath(t *testing.T) {
 	// Create a fake binary in temp dir and add to PATH
 	tmpDir := t.TempDir()
 	fakeBinary := filepath.Join(tmpDir, "go2rtc")
-	os.WriteFile(fakeBinary, []byte("fake"), 0755)
+	_ = os.WriteFile(fakeBinary, []byte("fake"), 0755)
 
 	// Save original PATH and restore after test
 	origPath := os.Getenv("PATH")
-	os.Setenv("PATH", tmpDir+":"+origPath)
-	defer os.Setenv("PATH", origPath)
+	_ = os.Setenv("PATH", tmpDir+":"+origPath)
+	defer func() { _ = os.Setenv("PATH", origPath) }()
 
 	manager := NewGo2RTCManager("", "")
 	path, err := manager.findBinary()
@@ -668,16 +672,16 @@ func TestGo2RTCManager_findBinary_InPath(t *testing.T) {
 func TestGo2RTCManager_findBinary_LocalBin(t *testing.T) {
 	// Save current directory
 	origDir, _ := os.Getwd()
-	defer os.Chdir(origDir)
+	defer func() { _ = os.Chdir(origDir) }()
 
 	// Create temp directory and change to it
 	tmpDir := t.TempDir()
-	os.Chdir(tmpDir)
+	_ = os.Chdir(tmpDir)
 
 	// Create bin/go2rtc
-	os.Mkdir("bin", 0755)
+	_ = os.Mkdir("bin", 0755)
 	fakeBinary := filepath.Join("bin", "go2rtc")
-	os.WriteFile(fakeBinary, []byte("fake"), 0755)
+	_ = os.WriteFile(fakeBinary, []byte("fake"), 0755)
 
 	manager := NewGo2RTCManager("", "")
 	path, err := manager.findBinary()
@@ -857,7 +861,7 @@ func TestGo2RTCManager_Start_WithConfigPath(t *testing.T) {
 	// Create a temp config file
 	tmpDir := t.TempDir()
 	configPath := filepath.Join(tmpDir, "config.yaml")
-	os.WriteFile(configPath, []byte("api:\n  listen: :1984\n"), 0644)
+	_ = os.WriteFile(configPath, []byte("api:\n  listen: :1984\n"), 0644)
 
 	manager := NewGo2RTCManager(configPath, "")
 
@@ -894,9 +898,9 @@ func TestConfigGenerator_Generate_MultipleStreams(t *testing.T) {
 		t.Errorf("Expected 4 streams, got %d", len(config.Streams))
 	}
 
-	// Verify credentials are added
+	// Verify credentials are added (2 sources: main + opus transcode)
 	if streams, ok := config.Streams["cam3"]; ok {
-		if len(streams) != 1 || !strings.Contains(streams[0], "admin:pass@") {
+		if len(streams) != 2 || !strings.Contains(streams[0], "admin:pass@") {
 			t.Errorf("Credentials not properly added: %v", streams)
 		}
 	}
@@ -916,15 +920,15 @@ func TestGo2RTCManager_RemoveStream_RequestCreationError(t *testing.T) {
 func TestGo2RTCManager_findBinary_CurrentDir(t *testing.T) {
 	// Save current directory
 	origDir, _ := os.Getwd()
-	defer os.Chdir(origDir)
+	defer func() { _ = os.Chdir(origDir) }()
 
 	// Create temp directory and change to it
 	tmpDir := t.TempDir()
-	os.Chdir(tmpDir)
+	_ = os.Chdir(tmpDir)
 
 	// Create ./go2rtc (not in bin/)
 	fakeBinary := "go2rtc"
-	os.WriteFile(fakeBinary, []byte("fake"), 0755)
+	_ = os.WriteFile(fakeBinary, []byte("fake"), 0755)
 
 	manager := NewGo2RTCManager("", "")
 	path, err := manager.findBinary()

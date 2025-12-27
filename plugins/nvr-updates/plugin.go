@@ -130,7 +130,7 @@ func (p *Plugin) Start(ctx context.Context) error {
 		p.logger.Info("Update available", "component", component, "current", current, "latest", latest)
 
 		// Publish event using BasePlugin method
-		p.PublishEvent("update.available", map[string]interface{}{
+		_ = p.PublishEvent("update.available", map[string]interface{}{
 			"component":       component,
 			"current_version": current,
 			"latest_version":  latest,
@@ -141,7 +141,7 @@ func (p *Plugin) Start(ctx context.Context) error {
 		p.logger.Info("Update complete", "component", component, "version", version)
 
 		// Publish event using BasePlugin method
-		p.PublishEvent("update.complete", map[string]interface{}{
+		_ = p.PublishEvent("update.complete", map[string]interface{}{
 			"component": component,
 			"version":   version,
 		})
@@ -230,7 +230,7 @@ func (p *Plugin) handleGetUpdates(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(response)
+	_ = json.NewEncoder(w).Encode(response)
 }
 
 // handleCheckUpdates triggers an update check
@@ -267,13 +267,13 @@ func (p *Plugin) handleUpdate(w http.ResponseWriter, r *http.Request) {
 	if err := p.updater.Update(ctx, component); err != nil {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusInternalServerError)
-		json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
 		return
 	}
 
 	status := p.updater.GetUpdateStatus(component)
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(status)
+	_ = json.NewEncoder(w).Encode(status)
 }
 
 // handleUpdateAll updates all components with updates available
@@ -288,13 +288,13 @@ func (p *Plugin) handleUpdateAll(w http.ResponseWriter, r *http.Request) {
 	if err := p.updater.UpdateAll(ctx); err != nil {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusInternalServerError)
-		json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
 		return
 	}
 
 	status := p.updater.GetAllUpdateStatus()
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(status)
+	_ = json.NewEncoder(w).Encode(status)
 }
 
 // handleGetStatus returns the current update status
@@ -306,7 +306,7 @@ func (p *Plugin) handleGetStatus(w http.ResponseWriter, r *http.Request) {
 
 	status := p.updater.GetAllUpdateStatus()
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(status)
+	_ = json.NewEncoder(w).Encode(status)
 }
 
 // handleGetConfig returns the plugin configuration
@@ -315,7 +315,7 @@ func (p *Plugin) handleGetConfig(w http.ResponseWriter, r *http.Request) {
 	defer p.mu.RUnlock()
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(p.config)
+	_ = json.NewEncoder(w).Encode(p.config)
 }
 
 // handleSetConfig updates the plugin configuration
@@ -331,7 +331,7 @@ func (p *Plugin) handleSetConfig(w http.ResponseWriter, r *http.Request) {
 	p.mu.Unlock()
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(p.config)
+	_ = json.NewEncoder(w).Encode(p.config)
 }
 
 // Health returns the health status

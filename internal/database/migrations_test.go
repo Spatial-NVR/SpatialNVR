@@ -15,7 +15,7 @@ func TestNewMigrator(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to open database: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	migrator := NewMigrator(db)
 	if migrator == nil {
@@ -37,7 +37,7 @@ func TestMigrator_Run(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to open database: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	migrator := NewMigrator(db)
 
@@ -69,7 +69,7 @@ func TestMigrator_GetStatus(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to open database: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	migrator := NewMigrator(db)
 
@@ -109,7 +109,7 @@ func TestMigrator_ensureMigrationsTable(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to open database: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	migrator := NewMigrator(db)
 
@@ -141,7 +141,7 @@ func TestMigrator_getAppliedMigrations(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to open database: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	migrator := NewMigrator(db)
 
@@ -187,7 +187,7 @@ func TestMigrator_getAvailableMigrations(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to open database: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	migrator := NewMigrator(db)
 
@@ -254,7 +254,7 @@ func TestMigrator_RunMigrationOrder(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to open database: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	migrator := NewMigrator(db)
 
@@ -292,7 +292,7 @@ func TestMigrator_ContextCancellation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to open database: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	migrator := NewMigrator(db)
 

@@ -126,7 +126,7 @@ func (p *DetectionPlugin) Start(ctx context.Context) error {
 		"default_fps", p.defaultFPS)
 
 	// Publish started event
-	p.PublishEvent(sdk.EventTypePluginStarted, map[string]string{
+	_ = p.PublishEvent(sdk.EventTypePluginStarted, map[string]string{
 		"plugin_id": "nvr-detection",
 	})
 
@@ -142,7 +142,7 @@ func (p *DetectionPlugin) Stop(ctx context.Context) error {
 	for cameraID, cancel := range p.streams {
 		cancel()
 		if p.frameGrabber != nil {
-			p.frameGrabber.StopStream(cameraID)
+			_ = p.frameGrabber.StopStream(cameraID)
 		}
 	}
 	p.streams = make(map[string]context.CancelFunc)
@@ -152,11 +152,11 @@ func (p *DetectionPlugin) Stop(ctx context.Context) error {
 	}
 
 	if p.client != nil {
-		p.client.Close()
+		_ = p.client.Close()
 	}
 
 	if p.frameGrabber != nil {
-		p.frameGrabber.Close()
+		_ = p.frameGrabber.Close()
 	}
 
 	p.started = false
@@ -319,7 +319,7 @@ func (p *DetectionPlugin) StopCamera(cameraID string) error {
 
 	cancel()
 	if p.frameGrabber != nil {
-		p.frameGrabber.StopStream(cameraID)
+		_ = p.frameGrabber.StopStream(cameraID)
 	}
 	delete(p.streams, cameraID)
 
@@ -413,7 +413,7 @@ func (p *DetectionPlugin) processFrame(ctx context.Context, cameraID string, fra
 
 	// Publish detection events
 	for _, det := range resp.Detections {
-		p.PublishEvent(sdk.EventTypeDetection, map[string]interface{}{
+		_ = p.PublishEvent(sdk.EventTypeDetection, map[string]interface{}{
 			"camera_id":   cameraID,
 			"object_type": string(det.ObjectType),
 			"label":       det.Label,
@@ -532,7 +532,7 @@ func (p *DetectionPlugin) handleStartCamera(w http.ResponseWriter, r *http.Reque
 	var req struct {
 		FPS int `json:"fps"`
 	}
-	json.NewDecoder(r.Body).Decode(&req)
+	_ = json.NewDecoder(r.Body).Decode(&req)
 
 	if err := p.StartCamera(cameraID, req.FPS); err != nil {
 		p.respondError(w, http.StatusInternalServerError, err.Error())
@@ -697,7 +697,7 @@ func (p *DetectionPlugin) handleResetMotion(w http.ResponseWriter, r *http.Reque
 	var req struct {
 		CameraID string `json:"camera_id"`
 	}
-	json.NewDecoder(r.Body).Decode(&req)
+	_ = json.NewDecoder(r.Body).Decode(&req)
 
 	if err := p.client.ResetMotion(r.Context(), req.CameraID); err != nil {
 		p.respondError(w, http.StatusInternalServerError, err.Error())
@@ -743,13 +743,13 @@ func (p *DetectionPlugin) handleGetStatus(w http.ResponseWriter, r *http.Request
 
 func (p *DetectionPlugin) respondJSON(w http.ResponseWriter, data interface{}) {
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(data)
+	_ = json.NewEncoder(w).Encode(data)
 }
 
 func (p *DetectionPlugin) respondError(w http.ResponseWriter, status int, message string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(map[string]string{
+	_ = json.NewEncoder(w).Encode(map[string]string{
 		"error": message,
 	})
 }

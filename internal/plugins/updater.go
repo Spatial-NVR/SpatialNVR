@@ -232,7 +232,7 @@ func (u *Updater) ApplyUpdate(ctx context.Context, pluginID string) error {
 	if err != nil {
 		return fmt.Errorf("failed to download plugin: %w", err)
 	}
-	defer os.Remove(tempFile)
+	defer func() { _ = os.Remove(tempFile) }()
 
 	// Stop the plugin if running
 	if err := u.manager.StopPlugin(pluginID); err != nil {
@@ -269,7 +269,7 @@ func (u *Updater) fetchVersionsIndex(ctx context.Context) (*VersionsIndex, error
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("unexpected status code: %d", resp.StatusCode)
@@ -293,7 +293,7 @@ func (u *Updater) downloadPlugin(ctx context.Context, url string) (string, error
 	if err != nil {
 		return "", err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return "", fmt.Errorf("download failed with status: %d", resp.StatusCode)
@@ -306,12 +306,12 @@ func (u *Updater) downloadPlugin(ctx context.Context, url string) (string, error
 	}
 
 	if _, err := io.Copy(tmpFile, resp.Body); err != nil {
-		tmpFile.Close()
-		os.Remove(tmpFile.Name())
+		_ = tmpFile.Close()
+		_ = os.Remove(tmpFile.Name())
 		return "", err
 	}
 
-	tmpFile.Close()
+	_ = tmpFile.Close()
 	return tmpFile.Name(), nil
 }
 
@@ -319,7 +319,7 @@ func (u *Updater) extractPlugin(archivePath, destDir string) error {
 	// Backup existing plugin
 	backupDir := destDir + ".backup"
 	if _, err := os.Stat(destDir); err == nil {
-		os.RemoveAll(backupDir)
+		_ = os.RemoveAll(backupDir)
 		if err := os.Rename(destDir, backupDir); err != nil {
 			return fmt.Errorf("failed to backup existing plugin: %w", err)
 		}
@@ -329,7 +329,7 @@ func (u *Updater) extractPlugin(archivePath, destDir string) error {
 	if err := os.MkdirAll(destDir, 0755); err != nil {
 		// Restore backup on failure
 		if _, err := os.Stat(backupDir); err == nil {
-			os.Rename(backupDir, destDir)
+			_ = os.Rename(backupDir, destDir)
 		}
 		return err
 	}
@@ -338,15 +338,15 @@ func (u *Updater) extractPlugin(archivePath, destDir string) error {
 	cmd := exec.Command("tar", "-xzf", archivePath, "-C", destDir, "--strip-components=1")
 	if err := cmd.Run(); err != nil {
 		// Restore backup on failure
-		os.RemoveAll(destDir)
+		_ = os.RemoveAll(destDir)
 		if _, err := os.Stat(backupDir); err == nil {
-			os.Rename(backupDir, destDir)
+			_ = os.Rename(backupDir, destDir)
 		}
 		return fmt.Errorf("failed to extract archive: %w", err)
 	}
 
 	// Remove backup on success
-	os.RemoveAll(backupDir)
+	_ = os.RemoveAll(backupDir)
 	return nil
 }
 
@@ -371,10 +371,10 @@ func isNewerVersion(latest, current string) bool {
 		currentNum := 0
 
 		if i < len(latestParts) {
-			fmt.Sscanf(latestParts[i], "%d", &latestNum)
+			_, _ = fmt.Sscanf(latestParts[i], "%d", &latestNum)
 		}
 		if i < len(currentParts) {
-			fmt.Sscanf(currentParts[i], "%d", &currentNum)
+			_, _ = fmt.Sscanf(currentParts[i], "%d", &currentNum)
 		}
 
 		if latestNum > currentNum {
@@ -422,7 +422,7 @@ func (h *UpdatesHandler) getUpdates(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(response)
+	_ = json.NewEncoder(w).Encode(response)
 }
 
 func (h *UpdatesHandler) checkUpdates(w http.ResponseWriter, r *http.Request) {
@@ -457,7 +457,7 @@ func (h *ApplyUpdateHandler) Handle(w http.ResponseWriter, r *http.Request, plug
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{
+	_ = json.NewEncoder(w).Encode(map[string]string{
 		"status": "updated",
 	})
 }

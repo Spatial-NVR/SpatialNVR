@@ -111,7 +111,7 @@ func (s *Service) Stop() error {
 	// Stop all camera streams
 	for cameraID, cancel := range s.streams {
 		cancel()
-		s.frameGrabber.StopStream(cameraID)
+		_ = s.frameGrabber.StopStream(cameraID)
 	}
 	s.streams = make(map[string]context.CancelFunc)
 
@@ -121,11 +121,11 @@ func (s *Service) Stop() error {
 
 	// Close client
 	if s.client != nil {
-		s.client.Close()
+		_ = s.client.Close()
 	}
 
 	// Close frame grabber
-	s.frameGrabber.Close()
+	_ = s.frameGrabber.Close()
 
 	s.running = false
 	s.logger.Info("Detection service stopped")
@@ -181,7 +181,7 @@ func (s *Service) StopCamera(cameraID string) error {
 	}
 
 	cancel()
-	s.frameGrabber.StopStream(cameraID)
+	_ = s.frameGrabber.StopStream(cameraID)
 	delete(s.streams, cameraID)
 
 	s.logger.Info("Stopped detection", "camera", cameraID)
@@ -406,7 +406,7 @@ func (s *Service) OnConfigChange(cfg *config.Config) {
 		} else if !shouldRun && running {
 			if cancel, exists := s.streams[camera.ID]; exists {
 				cancel()
-				s.frameGrabber.StopStream(camera.ID)
+				_ = s.frameGrabber.StopStream(camera.ID)
 				delete(s.streams, camera.ID)
 			}
 		}

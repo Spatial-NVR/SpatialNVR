@@ -63,7 +63,7 @@ func setupRetentionTest(t *testing.T) (*RetentionPolicy, *SQLiteRepository, stri
 	policy := NewRetentionPolicy(cfg, repository, segmentHandler, storagePath)
 
 	cleanup := func() {
-		db.Close()
+		_ = db.Close()
 	}
 
 	return policy, repository, tmpDir, cleanup
@@ -111,7 +111,7 @@ func TestRetentionPolicy_RunCleanup_NoCameras(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to open database: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// Config with all recording disabled
 	cfg := &config.Config{
@@ -250,7 +250,7 @@ func TestRetentionPolicy_EnforceStorageLimit(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to open database: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	cfg := &config.Config{
 		System: config.SystemConfig{
@@ -325,7 +325,7 @@ func TestRetentionPolicy_CleanupCameraWithDefaultRetention(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to open database: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	cfg := &config.Config{
 		System: config.SystemConfig{
@@ -431,7 +431,7 @@ func TestTierMigration_New(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to open database: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	repository := NewSQLiteRepository(db)
 	_ = repository.InitSchema(context.Background())
@@ -459,7 +459,7 @@ func TestTierMigration_MigrateToWarm(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to open database: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	repository := NewSQLiteRepository(db)
 	_ = repository.InitSchema(context.Background())
@@ -516,7 +516,7 @@ func TestTierMigration_MigrateToWarm_NoOldSegments(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to open database: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	repository := NewSQLiteRepository(db)
 	_ = repository.InitSchema(context.Background())

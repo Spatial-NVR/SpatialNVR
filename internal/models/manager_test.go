@@ -171,7 +171,7 @@ func TestDownloadModel_WithMockServer(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Length", fmt.Sprintf("%d", len(data)))
 		w.WriteHeader(http.StatusOK)
-		w.Write(data)
+		_, _ = w.Write(data)
 	}))
 	defer server.Close()
 
@@ -261,7 +261,7 @@ func TestDownloadModel_ContextCancellation(t *testing.T) {
 				return
 			default:
 				time.Sleep(10 * time.Millisecond)
-				w.Write([]byte("data"))
+				_, _ = w.Write([]byte("data"))
 			}
 		}
 	}))

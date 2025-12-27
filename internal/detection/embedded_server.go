@@ -310,7 +310,7 @@ func (s *EmbeddedServer) handleMotionReset(w http.ResponseWriter, r *http.Reques
 
 func (s *EmbeddedServer) respondJSON(w http.ResponseWriter, data interface{}) {
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(data)
+	_ = json.NewEncoder(w).Encode(data)
 }
 
 func (s *EmbeddedServer) respondError(w http.ResponseWriter, status int, message string) {
@@ -320,7 +320,7 @@ func (s *EmbeddedServer) respondError(w http.ResponseWriter, status int, message
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
 		"success": false,
 		"error":   message,
 	})

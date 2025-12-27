@@ -233,7 +233,7 @@ func (s *Service) List(ctx context.Context, opts ListOptions) ([]*Event, int, er
 	if err != nil {
 		return nil, 0, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	events := []*Event{}
 	for rows.Next() {
@@ -526,7 +526,7 @@ func (s *Service) ListZones(ctx context.Context, cameraID string) ([]*MotionZone
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	zones := []*MotionZone{}
 	for rows.Next() {
@@ -652,7 +652,7 @@ func (s *Service) GetEnabledZonesForCamera(ctx context.Context, cameraID string)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	zones := []*MotionZone{}
 	for rows.Next() {

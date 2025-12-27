@@ -444,7 +444,7 @@ func TestHub_HandleWebSocket(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to connect to WebSocket: %v", err)
 	}
-	defer ws.Close()
+	defer func() { _ = ws.Close() }()
 
 	// Give time for registration
 	time.Sleep(50 * time.Millisecond)
@@ -460,7 +460,7 @@ func TestHub_HandleWebSocket(t *testing.T) {
 	}
 
 	// Read pong response
-	ws.SetReadDeadline(time.Now().Add(time.Second))
+	_ = ws.SetReadDeadline(time.Now().Add(time.Second))
 	var response Message
 	if err := ws.ReadJSON(&response); err != nil {
 		t.Fatalf("Failed to read pong: %v", err)

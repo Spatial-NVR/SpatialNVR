@@ -128,7 +128,7 @@ func (p *RecordingPlugin) Start(ctx context.Context) error {
 	}()
 
 	// Publish started event
-	p.PublishEvent(sdk.EventTypeRecordingStart, map[string]string{
+	_ = p.PublishEvent(sdk.EventTypeRecordingStart, map[string]string{
 		"plugin_id": "nvr-recording",
 	})
 
@@ -864,7 +864,7 @@ func (p *RecordingPlugin) handleExportSegments(w http.ResponseWriter, r *http.Re
 
 	// Create temporary export file
 	exportDir := filepath.Join(p.storagePath, "exports")
-	os.MkdirAll(exportDir, 0755)
+	_ = os.MkdirAll(exportDir, 0755)
 	outputPath := filepath.Join(exportDir, fmt.Sprintf("export_%s_%d.mp4", req.CameraID, time.Now().Unix()))
 
 	if err := svc.ExportSegments(r.Context(), req.CameraID, start, end, outputPath); err != nil {
@@ -929,13 +929,13 @@ func (p *RecordingPlugin) parseTimeRange(r *http.Request) (time.Time, time.Time)
 
 func (p *RecordingPlugin) respondJSON(w http.ResponseWriter, data interface{}) {
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(data)
+	_ = json.NewEncoder(w).Encode(data)
 }
 
 func (p *RecordingPlugin) respondError(w http.ResponseWriter, status int, message string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(map[string]string{
+	_ = json.NewEncoder(w).Encode(map[string]string{
 		"error": message,
 	})
 }

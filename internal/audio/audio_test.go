@@ -363,7 +363,7 @@ func TestHandleListSessions(t *testing.T) {
 	twa := NewTwoWayAudio()
 
 	// Start a session first
-	twa.StartSession(context.Background(), "cam_1", "user_1")
+	_, _ = twa.StartSession(context.Background(), "cam_1", "user_1")
 
 	req := httptest.NewRequest("GET", "/api/v1/audio/sessions", nil)
 	w := httptest.NewRecorder()
@@ -435,7 +435,7 @@ func TestHandleStartSession_WithStreamURLProvider(t *testing.T) {
 	}
 
 	var response map[string]interface{}
-	json.NewDecoder(w.Body).Decode(&response)
+	_ = json.NewDecoder(w.Body).Decode(&response)
 
 	data := response["data"].(map[string]interface{})
 	if data["webrtc_url"] == nil {
@@ -450,7 +450,7 @@ func TestHandleStartSession_Duplicate(t *testing.T) {
 	twa := NewTwoWayAudio()
 
 	// Start first session
-	twa.StartSession(context.Background(), "cam_1", "user_1")
+	_, _ = twa.StartSession(context.Background(), "cam_1", "user_1")
 
 	// Try to start duplicate via handler
 	req := httptest.NewRequest("POST", "/api/v1/audio/cameras/cam_1/start", nil)

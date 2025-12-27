@@ -129,7 +129,7 @@ func (p *StreamingPlugin) Start(ctx context.Context) error {
 	go p.syncExistingCameras(ctx)
 
 	// Publish started event
-	p.PublishEvent(sdk.EventTypePluginStarted, map[string]string{
+	_ = p.PublishEvent(sdk.EventTypePluginStarted, map[string]string{
 		"plugin_id": "nvr-streaming",
 	})
 
@@ -153,7 +153,7 @@ func (p *StreamingPlugin) syncExistingCameras(ctx context.Context) {
 		runtime.Logger().Error("Failed to fetch cameras for sync", "error", err)
 		return
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		runtime.Logger().Error("Failed to fetch cameras", "status", resp.StatusCode)
@@ -314,7 +314,7 @@ func (p *StreamingPlugin) OnConfigChange(config map[string]interface{}) {
 
 	if needsRestart {
 		p.generator = streaming.NewConfigGenerator().WithPorts(p.apiPort, p.rtspPort, p.webrtcPort)
-		go p.regenerateConfigAndReload()
+		go func() { _ = p.regenerateConfigAndReload() }()
 	}
 }
 
@@ -689,7 +689,7 @@ func (p *StreamingPlugin) handleGo2RTCProxy(w http.ResponseWriter, r *http.Reque
 		p.respondError(w, http.StatusBadGateway, err.Error())
 		return
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	// Copy response headers
 	for key, values := range resp.Header {
@@ -705,7 +705,7 @@ func (p *StreamingPlugin) handleGo2RTCProxy(w http.ResponseWriter, r *http.Reque
 	for {
 		n, err := resp.Body.Read(buf)
 		if n > 0 {
-			w.Write(buf[:n])
+			_, _ = w.Write(buf[:n])
 		}
 		if err != nil {
 			break
@@ -717,13 +717,13 @@ func (p *StreamingPlugin) handleGo2RTCProxy(w http.ResponseWriter, r *http.Reque
 
 func (p *StreamingPlugin) respondJSON(w http.ResponseWriter, data interface{}) {
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(data)
+	_ = json.NewEncoder(w).Encode(data)
 }
 
 func (p *StreamingPlugin) respondError(w http.ResponseWriter, status int, message string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(map[string]string{
+	_ = json.NewEncoder(w).Encode(map[string]string{
 		"error": message,
 	})
 }
