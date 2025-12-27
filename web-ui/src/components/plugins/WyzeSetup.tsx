@@ -59,7 +59,7 @@ export function WyzeSetup({ pluginId, onCameraAdded }: WyzeSetupProps) {
   const { data: healthData } = useQuery({
     queryKey: ['plugin-health', pluginId],
     queryFn: async () => {
-      const response = await fetch(`/api/plugins/${pluginId}/rpc`, {
+      const response = await fetch(`/api/v1/plugins/${pluginId}/rpc`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -81,7 +81,7 @@ export function WyzeSetup({ pluginId, onCameraAdded }: WyzeSetupProps) {
     }
   }, [healthData?.details?.authenticated])
 
-  // Login mutation
+  // Login mutation - saves config, backend auto-starts plugin
   const loginMutation = useMutation({
     mutationFn: async () => {
       const config: Record<string, unknown> = {
@@ -96,22 +96,42 @@ export function WyzeSetup({ pluginId, onCameraAdded }: WyzeSetupProps) {
         config.totp_key = totpKey
       }
 
-      // Initialize plugin with credentials
-      const response = await fetch(`/api/plugins/${pluginId}/rpc`, {
-        method: 'POST',
+      // Save config via REST API - backend will auto-start the plugin
+      const configResponse = await fetch(`/api/v1/plugins/${pluginId}/config`, {
+        method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          jsonrpc: '2.0',
-          id: Date.now(),
-          method: 'initialize',
-          params: config
-        })
+        body: JSON.stringify(config)
       })
-      const data = await response.json()
-      if (data.error) {
-        throw new Error(data.error.message)
+      if (!configResponse.ok) {
+        const err = await configResponse.json().catch(() => ({ error: 'Failed to save config' }))
+        throw new Error(err.error || 'Failed to save credentials')
       }
-      return data.result
+
+      // Wait for plugin to start and verify via RPC (with retries)
+      let lastError = ''
+      for (let attempt = 0; attempt < 5; attempt++) {
+        await new Promise(resolve => setTimeout(resolve, 1500))
+
+        try {
+          const healthResponse = await fetch(`/api/v1/plugins/${pluginId}/rpc`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              jsonrpc: '2.0',
+              id: Date.now(),
+              method: 'health'
+            })
+          })
+          const healthData = await healthResponse.json()
+          if (healthData.result && !healthData.error) {
+            return healthData.result
+          }
+          lastError = healthData.error?.message || 'Plugin not ready'
+        } catch {
+          lastError = 'Connection failed'
+        }
+      }
+      throw new Error(lastError || 'Plugin failed to start')
     },
     onSuccess: () => {
       addToast('success', 'Successfully logged in to Wyze')
@@ -126,7 +146,7 @@ export function WyzeSetup({ pluginId, onCameraAdded }: WyzeSetupProps) {
   // Discover cameras mutation
   const discoverMutation = useMutation({
     mutationFn: async () => {
-      const response = await fetch(`/api/plugins/${pluginId}/rpc`, {
+      const response = await fetch(`/api/v1/plugins/${pluginId}/rpc`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -165,7 +185,8 @@ export function WyzeSetup({ pluginId, onCameraAdded }: WyzeSetupProps) {
       const results = []
 
       for (const mac of camerasToAdd) {
-        const response = await fetch(`/api/plugins/${pluginId}/rpc`, {
+        // First add to plugin
+        const response = await fetch(`/api/v1/plugins/${pluginId}/rpc`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -181,8 +202,42 @@ export function WyzeSetup({ pluginId, onCameraAdded }: WyzeSetupProps) {
         const data = await response.json()
         if (data.error) {
           console.warn(`Failed to add camera ${mac}:`, data.error.message)
-        } else {
-          results.push(data.result)
+          continue
+        }
+
+        // Get camera details from plugin result
+        const pluginCamera = data.result
+        if (!pluginCamera) {
+          console.warn(`No camera result for ${mac}`)
+          continue
+        }
+
+        // Register camera with NVR camera service (for go2rtc)
+        const cameraConfig = {
+          name: pluginCamera.name || cameraNames[mac],
+          stream_url: pluginCamera.main_stream,
+          sub_stream_url: pluginCamera.sub_stream,
+          manufacturer: 'Wyze',
+          model: pluginCamera.model,
+          enabled: true,
+          plugin_id: pluginId,
+          plugin_camera_id: mac
+        }
+
+        try {
+          const createResponse = await fetch('/api/v1/cameras', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(cameraConfig)
+          })
+          if (!createResponse.ok) {
+            const err = await createResponse.json().catch(() => ({}))
+            console.warn(`Failed to register camera ${mac} with NVR:`, err.error || createResponse.statusText)
+          } else {
+            results.push(await createResponse.json())
+          }
+        } catch (err) {
+          console.warn(`Failed to register camera ${mac}:`, err)
         }
       }
 

@@ -131,7 +131,7 @@ export function Dashboard() {
           </div>
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 auto-rows-auto">
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-0.5 auto-rows-auto bg-black/50 rounded-lg overflow-hidden">
           {cameras.map((camera) => (
             <CameraCard key={camera.id} camera={camera} />
           ))}

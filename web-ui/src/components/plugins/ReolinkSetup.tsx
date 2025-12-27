@@ -79,7 +79,7 @@ export function ReolinkSetup({ pluginId, onCameraAdded }: ReolinkSetupProps) {
   // Probe mutation
   const probeMutation = useMutation({
     mutationFn: async () => {
-      const response = await fetch(`/api/plugins/${pluginId}/rpc`, {
+      const response = await fetch(`/api/v1/plugins/${pluginId}/rpc`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -112,7 +112,11 @@ export function ReolinkSetup({ pluginId, onCameraAdded }: ReolinkSetupProps) {
     mutationFn: async (channels: number[]) => {
       const results = []
       for (const channel of channels) {
-        const response = await fetch(`/api/plugins/${pluginId}/rpc`, {
+        const channelInfo = probeResult?.channels.find(ch => ch.channel === channel)
+        const displayName = channels.length === 1 ? cameraName : `${cameraName} Ch${channel + 1}`
+
+        // First add to plugin
+        const response = await fetch(`/api/v1/plugins/${pluginId}/rpc`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -125,7 +129,7 @@ export function ReolinkSetup({ pluginId, onCameraAdded }: ReolinkSetupProps) {
               username,
               password,
               channel,
-              name: channels.length === 1 ? cameraName : `${cameraName} Ch${channel + 1}`
+              name: displayName
             }
           })
         })
@@ -133,7 +137,37 @@ export function ReolinkSetup({ pluginId, onCameraAdded }: ReolinkSetupProps) {
         if (data.error) {
           throw new Error(data.error.message)
         }
-        results.push(data.result)
+
+        // Also register with NVR camera service for go2rtc
+        const pluginCamera = data.result
+        const cameraConfig = {
+          name: displayName,
+          stream_url: channelInfo?.rtsp_main || pluginCamera?.main_stream,
+          sub_stream_url: channelInfo?.rtsp_sub || pluginCamera?.sub_stream,
+          manufacturer: 'Reolink',
+          model: probeResult?.model || pluginCamera?.model,
+          enabled: true,
+          plugin_id: pluginId,
+          plugin_camera_id: pluginCamera?.id || `${host}_ch${channel}`
+        }
+
+        try {
+          const createResponse = await fetch('/api/v1/cameras', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(cameraConfig)
+          })
+          if (createResponse.ok) {
+            results.push(await createResponse.json())
+          } else {
+            // If NVR registration fails, still count the plugin add as success
+            results.push(pluginCamera)
+            console.warn(`Failed to register camera with NVR:`, await createResponse.text())
+          }
+        } catch (err) {
+          results.push(pluginCamera)
+          console.warn(`Failed to register camera with NVR:`, err)
+        }
       }
       return results
     },

@@ -9,6 +9,8 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"net/http/httputil"
+	"net/url"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -22,10 +24,16 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/cors"
+	"github.com/gorilla/websocket"
+	"gopkg.in/yaml.v3"
 
+	"github.com/Spatial-NVR/SpatialNVR/internal/api"
 	"github.com/Spatial-NVR/SpatialNVR/internal/core"
 	"github.com/Spatial-NVR/SpatialNVR/internal/database"
 	"github.com/Spatial-NVR/SpatialNVR/internal/detection"
+	"github.com/Spatial-NVR/SpatialNVR/internal/logging"
+	"github.com/Spatial-NVR/SpatialNVR/internal/plugin"
+	"github.com/Spatial-NVR/SpatialNVR/sdk"
 	nvrcoreapi "github.com/Spatial-NVR/SpatialNVR/plugins/nvr-core-api"
 	nvrcoreconfig "github.com/Spatial-NVR/SpatialNVR/plugins/nvr-core-config"
 	nvrcoreevents "github.com/Spatial-NVR/SpatialNVR/plugins/nvr-core-events"
@@ -42,12 +50,14 @@ const (
 )
 
 func main() {
-	// Initialize structured logging
+	// Initialize structured logging with stream capture
 	logLevel := slog.LevelInfo
 	if os.Getenv("LOG_LEVEL") == "debug" {
 		logLevel = slog.LevelDebug
 	}
-	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: logLevel}))
+	logBuffer := logging.GetLogBuffer()
+	handler := logging.NewStreamHandler(logBuffer, os.Stdout, logLevel)
+	logger := slog.New(handler)
 	slog.SetDefault(logger)
 
 	// Initialize port manager and resolve all ports upfront
@@ -130,6 +140,11 @@ func main() {
 	// Configure plugins with resolved ports
 	configurePlugins(loader, dataPath, configPath, ports)
 
+	// Load any saved plugin configurations (e.g., Wyze credentials)
+	if err := loader.LoadPluginConfigs(); err != nil {
+		slog.Warn("Failed to load plugin configs", "error", err)
+	}
+
 	// Start plugin loader (starts all plugins in dependency order)
 	if err := loader.Start(ctx); err != nil {
 		slog.Error("Failed to start plugin loader", "error", err)
@@ -140,8 +155,15 @@ func main() {
 	// Create API gateway
 	gateway := core.NewAPIGateway(loader, eventBus, logger)
 
+	// Create plugin installer
+	installer := plugin.NewInstaller(pluginsDir, logger)
+	if err := installer.Start(ctx); err != nil {
+		slog.Warn("Failed to start plugin installer", "error", err)
+	}
+	defer installer.Stop()
+
 	// Setup HTTP router with spatial tracking routes
-	router := setupRouter(gateway, loader, eventBus, db, ports)
+	router := setupRouter(gateway, loader, eventBus, db, ports, installer)
 
 	// Server configuration - use resolved port
 	addr := fmt.Sprintf("%s:%d", defaultAddress, ports.API)
@@ -298,7 +320,7 @@ func findConfigFile(dataPath string) string {
 }
 
 // setupRouter creates the HTTP router with all routes
-func setupRouter(gateway *core.APIGateway, loader *core.PluginLoader, eventBus *core.EventBus, db *database.DB, ports *core.PortConfig) *chi.Mux {
+func setupRouter(gateway *core.APIGateway, loader *core.PluginLoader, eventBus *core.EventBus, db *database.DB, ports *core.PortConfig, installer *plugin.Installer) *chi.Mux {
 	r := chi.NewRouter()
 
 	// Middleware stack
@@ -322,6 +344,17 @@ func setupRouter(gateway *core.APIGateway, loader *core.PluginLoader, eventBus *
 		AllowCredentials: true,
 		MaxAge:           300,
 	}))
+
+	// WebSocket hub for real-time updates
+	wsHub := api.NewHub()
+	go wsHub.Run()
+
+	// WebSocket endpoint
+	r.Get("/ws", wsHub.HandleWebSocket)
+
+	// Proxy go2rtc endpoints through the API (so only API port needs to be exposed)
+	go2rtcURL := fmt.Sprintf("http://localhost:%d", ports.Go2RTCAPI)
+	go2rtcProxy := createGo2RTCProxy(go2rtcURL, ports)
 
 	// Health check endpoint
 	r.Get("/health", func(w http.ResponseWriter, r *http.Request) {
@@ -361,14 +394,24 @@ func setupRouter(gateway *core.APIGateway, loader *core.PluginLoader, eventBus *
 		// Plugin management
 		r.Route("/plugins", func(r chi.Router) {
 			r.Get("/", handleListPlugins(loader))
+			r.Post("/install", handleInstallPlugin(installer, loader))
+			r.Post("/rescan", handleRescanPlugins(loader))
 			r.Get("/{id}", handleGetPlugin(loader))
 			r.Post("/{id}/enable", handleEnablePlugin(loader))
 			r.Post("/{id}/disable", handleDisablePlugin(loader))
 			r.Post("/{id}/restart", handleRestartPlugin(loader))
+			r.Delete("/{id}", handleUninstallPlugin(installer))
 			r.Get("/{id}/config", handleGetPluginConfig(loader))
 			r.Put("/{id}/config", handleSetPluginConfig(loader))
 			r.Get("/{id}/logs", handleGetPluginLogs(loader))
 			r.Post("/{id}/rpc", handlePluginRPC(loader))
+		})
+
+		// Audio sessions (two-way audio)
+		r.Route("/audio/sessions", func(r chi.Router) {
+			r.Post("/{cameraId}/start", handleStartAudioSession(ports))
+			r.Post("/{cameraId}/stop", handleStopAudioSession())
+			r.Get("/{cameraId}", handleGetAudioSession())
 		})
 
 		// Mount gateway handler for plugin routes
@@ -387,8 +430,9 @@ func setupRouter(gateway *core.APIGateway, loader *core.PluginLoader, eventBus *
 		r.Get("/logs/stream", handleLogStream())
 
 		// Plugin catalog endpoints
-		r.Get("/plugins/catalog", handleGetPluginCatalog())
+		r.Get("/plugins/catalog", handleGetPluginCatalog(loader))
 		r.Post("/plugins/catalog/reload", handleReloadPluginCatalog())
+		r.Post("/plugins/catalog/{pluginId}/install", handleInstallFromCatalog(installer, loader))
 	})
 
 	// Serve static frontend files in production
@@ -402,18 +446,26 @@ func setupRouter(gateway *core.APIGateway, loader *core.PluginLoader, eventBus *
 		// Serve static files
 		fs := http.FileServer(http.Dir(webPath))
 
-		// Serve index.html for SPA routes
-		r.Get("/*", func(w http.ResponseWriter, r *http.Request) {
-			path := filepath.Join(webPath, r.URL.Path)
+		// Catch-all handler for both static files and SPA routes
+		// Also handles /go2rtc proxy since chi doesn't order Routes correctly with wildcards
+		r.Get("/*", func(w http.ResponseWriter, req *http.Request) {
+			urlPath := req.URL.Path
 
-			// If the file exists, serve it
-			if _, err := os.Stat(path); err == nil {
-				fs.ServeHTTP(w, r)
+			// Route /go2rtc/* to the proxy
+			if strings.HasPrefix(urlPath, "/go2rtc") {
+				go2rtcProxy.ServeHTTP(w, req)
+				return
+			}
+
+			// Try to serve static file
+			filePath := filepath.Join(webPath, urlPath)
+			if _, err := os.Stat(filePath); err == nil {
+				fs.ServeHTTP(w, req)
 				return
 			}
 
 			// Otherwise serve index.html for SPA routing
-			http.ServeFile(w, r, filepath.Join(webPath, "index.html"))
+			http.ServeFile(w, req, filepath.Join(webPath, "index.html"))
 		})
 	}
 
@@ -497,15 +549,58 @@ func handleGetPlugin(loader *core.PluginLoader) http.HandlerFunc {
 	}
 }
 
+func handleRescanPlugins(loader *core.PluginLoader) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if err := loader.ScanExternalPlugins(); err != nil {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusInternalServerError)
+			json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+			return
+		}
+
+		// Return list of all plugins (including newly discovered ones)
+		plugins := loader.ListPlugins()
+		result := make([]map[string]interface{}, 0, len(plugins))
+		for _, p := range plugins {
+			result = append(result, map[string]interface{}{
+				"id":       p.Manifest.ID,
+				"name":     p.Manifest.Name,
+				"version":  p.Manifest.Version,
+				"state":    string(p.State),
+				"isBuiltin": p.IsBuiltin,
+			})
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": true,
+			"plugins": result,
+			"message": fmt.Sprintf("Scanned plugins directory, found %d plugins", len(plugins)),
+		})
+	}
+}
+
 func handleEnablePlugin(loader *core.PluginLoader) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		id := chi.URLParam(r, "id")
-		if err := loader.EnablePlugin(r.Context(), id); err != nil {
-			http.Error(w, fmt.Sprintf(`{"error":"%s"}`, err.Error()), http.StatusInternalServerError)
+
+		// First try normal enable (for already registered plugins)
+		err := loader.EnablePlugin(r.Context(), id)
+		if err != nil {
+			// If plugin not found, try to scan and start it (for newly installed external plugins)
+			if strings.Contains(err.Error(), "not found") {
+				err = loader.ScanAndStart(r.Context(), id)
+			}
+		}
+
+		if err != nil {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusInternalServerError)
+			json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprintf(w, `{"id":"%s","status":"enabled"}`, id)
+		json.NewEncoder(w).Encode(map[string]string{"id": id, "status": "enabled"})
 	}
 }
 
@@ -577,16 +672,28 @@ func handleSetPluginConfig(loader *core.PluginLoader) http.HandlerFunc {
 			return
 		}
 
-		// Update config in loader
+		// Update config in loader (this persists the config)
 		loader.SetPluginConfig(id, newConfig)
 
-		// Restart plugin to apply new config
+		// Save config to disk for persistence across restarts
+		if err := loader.SavePluginConfig(id); err != nil {
+			slog.Warn("Failed to persist plugin config", "plugin", id, "error", err)
+		}
+
+		// Restart plugin if running, or start if not running
 		if p.State == core.PluginStateRunning {
 			go loader.RestartPlugin(r.Context(), id)
+		} else {
+			// Plugin not running - try to start it with new config
+			go func() {
+				if err := loader.EnablePlugin(context.Background(), id); err != nil {
+					slog.Error("Failed to start plugin after config update", "plugin", id, "error", err)
+				}
+			}()
 		}
 
 		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprintf(w, `{"message":"Configuration updated, plugin restarting"}`)
+		fmt.Fprintf(w, `{"message":"Configuration updated"}`)
 	}
 }
 
@@ -631,14 +738,19 @@ func handleSystemHealth(loader *core.PluginLoader, eventBus *core.EventBus, db *
 		unhealthy := 0
 
 		for _, p := range plugins {
+			// Only check health for running plugins
+			if p.State != core.PluginStateRunning {
+				continue
+			}
 			health := p.Plugin.Health()
 			switch health.State {
-			case "healthy":
+			case sdk.HealthStateHealthy:
 				healthy++
-			case "degraded":
+			case sdk.HealthStateDegraded:
 				degraded++
-			default:
+			case sdk.HealthStateUnhealthy:
 				unhealthy++
+			// HealthStateUnknown is ignored - plugin might be starting up
 			}
 		}
 
@@ -848,90 +960,363 @@ func handleLogStream() http.HandlerFunc {
 			return
 		}
 
-		// Send initial connection message
-		fmt.Fprintf(w, "data: [%s] Connected to log stream\n\n", time.Now().Format("15:04:05"))
+		logBuffer := logging.GetLogBuffer()
+
+		// Send recent logs first
+		recent := logBuffer.GetRecent(50)
+		for _, entry := range recent {
+			fmt.Fprintf(w, "data: %s\n\n", logging.LogEntryToJSON(entry))
+		}
 		flusher.Flush()
 
-		// Keep connection alive and send periodic logs
-		ticker := time.NewTicker(5 * time.Second)
+		// Subscribe to new logs
+		logCh := logBuffer.Subscribe()
+		defer logBuffer.Unsubscribe(logCh)
+
+		// Heartbeat ticker
+		ticker := time.NewTicker(30 * time.Second)
 		defer ticker.Stop()
 
 		for {
 			select {
 			case <-r.Context().Done():
 				return
-			case t := <-ticker.C:
-				// Send heartbeat/status message
-				fmt.Fprintf(w, "data: [%s] System running normally\n\n", t.Format("15:04:05"))
+			case entry := <-logCh:
+				fmt.Fprintf(w, "data: %s\n\n", logging.LogEntryToJSON(entry))
+				flusher.Flush()
+			case <-ticker.C:
+				// Send heartbeat to keep connection alive
+				fmt.Fprintf(w, ": heartbeat\n\n")
 				flusher.Flush()
 			}
 		}
 	}
 }
 
-// handleGetPluginCatalog returns the available plugin catalog
-func handleGetPluginCatalog() http.HandlerFunc {
+// Plugin catalog constants
+const (
+	catalogURL     = "https://raw.githubusercontent.com/Spatial-NVR/plugin-catalog/main/catalog.yaml"
+	catalogTimeout = 10 * time.Second
+)
+
+// Cached catalog
+var (
+	cachedCatalog     map[string]interface{}
+	cachedCatalogTime time.Time
+	catalogCacheTTL   = 15 * time.Minute
+)
+
+// handleGetPluginCatalog returns the available plugin catalog with installed status merged
+func handleGetPluginCatalog(loader *core.PluginLoader) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		catalog := map[string]interface{}{
-			"version": "1.0.0",
-			"updated": time.Now().Format(time.RFC3339),
-			"plugins": []map[string]interface{}{
-				{
-					"id":          "nvr-frigate",
-					"name":        "Frigate Integration",
-					"description": "Integration with Frigate NVR for advanced object detection",
-					"version":     "0.1.0",
-					"author":      "NVR Community",
-					"category":    "integration",
-					"installed":   false,
-				},
-				{
-					"id":          "nvr-homeassistant",
-					"name":        "Home Assistant",
-					"description": "Home Assistant integration for smart home automation",
-					"version":     "0.1.0",
-					"author":      "NVR Community",
-					"category":    "integration",
-					"installed":   false,
-				},
-				{
-					"id":          "nvr-mqtt",
-					"name":        "MQTT Publisher",
-					"description": "Publish events and detections to MQTT broker",
-					"version":     "0.1.0",
-					"author":      "NVR Community",
-					"category":    "notification",
-					"installed":   false,
-				},
-			},
-			"categories": map[string]interface{}{
-				"integration": map[string]interface{}{
-					"name":        "Integrations",
-					"description": "Connect with external systems",
-				},
-				"notification": map[string]interface{}{
-					"name":        "Notifications",
-					"description": "Alert and notification services",
-				},
-				"detection": map[string]interface{}{
-					"name":        "Detection",
-					"description": "Object and motion detection plugins",
-				},
-			},
+		var catalog map[string]interface{}
+		cacheHit := false
+
+		// Check cache for base catalog
+		if cachedCatalog != nil && time.Since(cachedCatalogTime) < catalogCacheTTL {
+			catalog = cachedCatalog
+			cacheHit = true
+		} else {
+			// Fetch from remote
+			ctx, cancel := context.WithTimeout(r.Context(), catalogTimeout)
+			defer cancel()
+
+			req, err := http.NewRequestWithContext(ctx, "GET", catalogURL, nil)
+			if err != nil {
+				catalog = getDefaultCatalog()
+			} else {
+				resp, err := http.DefaultClient.Do(req)
+				if err != nil {
+					slog.Warn("Failed to fetch plugin catalog, using fallback", "error", err)
+					catalog = getDefaultCatalog()
+				} else {
+					defer resp.Body.Close()
+
+					if resp.StatusCode != http.StatusOK {
+						slog.Warn("Plugin catalog returned non-200 status", "status", resp.StatusCode)
+						catalog = getDefaultCatalog()
+					} else {
+						// Parse YAML catalog
+						body, err := io.ReadAll(resp.Body)
+						if err != nil {
+							catalog = getDefaultCatalog()
+						} else {
+							var yamlCatalog map[string]interface{}
+							if err := yaml.Unmarshal(body, &yamlCatalog); err != nil {
+								slog.Warn("Failed to parse plugin catalog YAML", "error", err)
+								catalog = getDefaultCatalog()
+							} else {
+								catalog = yamlCatalog
+								// Cache the result
+								cachedCatalog = yamlCatalog
+								cachedCatalogTime = time.Now()
+							}
+						}
+					}
+				}
+			}
+		}
+
+		// Merge installed plugin status into catalog
+		installedPlugins := loader.ListPlugins()
+		installedMap := make(map[string]*core.LoadedPlugin)
+		for _, p := range installedPlugins {
+			installedMap[p.Manifest.ID] = p
+		}
+
+		// Update plugins in catalog with installed status
+		if plugins, ok := catalog["plugins"].([]interface{}); ok {
+			for _, p := range plugins {
+				if plugin, ok := p.(map[string]interface{}); ok {
+					pluginID, _ := plugin["id"].(string)
+					if installed, exists := installedMap[pluginID]; exists {
+						plugin["installed"] = true
+						plugin["installed_version"] = installed.Manifest.Version
+						plugin["enabled"] = installed.State == core.PluginStateRunning
+						plugin["state"] = string(installed.State)
+						// Remove from map so we can track non-catalog plugins
+						delete(installedMap, pluginID)
+					}
+				}
+			}
+		}
+
+		// Add any installed plugins not in the catalog (externally installed)
+		if plugins, ok := catalog["plugins"].([]interface{}); ok {
+			for id, p := range installedMap {
+				// Skip builtin plugins
+				if p.IsBuiltin {
+					continue
+				}
+				plugin := map[string]interface{}{
+					"id":                id,
+					"name":              p.Manifest.Name,
+					"description":       p.Manifest.Description,
+					"category":          p.Manifest.Category,
+					"installed":         true,
+					"installed_version": p.Manifest.Version,
+					"enabled":           p.State == core.PluginStateRunning,
+					"state":             string(p.State),
+				}
+				plugins = append(plugins, plugin)
+			}
+			catalog["plugins"] = plugins
 		}
 
 		w.Header().Set("Content-Type", "application/json")
+		if cacheHit {
+			w.Header().Set("X-Cache", "HIT")
+		} else {
+			w.Header().Set("X-Cache", "MISS")
+		}
 		json.NewEncoder(w).Encode(catalog)
 	}
 }
 
-// handleReloadPluginCatalog reloads the plugin catalog from disk
+// getDefaultCatalog returns a fallback catalog
+func getDefaultCatalog() map[string]interface{} {
+	return map[string]interface{}{
+		"version":    "1.0",
+		"updated_at": time.Now().Format(time.RFC3339),
+		"categories": []map[string]interface{}{
+			{"id": "camera", "name": "Camera Integrations", "description": "Plugins for connecting different camera brands"},
+			{"id": "integration", "name": "Home Automation", "description": "Integration with smart home platforms"},
+		},
+		"plugins": []interface{}{
+			map[string]interface{}{
+				"id":          "reolink",
+				"name":        "Reolink",
+				"description": "Full integration for Reolink cameras and NVRs",
+				"category":    "camera",
+				"repo":        "https://github.com/Spatial-NVR/reolink-plugin",
+				"author":      "Spatial-NVR",
+				"official":    true,
+				"verified":    true,
+			},
+			map[string]interface{}{
+				"id":          "wyze",
+				"name":        "Wyze",
+				"description": "Integration for Wyze cameras with RTSP streaming support",
+				"category":    "camera",
+				"repo":        "https://github.com/Spatial-NVR/wyze-plugin",
+				"author":      "Spatial-NVR",
+				"official":    true,
+				"verified":    true,
+			},
+		},
+	}
+}
+
+
+// handleReloadPluginCatalog forces a refresh of the plugin catalog
 func handleReloadPluginCatalog() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		// Clear cache to force refresh
+		cachedCatalog = nil
+		cachedCatalogTime = time.Time{}
+
+		// Fetch fresh catalog
+		ctx, cancel := context.WithTimeout(r.Context(), catalogTimeout)
+		defer cancel()
+
+		req, err := http.NewRequestWithContext(ctx, "GET", catalogURL, nil)
+		if err != nil {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusInternalServerError)
+			json.NewEncoder(w).Encode(map[string]string{"error": "Failed to create request"})
+			return
+		}
+
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusServiceUnavailable)
+			json.NewEncoder(w).Encode(map[string]string{"error": "Failed to fetch catalog", "details": err.Error()})
+			return
+		}
+		defer resp.Body.Close()
+
+		body, _ := io.ReadAll(resp.Body)
+		var yamlCatalog map[string]interface{}
+		if err := yaml.Unmarshal(body, &yamlCatalog); err != nil {
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"message": "Catalog refreshed (fallback)",
+				"source":  "fallback",
+			})
+			return
+		}
+
+		// Update cache
+		cachedCatalog = yamlCatalog
+		cachedCatalogTime = time.Now()
+
+		pluginCount := 0
+		if plugins, ok := yamlCatalog["plugins"].([]interface{}); ok {
+			pluginCount = len(plugins)
+		}
+
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]interface{}{
-			"message":      "Catalog reloaded",
-			"plugin_count": 3,
+			"message":      "Catalog refreshed",
+			"plugin_count": pluginCount,
+			"source":       "remote",
+		})
+	}
+}
+
+// handleInstallFromCatalog installs a plugin from the catalog by ID
+func handleInstallFromCatalog(installer *plugin.Installer, loader *core.PluginLoader) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		pluginID := chi.URLParam(r, "pluginId")
+
+		// Get catalog (use cache or fetch)
+		var catalog map[string]interface{}
+		if cachedCatalog != nil && time.Since(cachedCatalogTime) < catalogCacheTTL {
+			catalog = cachedCatalog
+		} else {
+			// Fetch fresh
+			ctx, cancel := context.WithTimeout(r.Context(), catalogTimeout)
+			defer cancel()
+
+			req, err := http.NewRequestWithContext(ctx, "GET", catalogURL, nil)
+			if err != nil {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusInternalServerError)
+				json.NewEncoder(w).Encode(map[string]string{"error": "Failed to fetch catalog"})
+				return
+			}
+
+			resp, err := http.DefaultClient.Do(req)
+			if err != nil {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusServiceUnavailable)
+				json.NewEncoder(w).Encode(map[string]string{"error": "Catalog unavailable"})
+				return
+			}
+			defer resp.Body.Close()
+
+			body, _ := io.ReadAll(resp.Body)
+			if err := yaml.Unmarshal(body, &catalog); err != nil {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusInternalServerError)
+				json.NewEncoder(w).Encode(map[string]string{"error": "Invalid catalog format"})
+				return
+			}
+
+			cachedCatalog = catalog
+			cachedCatalogTime = time.Now()
+		}
+
+		// Find plugin in catalog
+		plugins, ok := catalog["plugins"].([]interface{})
+		if !ok {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusInternalServerError)
+			json.NewEncoder(w).Encode(map[string]string{"error": "Invalid catalog structure"})
+			return
+		}
+
+		var repoURL string
+		var pluginName string
+		for _, p := range plugins {
+			if pm, ok := p.(map[string]interface{}); ok {
+				if pm["id"] == pluginID {
+					// Try both "repo" and "repository" fields
+					if repo, ok := pm["repo"].(string); ok {
+						repoURL = repo
+					} else if repo, ok := pm["repository"].(string); ok {
+						repoURL = repo
+					}
+					if name, ok := pm["name"].(string); ok {
+						pluginName = name
+					}
+					break
+				}
+			}
+		}
+
+		if repoURL == "" {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusNotFound)
+			json.NewEncoder(w).Encode(map[string]string{"error": "Plugin not found in catalog"})
+			return
+		}
+
+		// Install from repository
+		ctx, cancel := context.WithTimeout(r.Context(), 5*time.Minute)
+		defer cancel()
+
+		manifest, err := installer.InstallFromGitHub(ctx, repoURL)
+		if err != nil {
+			slog.Error("Plugin installation failed", "plugin", pluginID, "repository", repoURL, "error", err)
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusInternalServerError)
+			json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+			return
+		}
+
+		// Hot-reload: Scan for the new plugin and start it immediately
+		startErr := loader.ScanAndStart(ctx, manifest.ID)
+		var startMsg string
+		if startErr != nil {
+			slog.Warn("Plugin installed but failed to start", "plugin", manifest.ID, "error", startErr)
+			startMsg = "Plugin installed but failed to auto-start: " + startErr.Error()
+		} else {
+			slog.Info("Plugin installed and started (hot-reload)", "plugin", manifest.ID)
+			startMsg = "Plugin installed and started successfully."
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": true,
+			"plugin": map[string]string{
+				"id":      manifest.ID,
+				"name":    pluginName,
+				"version": manifest.Version,
+			},
+			"message": startMsg,
+			"started": startErr == nil,
 		})
 	}
 }
@@ -943,7 +1328,14 @@ func handlePluginRPC(loader *core.PluginLoader) http.HandlerFunc {
 		p, ok := loader.GetPlugin(id)
 		if !ok {
 			w.Header().Set("Content-Type", "application/json")
-			http.Error(w, `{"jsonrpc":"2.0","error":{"code":-32600,"message":"Plugin not found"}}`, http.StatusNotFound)
+			w.WriteHeader(http.StatusNotFound)
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"jsonrpc": "2.0",
+				"error": map[string]interface{}{
+					"code":    -32600,
+					"message": "Plugin not found. Make sure the plugin is installed from the catalog first.",
+				},
+			})
 			return
 		}
 
@@ -951,7 +1343,14 @@ func handlePluginRPC(loader *core.PluginLoader) http.HandlerFunc {
 		body, err := io.ReadAll(r.Body)
 		if err != nil {
 			w.Header().Set("Content-Type", "application/json")
-			http.Error(w, `{"jsonrpc":"2.0","error":{"code":-32700,"message":"Failed to read request"}}`, http.StatusBadRequest)
+			w.WriteHeader(http.StatusBadRequest)
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"jsonrpc": "2.0",
+				"error": map[string]interface{}{
+					"code":    -32700,
+					"message": "Failed to read request",
+				},
+			})
 			return
 		}
 
@@ -964,7 +1363,14 @@ func handlePluginRPC(loader *core.PluginLoader) http.HandlerFunc {
 		}
 		if err := json.Unmarshal(body, &req); err != nil {
 			w.Header().Set("Content-Type", "application/json")
-			http.Error(w, `{"jsonrpc":"2.0","error":{"code":-32700,"message":"Invalid JSON"}}`, http.StatusBadRequest)
+			w.WriteHeader(http.StatusBadRequest)
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"jsonrpc": "2.0",
+				"error": map[string]interface{}{
+					"code":    -32700,
+					"message": "Invalid JSON: " + err.Error(),
+				},
+			})
 			return
 		}
 
@@ -1002,8 +1408,253 @@ func handlePluginRPC(loader *core.PluginLoader) http.HandlerFunc {
 		// For builtin plugins, return an error for now
 		// In the future, we could add a CallablePlugin interface
 		w.Header().Set("Content-Type", "application/json")
-		http.Error(w, `{"jsonrpc":"2.0","error":{"code":-32601,"message":"Plugin does not support RPC"}}`, http.StatusNotImplemented)
+		w.WriteHeader(http.StatusNotImplemented)
+		resp := map[string]interface{}{
+			"jsonrpc": "2.0",
+			"id":      req.ID,
+			"error": map[string]interface{}{
+				"code":    -32601,
+				"message": "Plugin does not support RPC. Make sure the plugin is installed from the catalog first.",
+			},
+		}
+		json.NewEncoder(w).Encode(resp)
 	}
+}
+
+// handleInstallPlugin installs a plugin from a GitHub repository
+func handleInstallPlugin(installer *plugin.Installer, loader *core.PluginLoader) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			Repository string `json:"repository"`
+			RepoURL    string `json:"repo_url"`
+		}
+
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusBadRequest)
+			json.NewEncoder(w).Encode(map[string]string{"error": "Invalid request body"})
+			return
+		}
+
+		// Accept either repository or repo_url
+		repoURL := req.Repository
+		if repoURL == "" {
+			repoURL = req.RepoURL
+		}
+
+		if repoURL == "" {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusBadRequest)
+			json.NewEncoder(w).Encode(map[string]string{"error": "Repository URL is required"})
+			return
+		}
+
+		ctx, cancel := context.WithTimeout(r.Context(), 5*time.Minute)
+		defer cancel()
+
+		manifest, err := installer.InstallFromGitHub(ctx, repoURL)
+		if err != nil {
+			slog.Error("Plugin installation failed", "repository", repoURL, "error", err)
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusInternalServerError)
+			json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": true,
+			"plugin": map[string]string{
+				"id":      manifest.ID,
+				"name":    manifest.Name,
+				"version": manifest.Version,
+			},
+			"message": "Plugin installed successfully. Restart may be required to activate.",
+		})
+	}
+}
+
+// handleUninstallPlugin removes an installed plugin
+func handleUninstallPlugin(installer *plugin.Installer) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		id := chi.URLParam(r, "id")
+
+		if err := installer.UninstallPlugin(id); err != nil {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusInternalServerError)
+			json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": true,
+			"message": "Plugin uninstalled successfully",
+		})
+	}
+}
+
+// Audio session management for two-way audio
+var audioSessions = make(map[string]*AudioSession)
+
+type AudioSession struct {
+	CameraID  string    `json:"camera_id"`
+	Active    bool      `json:"active"`
+	StartedAt time.Time `json:"started_at"`
+	RTSPURL   string    `json:"rtsp_url,omitempty"`
+}
+
+func handleStartAudioSession(ports *core.PortConfig) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		cameraID := chi.URLParam(r, "cameraId")
+
+		// For now, create a basic audio session
+		// Real implementation would connect to go2rtc's WebRTC audio channel
+		session := &AudioSession{
+			CameraID:  cameraID,
+			Active:    true,
+			StartedAt: time.Now(),
+			RTSPURL:   fmt.Sprintf("rtsp://localhost:%d/%s", ports.Go2RTCRTSP, strings.ToLower(cameraID)),
+		}
+		audioSessions[cameraID] = session
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": true,
+			"session": session,
+		})
+	}
+}
+
+func handleStopAudioSession() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		cameraID := chi.URLParam(r, "cameraId")
+
+		if session, ok := audioSessions[cameraID]; ok {
+			session.Active = false
+			delete(audioSessions, cameraID)
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": true,
+		})
+	}
+}
+
+func handleGetAudioSession() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		cameraID := chi.URLParam(r, "cameraId")
+
+		session, ok := audioSessions[cameraID]
+		if !ok {
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"active": false,
+			})
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(session)
+	}
+}
+
+// createGo2RTCProxy creates a reverse proxy for go2rtc with WebSocket support
+func createGo2RTCProxy(targetURL string, ports *core.PortConfig) http.Handler {
+	target, _ := url.Parse(targetURL)
+
+	// WebSocket upgrader
+	upgrader := websocket.Upgrader{
+		ReadBufferSize:  1024,
+		WriteBufferSize: 1024,
+		CheckOrigin: func(r *http.Request) bool {
+			return true // Allow all origins since we're proxying
+		},
+	}
+
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Strip /go2rtc prefix
+		path := strings.TrimPrefix(r.URL.Path, "/go2rtc")
+		if path == "" {
+			path = "/"
+		}
+
+		// Check if this is a WebSocket upgrade request
+		if websocket.IsWebSocketUpgrade(r) {
+			slog.Info("Proxying WebSocket request", "path", path, "query", r.URL.RawQuery)
+			proxyWebSocket(w, r, target.Host, path, r.URL.RawQuery, upgrader)
+			return
+		}
+
+		slog.Debug("Proxying HTTP request to go2rtc", "path", path)
+
+		// Regular HTTP proxy for non-WebSocket requests
+		proxy := httputil.NewSingleHostReverseProxy(target)
+		proxy.Director = func(req *http.Request) {
+			req.URL.Scheme = target.Scheme
+			req.URL.Host = target.Host
+			req.URL.Path = path
+			req.Host = target.Host
+		}
+		proxy.ServeHTTP(w, r)
+	})
+}
+
+// proxyWebSocket proxies WebSocket connections to go2rtc
+func proxyWebSocket(w http.ResponseWriter, r *http.Request, targetHost, path, query string, upgrader websocket.Upgrader) {
+	// Build target WebSocket URL
+	targetURL := fmt.Sprintf("ws://%s%s", targetHost, path)
+	if query != "" {
+		targetURL += "?" + query
+	}
+
+	// Connect to target
+	targetConn, _, err := websocket.DefaultDialer.Dial(targetURL, nil)
+	if err != nil {
+		slog.Error("Failed to connect to go2rtc WebSocket", "url", targetURL, "error", err)
+		http.Error(w, "Failed to connect to stream", http.StatusBadGateway)
+		return
+	}
+	defer targetConn.Close()
+
+	// Upgrade client connection
+	clientConn, err := upgrader.Upgrade(w, r, nil)
+	if err != nil {
+		slog.Error("Failed to upgrade WebSocket connection", "error", err)
+		return
+	}
+	defer clientConn.Close()
+
+	// Bidirectional message forwarding
+	done := make(chan struct{})
+
+	// Client -> Target
+	go func() {
+		defer close(done)
+		for {
+			messageType, data, err := clientConn.ReadMessage()
+			if err != nil {
+				return
+			}
+			if err := targetConn.WriteMessage(messageType, data); err != nil {
+				return
+			}
+		}
+	}()
+
+	// Target -> Client
+	for {
+		messageType, data, err := targetConn.ReadMessage()
+		if err != nil {
+			break
+		}
+		if err := clientConn.WriteMessage(messageType, data); err != nil {
+			break
+		}
+	}
+
+	<-done
 }
 
 // Helper functions
