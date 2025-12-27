@@ -51,7 +51,7 @@ func setupRetentionTest(t *testing.T) (*RetentionPolicy, *SQLiteRepository, stri
 	}
 
 	storagePath := filepath.Join(tmpDir, "recordings")
-	os.MkdirAll(storagePath, 0755)
+	_ = os.MkdirAll(storagePath, 0755)
 
 	repository := NewSQLiteRepository(db)
 	if err := repository.InitSchema(context.Background()); err != nil {
@@ -131,10 +131,10 @@ func TestRetentionPolicy_RunCleanup_NoCameras(t *testing.T) {
 	}
 
 	storagePath := filepath.Join(tmpDir, "recordings")
-	os.MkdirAll(storagePath, 0755)
+	_ = os.MkdirAll(storagePath, 0755)
 
 	repository := NewSQLiteRepository(db)
-	repository.InitSchema(context.Background())
+	_ = repository.InitSchema(context.Background())
 	segmentHandler := NewDefaultSegmentHandler(storagePath, tmpDir)
 
 	policy := NewRetentionPolicy(cfg, repository, segmentHandler, storagePath)
@@ -164,11 +164,11 @@ func TestRetentionPolicy_RunCleanup_WithOldSegments(t *testing.T) {
 	oldTime := now.AddDate(0, 0, -30) // 30 days ago
 
 	// Create the camera directory
-	os.MkdirAll(filepath.Join(storagePath, "test_cam_1"), 0755)
+	_ = os.MkdirAll(filepath.Join(storagePath, "test_cam_1"), 0755)
 
 	for i := 0; i < 5; i++ {
 		segPath := filepath.Join(storagePath, "test_cam_1", "segment_old_"+string(rune('0'+i))+".mp4")
-		os.WriteFile(segPath, []byte("old content"), 0644)
+		_ = os.WriteFile(segPath, []byte("old content"), 0644)
 
 		segment := &Segment{
 			CameraID:      "test_cam_1",
@@ -208,11 +208,11 @@ func TestRetentionPolicy_RunCleanup_EventSegments(t *testing.T) {
 	now := time.Now()
 	oldTime := now.AddDate(0, 0, -20) // 20 days ago (older than event retention of 14 days)
 
-	os.MkdirAll(filepath.Join(storagePath, "test_cam_1"), 0755)
+	_ = os.MkdirAll(filepath.Join(storagePath, "test_cam_1"), 0755)
 
 	// Create event segment
 	segPath := filepath.Join(storagePath, "test_cam_1", "event_segment.mp4")
-	os.WriteFile(segPath, []byte("event content"), 0644)
+	_ = os.WriteFile(segPath, []byte("event content"), 0644)
 
 	segment := &Segment{
 		CameraID:      "test_cam_1",
@@ -273,10 +273,10 @@ func TestRetentionPolicy_EnforceStorageLimit(t *testing.T) {
 	}
 
 	storagePath := filepath.Join(tmpDir, "recordings")
-	os.MkdirAll(filepath.Join(storagePath, "test_cam"), 0755)
+	_ = os.MkdirAll(filepath.Join(storagePath, "test_cam"), 0755)
 
 	repository := NewSQLiteRepository(db)
-	repository.InitSchema(context.Background())
+	_ = repository.InitSchema(context.Background())
 	segmentHandler := NewDefaultSegmentHandler(storagePath, tmpDir)
 
 	policy := NewRetentionPolicy(cfg, repository, segmentHandler, storagePath)
@@ -288,7 +288,7 @@ func TestRetentionPolicy_EnforceStorageLimit(t *testing.T) {
 	for i := 0; i < 10; i++ {
 		segPath := filepath.Join(storagePath, "test_cam", "segment_"+string(rune('a'+i))+".mp4")
 		// Create a large file to trigger storage limit
-		os.WriteFile(segPath, make([]byte, 100*1024*1024), 0644) // 100MB each
+		_ = os.WriteFile(segPath, make([]byte, 100*1024*1024), 0644) // 100MB each
 
 		segment := &Segment{
 			CameraID:      "test_cam",
@@ -300,7 +300,7 @@ func TestRetentionPolicy_EnforceStorageLimit(t *testing.T) {
 			StorageTier:   StorageTierHot,
 			RecordingMode: string(RecordingModeContinuous),
 		}
-		repository.Create(ctx, segment)
+		_ = repository.Create(ctx, segment)
 	}
 
 	// Run cleanup
@@ -348,10 +348,10 @@ func TestRetentionPolicy_CleanupCameraWithDefaultRetention(t *testing.T) {
 	}
 
 	storagePath := filepath.Join(tmpDir, "recordings")
-	os.MkdirAll(filepath.Join(storagePath, "test_cam"), 0755)
+	_ = os.MkdirAll(filepath.Join(storagePath, "test_cam"), 0755)
 
 	repository := NewSQLiteRepository(db)
-	repository.InitSchema(context.Background())
+	_ = repository.InitSchema(context.Background())
 	segmentHandler := NewDefaultSegmentHandler(storagePath, tmpDir)
 
 	policy := NewRetentionPolicy(cfg, repository, segmentHandler, storagePath)
@@ -361,7 +361,7 @@ func TestRetentionPolicy_CleanupCameraWithDefaultRetention(t *testing.T) {
 	// Create old segment (45 days old)
 	oldTime := time.Now().AddDate(0, 0, -45)
 	segPath := filepath.Join(storagePath, "test_cam", "old_segment.mp4")
-	os.WriteFile(segPath, []byte("content"), 0644)
+	_ = os.WriteFile(segPath, []byte("content"), 0644)
 
 	segment := &Segment{
 		CameraID:      "test_cam",
@@ -373,7 +373,7 @@ func TestRetentionPolicy_CleanupCameraWithDefaultRetention(t *testing.T) {
 		StorageTier:   StorageTierHot,
 		RecordingMode: string(RecordingModeContinuous),
 	}
-	repository.Create(ctx, segment)
+	_ = repository.Create(ctx, segment)
 
 	stats, err := policy.RunCleanup(ctx)
 	if err != nil {
@@ -390,12 +390,12 @@ func TestWalkDir(t *testing.T) {
 
 	// Create directory structure
 	subDir := filepath.Join(tmpDir, "subdir")
-	os.MkdirAll(subDir, 0755)
+	_ = os.MkdirAll(subDir, 0755)
 
 	// Create files
-	os.WriteFile(filepath.Join(tmpDir, "file1.txt"), []byte("content1"), 0644)
-	os.WriteFile(filepath.Join(tmpDir, "file2.txt"), []byte("content2"), 0644)
-	os.WriteFile(filepath.Join(subDir, "file3.txt"), []byte("content3"), 0644)
+	_ = os.WriteFile(filepath.Join(tmpDir, "file1.txt"), []byte("content1"), 0644)
+	_ = os.WriteFile(filepath.Join(tmpDir, "file2.txt"), []byte("content2"), 0644)
+	_ = os.WriteFile(filepath.Join(subDir, "file3.txt"), []byte("content3"), 0644)
 
 	var files []string
 	err := walkDir(tmpDir, func(path string, info os.FileInfo) error {
@@ -434,7 +434,7 @@ func TestTierMigration_New(t *testing.T) {
 	defer db.Close()
 
 	repository := NewSQLiteRepository(db)
-	repository.InitSchema(context.Background())
+	_ = repository.InitSchema(context.Background())
 
 	segmentHandler := NewDefaultSegmentHandler(tmpDir, tmpDir)
 
@@ -462,14 +462,14 @@ func TestTierMigration_MigrateToWarm(t *testing.T) {
 	defer db.Close()
 
 	repository := NewSQLiteRepository(db)
-	repository.InitSchema(context.Background())
+	_ = repository.InitSchema(context.Background())
 
 	hotPath := filepath.Join(tmpDir, "hot")
 	warmPath := filepath.Join(tmpDir, "warm")
 	coldPath := filepath.Join(tmpDir, "cold")
 
 	for _, path := range []string{hotPath, warmPath, coldPath} {
-		os.MkdirAll(path, 0755)
+		_ = os.MkdirAll(path, 0755)
 	}
 
 	segmentHandler := NewDefaultSegmentHandler(hotPath, tmpDir)
@@ -481,7 +481,7 @@ func TestTierMigration_MigrateToWarm(t *testing.T) {
 	// Create a segment older than 24 hours
 	oldTime := time.Now().Add(-48 * time.Hour)
 	segPath := filepath.Join(hotPath, "old_segment.mp4")
-	os.WriteFile(segPath, []byte("content"), 0644)
+	_ = os.WriteFile(segPath, []byte("content"), 0644)
 
 	segment := &Segment{
 		CameraID:      "test_cam",
@@ -493,7 +493,7 @@ func TestTierMigration_MigrateToWarm(t *testing.T) {
 		StorageTier:   StorageTierHot,
 		RecordingMode: string(RecordingModeContinuous),
 	}
-	repository.Create(ctx, segment)
+	_ = repository.Create(ctx, segment)
 
 	// Migrate segments older than 24 hours
 	err = migration.MigrateToWarm(ctx, 24*time.Hour)
@@ -519,7 +519,7 @@ func TestTierMigration_MigrateToWarm_NoOldSegments(t *testing.T) {
 	defer db.Close()
 
 	repository := NewSQLiteRepository(db)
-	repository.InitSchema(context.Background())
+	_ = repository.InitSchema(context.Background())
 
 	segmentHandler := NewDefaultSegmentHandler(tmpDir, tmpDir)
 
@@ -539,7 +539,7 @@ func TestTierMigration_MigrateToWarm_NoOldSegments(t *testing.T) {
 		StorageTier:   StorageTierHot,
 		RecordingMode: string(RecordingModeContinuous),
 	}
-	repository.Create(ctx, segment)
+	_ = repository.Create(ctx, segment)
 
 	// Try to migrate segments older than 24 hours
 	err = migration.MigrateToWarm(ctx, 24*time.Hour)
@@ -609,7 +609,7 @@ func TestRetentionPolicy_DeleteSegment_FileNotExist(t *testing.T) {
 		StorageTier:   StorageTierHot,
 		RecordingMode: string(RecordingModeContinuous),
 	}
-	repository.Create(ctx, segment)
+	_ = repository.Create(ctx, segment)
 
 	// Should still delete from database even if file doesn't exist
 	err := policy.deleteSegment(ctx, segment)
@@ -631,9 +631,9 @@ func TestRetentionPolicy_GetStorageUsage(t *testing.T) {
 	storagePath := filepath.Join(tmpDir, "recordings")
 
 	// Create some test files
-	os.MkdirAll(filepath.Join(storagePath, "test_cam"), 0755)
-	os.WriteFile(filepath.Join(storagePath, "test_cam", "file1.mp4"), []byte("content1"), 0644)
-	os.WriteFile(filepath.Join(storagePath, "test_cam", "file2.mp4"), []byte("longer content 2"), 0644)
+	_ = os.MkdirAll(filepath.Join(storagePath, "test_cam"), 0755)
+	_ = os.WriteFile(filepath.Join(storagePath, "test_cam", "file1.mp4"), []byte("content1"), 0644)
+	_ = os.WriteFile(filepath.Join(storagePath, "test_cam", "file2.mp4"), []byte("longer content 2"), 0644)
 
 	usage, err := policy.getStorageUsage()
 	if err != nil {

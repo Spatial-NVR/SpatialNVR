@@ -109,7 +109,7 @@ func (r *Recorder) Stop() error {
 		case <-timeout:
 			r.mu.Lock()
 			if r.cmd != nil && r.cmd.Process != nil {
-				r.cmd.Process.Kill()
+				_ = r.cmd.Process.Kill()
 			}
 			r.state = RecorderStateIdle
 			r.mu.Unlock()

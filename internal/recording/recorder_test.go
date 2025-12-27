@@ -172,6 +172,9 @@ func TestRecorder_BuildFFmpegArgs(t *testing.T) {
 			cfg := &config.CameraConfig{
 				ID:   "test_camera",
 				Name: "Test Camera",
+				Stream: config.StreamConfig{
+					URL: "rtsp://localhost:554/stream",
+				},
 				Recording: config.RecordingConfig{
 					SegmentDuration: tt.segmentDuration,
 				},
@@ -309,7 +312,7 @@ func TestRecorder_Start_DirectoryCreation(t *testing.T) {
 
 	// Stop immediately
 	cancel()
-	recorder.Stop()
+	_ = recorder.Stop()
 
 	// Check if camera directory was created
 	cameraDir := filepath.Join(storagePath, "test_camera")
