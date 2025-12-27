@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Moon, Sun, ChevronDown, ChevronRight, Cpu, Download, Check, AlertCircle, Loader2, HardDrive, Trash2 } from 'lucide-react'
 import { useState, useEffect } from 'react'
+import { useLocation, Navigate } from 'react-router-dom'
 import { configApi, modelsApi, storageApi, cameraApi, ModelDownloadStatus } from '../lib/api'
 import { useToast } from '../components/Toast'
 
@@ -14,6 +15,13 @@ function formatBytes(bytes: number): string {
 }
 
 export function Settings() {
+  const location = useLocation()
+
+  // Redirect legacy /settings/plugins routes to /plugins
+  if (location.pathname.startsWith('/settings/plugins')) {
+    return <Navigate to="/plugins" replace />
+  }
+
   const queryClient = useQueryClient()
   const [theme, setTheme] = useState<'dark' | 'light'>('dark')
   const { addToast } = useToast()

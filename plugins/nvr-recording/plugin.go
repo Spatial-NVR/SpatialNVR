@@ -16,6 +16,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/Spatial-NVR/SpatialNVR/internal/config"
 	"github.com/Spatial-NVR/SpatialNVR/internal/recording"
 	"github.com/Spatial-NVR/SpatialNVR/sdk"
 )
@@ -119,12 +120,50 @@ func (p *RecordingPlugin) Start(ctx context.Context) error {
 		"storage_path", p.storagePath,
 		"thumbnail_path", p.thumbnailPath)
 
+	// Fetch existing cameras from config plugin after a short delay
+	// (to ensure config plugin is ready)
+	go func() {
+		time.Sleep(2 * time.Second)
+		p.loadExistingCameras(runtime)
+	}()
+
 	// Publish started event
 	p.PublishEvent(sdk.EventTypeRecordingStart, map[string]string{
 		"plugin_id": "nvr-recording",
 	})
 
 	return nil
+}
+
+// loadExistingCameras fetches existing camera configs from the config plugin
+func (p *RecordingPlugin) loadExistingCameras(runtime *sdk.PluginRuntime) {
+	// Request cameras from config plugin via RPC
+	data, err := runtime.Request("nvr-core-config", "get-cameras", nil, 5*time.Second)
+	if err != nil {
+		runtime.Logger().Warn("Failed to fetch existing cameras from config plugin", "error", err)
+		return
+	}
+
+	var cameras []config.CameraConfig
+	if err := json.Unmarshal(data, &cameras); err != nil {
+		runtime.Logger().Error("Failed to unmarshal camera configs", "error", err)
+		return
+	}
+
+	p.mu.RLock()
+	svc := p.service
+	p.mu.RUnlock()
+
+	if svc == nil {
+		return
+	}
+
+	// Update service with each camera config
+	for _, cam := range cameras {
+		svc.UpdateCameraConfig(cam)
+	}
+
+	runtime.Logger().Info("Loaded existing camera configs", "count", len(cameras))
 }
 
 // Stop stops the recording service
@@ -227,21 +266,9 @@ func (p *RecordingPlugin) EventSubscriptions() []string {
 // HandleEvent processes incoming events
 func (p *RecordingPlugin) HandleEvent(ctx context.Context, event *sdk.Event) error {
 	switch event.Type {
-	case sdk.EventTypeCameraAdded:
-		// Start recording for new camera if configured
-		if cameraID, ok := event.Data["camera_id"].(string); ok {
-			p.mu.RLock()
-			svc := p.service
-			p.mu.RUnlock()
-			if svc != nil {
-				go func() {
-					if err := svc.StartCamera(cameraID); err != nil {
-						p.Runtime().Logger().Error("Failed to start recording for new camera",
-							"camera_id", cameraID, "error", err)
-					}
-				}()
-			}
-		}
+	case sdk.EventTypeCameraAdded, sdk.EventTypeCameraUpdated:
+		// Extract camera config from event and update recording service
+		p.handleCameraConfigEvent(event)
 
 	case sdk.EventTypeCameraRemoved:
 		// Stop recording for removed camera
@@ -250,12 +277,7 @@ func (p *RecordingPlugin) HandleEvent(ctx context.Context, event *sdk.Event) err
 			svc := p.service
 			p.mu.RUnlock()
 			if svc != nil {
-				go func() {
-					if err := svc.StopCamera(cameraID); err != nil {
-						p.Runtime().Logger().Error("Failed to stop recording for removed camera",
-							"camera_id", cameraID, "error", err)
-					}
-				}()
+				svc.RemoveCameraConfig(cameraID)
 			}
 		}
 
@@ -277,6 +299,66 @@ func (p *RecordingPlugin) HandleEvent(ctx context.Context, event *sdk.Event) err
 	}
 
 	return nil
+}
+
+// handleCameraConfigEvent extracts camera config from an event and updates the service
+func (p *RecordingPlugin) handleCameraConfigEvent(event *sdk.Event) {
+	cameraID, ok := event.Data["camera_id"].(string)
+	if !ok {
+		return
+	}
+
+	p.mu.RLock()
+	svc := p.service
+	p.mu.RUnlock()
+
+	if svc == nil {
+		return
+	}
+
+	// Try to extract full config from event
+	configData, hasConfig := event.Data["config"]
+	if !hasConfig {
+		p.Runtime().Logger().Warn("Camera event missing config data, cannot configure recording",
+			"camera_id", cameraID)
+		return
+	}
+
+	// Convert config data to CameraConfig
+	camCfg, err := p.extractCameraConfig(configData)
+	if err != nil {
+		p.Runtime().Logger().Error("Failed to extract camera config from event",
+			"camera_id", cameraID, "error", err)
+		return
+	}
+
+	// Ensure camera ID is set
+	camCfg.ID = cameraID
+
+	// Update service with camera config
+	svc.UpdateCameraConfig(camCfg)
+
+	p.Runtime().Logger().Info("Camera config received via event",
+		"camera_id", cameraID,
+		"recording_enabled", camCfg.Recording.Enabled)
+}
+
+// extractCameraConfig converts event config data to a CameraConfig struct
+func (p *RecordingPlugin) extractCameraConfig(data interface{}) (config.CameraConfig, error) {
+	var camCfg config.CameraConfig
+
+	// The config may come as a map or as the actual struct
+	// Try JSON marshal/unmarshal to convert
+	jsonData, err := json.Marshal(data)
+	if err != nil {
+		return camCfg, fmt.Errorf("failed to marshal config data: %w", err)
+	}
+
+	if err := json.Unmarshal(jsonData, &camCfg); err != nil {
+		return camCfg, fmt.Errorf("failed to unmarshal config data: %w", err)
+	}
+
+	return camCfg, nil
 }
 
 // OnConfigChange handles configuration changes

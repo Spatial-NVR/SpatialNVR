@@ -3,11 +3,13 @@ package core
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -126,6 +128,76 @@ func (l *PluginLoader) SetPluginConfig(pluginID string, config map[string]interf
 	l.pluginConfigs[pluginID] = config
 }
 
+// SavePluginConfig persists a plugin's configuration to disk
+func (l *PluginLoader) SavePluginConfig(pluginID string) error {
+	l.pluginsMu.RLock()
+	config, ok := l.pluginConfigs[pluginID]
+	l.pluginsMu.RUnlock()
+
+	if !ok {
+		return fmt.Errorf("no config found for plugin %s", pluginID)
+	}
+
+	// Create config directory if needed
+	configDir := filepath.Join(l.pluginsDir, ".configs")
+	if err := os.MkdirAll(configDir, 0755); err != nil {
+		return fmt.Errorf("failed to create config directory: %w", err)
+	}
+
+	// Write config to file
+	configPath := filepath.Join(configDir, pluginID+".json")
+	data, err := json.MarshalIndent(config, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to marshal config: %w", err)
+	}
+
+	if err := os.WriteFile(configPath, data, 0600); err != nil {
+		return fmt.Errorf("failed to write config file: %w", err)
+	}
+
+	l.logger.Info("Saved plugin config", "plugin", pluginID, "path", configPath)
+	return nil
+}
+
+// LoadPluginConfigs loads all saved plugin configurations from disk
+func (l *PluginLoader) LoadPluginConfigs() error {
+	configDir := filepath.Join(l.pluginsDir, ".configs")
+	if _, err := os.Stat(configDir); os.IsNotExist(err) {
+		return nil // No configs to load
+	}
+
+	entries, err := os.ReadDir(configDir)
+	if err != nil {
+		return fmt.Errorf("failed to read config directory: %w", err)
+	}
+
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") {
+			continue
+		}
+
+		pluginID := strings.TrimSuffix(entry.Name(), ".json")
+		configPath := filepath.Join(configDir, entry.Name())
+
+		data, err := os.ReadFile(configPath)
+		if err != nil {
+			l.logger.Warn("Failed to read plugin config", "plugin", pluginID, "error", err)
+			continue
+		}
+
+		var config map[string]interface{}
+		if err := json.Unmarshal(data, &config); err != nil {
+			l.logger.Warn("Failed to parse plugin config", "plugin", pluginID, "error", err)
+			continue
+		}
+
+		l.SetPluginConfig(pluginID, config)
+		l.logger.Info("Loaded plugin config", "plugin", pluginID)
+	}
+
+	return nil
+}
+
 // Start initializes and starts all enabled plugins in dependency order
 func (l *PluginLoader) Start(ctx context.Context) error {
 	l.ctx, l.cancel = context.WithCancel(ctx)
@@ -136,7 +208,7 @@ func (l *PluginLoader) Start(ctx context.Context) error {
 	}
 
 	// Scan for external plugins
-	if err := l.scanExternalPlugins(); err != nil {
+	if err := l.ScanExternalPlugins(); err != nil {
 		l.logger.Warn("Failed to scan external plugins", "error", err)
 	}
 
@@ -320,8 +392,8 @@ func (l *PluginLoader) stopPlugin(pluginID string) error {
 	return nil
 }
 
-// scanExternalPlugins scans the plugins directory for external plugins
-func (l *PluginLoader) scanExternalPlugins() error {
+// ScanExternalPlugins scans the plugins directory for external plugins
+func (l *PluginLoader) ScanExternalPlugins() error {
 	entries, err := os.ReadDir(l.pluginsDir)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -352,14 +424,78 @@ func (l *PluginLoader) scanExternalPlugins() error {
 
 		l.pluginsMu.Lock()
 		if _, exists := l.plugins[manifest.ID]; !exists {
-			// External plugins need a wrapper to run as processes
-			// For now, just log that we found them
-			l.logger.Info("Found external plugin", "id", manifest.ID, "version", manifest.Version)
+			// Find the plugin binary
+			binaryPath := l.findPluginBinary(pluginDir, manifest.ID)
+			if binaryPath == "" {
+				l.logger.Warn("Plugin binary not found", "id", manifest.ID, "dir", pluginDir)
+				l.pluginsMu.Unlock()
+				continue
+			}
+
+			// Create external plugin wrapper
+			extPlugin := NewExternalPlugin(manifest, binaryPath)
+
+			// Register the plugin
+			l.plugins[manifest.ID] = &LoadedPlugin{
+				Manifest:   manifest,
+				Plugin:     extPlugin,
+				State:      PluginStateStopped,
+				IsBuiltin:  false,
+				BinaryPath: binaryPath,
+			}
+
+			l.logger.Info("Registered external plugin", "id", manifest.ID, "version", manifest.Version, "binary", binaryPath)
 		}
 		l.pluginsMu.Unlock()
 	}
 
 	return nil
+}
+
+// findPluginBinary finds the executable binary in a plugin directory
+func (l *PluginLoader) findPluginBinary(pluginDir string, pluginID string) string {
+	// Common binary names to look for, in order of preference
+	candidates := []string{
+		pluginID,                                // e.g., "reolink"
+		pluginID + "-plugin",                    // e.g., "reolink-plugin"
+		filepath.Base(pluginDir),                // directory name
+		filepath.Base(pluginDir) + "-plugin",   // directory name + "-plugin"
+	}
+
+	for _, name := range candidates {
+		path := filepath.Join(pluginDir, name)
+		info, err := os.Stat(path)
+		if err == nil && !info.IsDir() && isExecutable(info) {
+			return path
+		}
+	}
+
+	// Fallback: look for any executable file
+	entries, err := os.ReadDir(pluginDir)
+	if err != nil {
+		return ""
+	}
+
+	for _, entry := range entries {
+		if entry.IsDir() || entry.Name() == "manifest.yaml" {
+			continue
+		}
+
+		path := filepath.Join(pluginDir, entry.Name())
+		info, err := os.Stat(path)
+		if err == nil && !info.IsDir() && isExecutable(info) {
+			return path
+		}
+	}
+
+	return ""
+}
+
+// isExecutable checks if a file is executable
+func isExecutable(info os.FileInfo) bool {
+	mode := info.Mode()
+	// Check if any execute bit is set
+	return mode&0111 != 0
 }
 
 // buildStartupOrder builds a topologically sorted startup order
@@ -539,4 +675,48 @@ func (l *PluginLoader) DisablePlugin(ctx context.Context, pluginID string) error
 	}
 
 	return l.stopPlugin(pluginID)
+}
+
+// ScanAndStart rescans the plugins directory for new plugins and starts the specified plugin.
+// This is useful after installing a new plugin to make it immediately available without restart.
+func (l *PluginLoader) ScanAndStart(ctx context.Context, pluginID string) error {
+	// Rescan external plugins to pick up newly installed ones
+	if err := l.ScanExternalPlugins(); err != nil {
+		l.logger.Warn("Failed to scan external plugins", "error", err)
+	}
+
+	// Check if the plugin is now registered
+	l.pluginsMu.RLock()
+	_, ok := l.plugins[pluginID]
+	l.pluginsMu.RUnlock()
+
+	if !ok {
+		return fmt.Errorf("plugin not found after scan: %s", pluginID)
+	}
+
+	// Start the plugin
+	return l.startPlugin(pluginID)
+}
+
+// UnregisterPlugin removes a plugin from the loader (for uninstallation)
+func (l *PluginLoader) UnregisterPlugin(pluginID string) error {
+	l.pluginsMu.Lock()
+	defer l.pluginsMu.Unlock()
+
+	lp, ok := l.plugins[pluginID]
+	if !ok {
+		return nil // Already not registered
+	}
+
+	if lp.IsBuiltin {
+		return fmt.Errorf("cannot unregister builtin plugin: %s", pluginID)
+	}
+
+	if lp.State == PluginStateRunning {
+		return fmt.Errorf("plugin is still running, stop it first: %s", pluginID)
+	}
+
+	delete(l.plugins, pluginID)
+	l.logger.Info("Plugin unregistered", "id", pluginID)
+	return nil
 }

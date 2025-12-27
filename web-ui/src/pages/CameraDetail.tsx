@@ -1,8 +1,8 @@
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { ArrowLeft, Settings, Trash2, RefreshCw, X, Save, Copy, Check, Volume2, VolumeX, HardDrive, Mic, MicOff } from 'lucide-react'
+import { ArrowLeft, Settings, Trash2, RefreshCw, X, Save, Copy, Check, Volume2, VolumeX, HardDrive, Mic, MicOff, Circle, Square, Loader2, AlertCircle } from 'lucide-react'
 import { Link } from 'react-router-dom'
-import { cameraApi, CameraConfig, storageApi, audioApi, AudioSessionResponse } from '../lib/api'
+import { cameraApi, CameraConfig, storageApi, audioApi, AudioSessionResponse, recordingApi } from '../lib/api'
 import { VideoPlayer } from '../components/VideoPlayer'
 import { MotionZoneEditor } from '../components/MotionZoneEditor'
 import { useState, useEffect } from 'react'
@@ -63,9 +63,42 @@ export function CameraDetail() {
   // Get storage used by this camera
   const cameraStorageBytes = id && storageStats?.by_camera ? (storageStats.by_camera[id] || 0) : 0
 
-  // Update form when camera data loads
+  // Fetch full camera config when settings modal opens
+  const { data: cameraConfig } = useQuery({
+    queryKey: ['camera-config', id],
+    queryFn: () => cameraApi.getConfig(id!),
+    enabled: !!id && showSettings,
+  })
+
+  // Fetch recording status
+  const { data: recordingStatus, refetch: refetchRecordingStatus } = useQuery({
+    queryKey: ['recording-status', id],
+    queryFn: () => recordingApi.getStatus(id!),
+    enabled: !!id,
+    refetchInterval: 3000, // Check every 3 seconds
+  })
+
+  // Recording control mutations
+  const startRecordingMutation = useMutation({
+    mutationFn: () => recordingApi.start(id!),
+    onSuccess: () => {
+      refetchRecordingStatus()
+    },
+  })
+
+  const stopRecordingMutation = useMutation({
+    mutationFn: () => recordingApi.stop(id!),
+    onSuccess: () => {
+      refetchRecordingStatus()
+    },
+  })
+
+  const isRecording = recordingStatus?.state === 'running' || recordingStatus?.state === 'starting'
+  const isRecordingBusy = startRecordingMutation.isPending || stopRecordingMutation.isPending
+
+  // Update form when camera data loads (basic info from camera API)
   useEffect(() => {
-    if (camera) {
+    if (camera && !showSettings) {
       setFormData(prev => ({
         ...prev,
         name: camera.name,
@@ -78,7 +111,46 @@ export function CameraDetail() {
         display_aspect_ratio: camera.display_aspect_ratio || '16:9',
       }))
     }
-  }, [camera])
+  }, [camera, showSettings])
+
+  // When full config is loaded (settings modal open), update form with all settings
+  useEffect(() => {
+    if (cameraConfig && showSettings) {
+      setFormData({
+        name: cameraConfig.name || '',
+        stream: {
+          url: cameraConfig.stream?.url || '',
+          sub_url: cameraConfig.stream?.sub_url || '',
+          username: cameraConfig.stream?.username || '',
+          roles: cameraConfig.stream?.roles || { detect: 'sub', record: 'main', audio: 'main', motion: 'sub' },
+        },
+        manufacturer: cameraConfig.manufacturer || '',
+        model: cameraConfig.model || '',
+        recording: {
+          enabled: cameraConfig.recording?.enabled ?? false,
+          mode: cameraConfig.recording?.mode || 'motion',
+          pre_buffer_seconds: cameraConfig.recording?.pre_buffer_seconds ?? 5,
+          post_buffer_seconds: cameraConfig.recording?.post_buffer_seconds ?? 10,
+          retention_days: cameraConfig.recording?.retention_days ?? 30,
+        },
+        detection: {
+          enabled: cameraConfig.detection?.enabled ?? true,
+          fps: cameraConfig.detection?.fps ?? 5,
+          show_overlay: cameraConfig.detection?.show_overlay ?? false,
+          min_confidence: cameraConfig.detection?.min_confidence ?? 0.5,
+        },
+        audio: {
+          enabled: cameraConfig.audio?.enabled ?? false,
+          two_way: cameraConfig.audio?.two_way ?? false,
+        },
+        motion: {
+          enabled: cameraConfig.motion?.enabled ?? true,
+          threshold: cameraConfig.motion?.threshold ?? 0.02,
+          method: cameraConfig.motion?.method || 'frame_diff',
+        },
+      })
+    }
+  }, [cameraConfig, showSettings])
 
   const deleteMutation = useMutation({
     mutationFn: () => cameraApi.delete(id!),
@@ -92,6 +164,7 @@ export function CameraDetail() {
     mutationFn: (config: Partial<CameraConfig>) => cameraApi.update(id!, config),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['camera', id] })
+      queryClient.invalidateQueries({ queryKey: ['camera-config', id] })
       queryClient.invalidateQueries({ queryKey: ['cameras'] })
       setShowSettings(false)
     },
@@ -242,10 +315,12 @@ export function CameraDetail() {
       <div className="relative">
         <VideoPlayer
           cameraId={id!}
-          className="w-full"
+          className="w-full mx-auto"
           muted={!audioEnabled}
           showDetectionToggle={true}
           initialDetectionOverlay={formData.detection?.show_overlay ?? false}
+          aspectRatio={formData.display_aspect_ratio?.replace(':', '/') || '16/9'}
+          maxHeight={formData.display_aspect_ratio === '3:4' ? '70vh' : undefined}
         />
         {/* Audio controls overlay */}
         <div className="absolute top-3 left-3 flex gap-2">
@@ -322,6 +397,85 @@ export function CameraDetail() {
               <dd className="font-medium">
                 {formatBytes(cameraStorageBytes)}
               </dd>
+            </div>
+
+            {/* Recording Controls */}
+            <div className="pt-3 border-t">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-muted-foreground flex items-center gap-2">
+                  {isRecording ? (
+                    <span className="relative flex h-3 w-3">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+                      <span className="relative inline-flex rounded-full h-3 w-3 bg-red-500"></span>
+                    </span>
+                  ) : (
+                    <Circle size={16} className="text-gray-400" />
+                  )}
+                  Recording
+                </span>
+                <span className={`font-medium capitalize ${
+                  recordingStatus?.state === 'running' ? 'text-green-500' :
+                  recordingStatus?.state === 'starting' ? 'text-yellow-500' :
+                  recordingStatus?.state === 'error' ? 'text-red-500' :
+                  'text-gray-500'
+                }`}>
+                  {recordingStatus?.state || 'Unknown'}
+                </span>
+              </div>
+
+              <div className="flex gap-2">
+                {isRecording ? (
+                  <button
+                    onClick={() => stopRecordingMutation.mutate()}
+                    disabled={isRecordingBusy}
+                    className="flex-1 flex items-center justify-center gap-2 px-3 py-2 bg-red-500/10 hover:bg-red-500/20 text-red-500 rounded-md text-sm font-medium disabled:opacity-50 transition-colors"
+                  >
+                    {isRecordingBusy ? (
+                      <Loader2 size={16} className="animate-spin" />
+                    ) : (
+                      <Square size={16} />
+                    )}
+                    Stop Recording
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => startRecordingMutation.mutate()}
+                    disabled={isRecordingBusy}
+                    className="flex-1 flex items-center justify-center gap-2 px-3 py-2 bg-green-500/10 hover:bg-green-500/20 text-green-500 rounded-md text-sm font-medium disabled:opacity-50 transition-colors"
+                  >
+                    {isRecordingBusy ? (
+                      <Loader2 size={16} className="animate-spin" />
+                    ) : (
+                      <Circle size={16} className="fill-current" />
+                    )}
+                    Start Recording
+                  </button>
+                )}
+              </div>
+
+              {recordingStatus?.last_error && (
+                <div className="mt-2 flex items-start gap-2 text-xs text-red-500">
+                  <AlertCircle size={14} className="mt-0.5 shrink-0" />
+                  <span>{recordingStatus.last_error}</span>
+                </div>
+              )}
+
+              {recordingStatus?.state === 'running' && (
+                <div className="mt-2 text-xs text-muted-foreground">
+                  <div className="flex justify-between">
+                    <span>Segments:</span>
+                    <span>{recordingStatus.segments_created}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>Written:</span>
+                    <span>{formatBytes(recordingStatus.bytes_written)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>Uptime:</span>
+                    <span>{Math.floor(recordingStatus.uptime / 60)}m {Math.floor(recordingStatus.uptime % 60)}s</span>
+                  </div>
+                </div>
+              )}
             </div>
           </dl>
         </div>
@@ -473,8 +627,8 @@ export function CameraDetail() {
 
                   <div>
                     <label className="block text-sm font-medium mb-1">Display Aspect Ratio</label>
-                    <div className="grid grid-cols-5 gap-2">
-                      {(['16:9', '21:9', '4:3', '1:1', 'auto'] as const).map((ratio) => (
+                    <div className="grid grid-cols-6 gap-2">
+                      {(['16:9', '21:9', '4:3', '3:4', '1:1', 'auto'] as const).map((ratio) => (
                         <button
                           key={ratio}
                           type="button"

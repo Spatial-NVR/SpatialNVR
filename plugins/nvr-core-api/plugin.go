@@ -183,6 +183,7 @@ func (p *CoreAPIPlugin) Routes() http.Handler {
 	r.Get("/{id}", p.handleGetCamera)
 	r.Put("/{id}", p.handleUpdateCamera)
 	r.Delete("/{id}", p.handleDeleteCamera)
+	r.Get("/{id}/config", p.handleGetCameraConfig)
 	r.Get("/{id}/snapshot", p.handleGetSnapshot)
 	r.Get("/{id}/stream", p.handleGetStreamURLs)
 
@@ -265,11 +266,12 @@ func (p *CoreAPIPlugin) handleCreateCamera(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	// Publish camera added event
+	// Publish camera added event with full config for other plugins
 	p.PublishEvent(sdk.EventTypeCameraAdded, map[string]interface{}{
 		"camera_id":   cam.ID,
 		"name":        cam.Name,
 		"main_stream": cam.StreamURL,
+		"config":      camCfg, // Include full config for recording plugin
 	})
 
 	w.WriteHeader(http.StatusCreated)
@@ -312,11 +314,12 @@ func (p *CoreAPIPlugin) handleUpdateCamera(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	// Publish camera updated event
+	// Publish camera updated event with full config for other plugins
 	p.PublishEvent(sdk.EventTypeCameraUpdated, map[string]interface{}{
 		"camera_id":   cam.ID,
 		"name":        cam.Name,
 		"main_stream": cam.StreamURL,
+		"config":      camCfg, // Include full config for recording plugin
 	})
 
 	p.respondJSON(w, cam)
@@ -341,6 +344,45 @@ func (p *CoreAPIPlugin) handleDeleteCamera(w http.ResponseWriter, r *http.Reques
 	})
 
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func (p *CoreAPIPlugin) handleGetCameraConfig(w http.ResponseWriter, r *http.Request) {
+	if p.cameraService == nil {
+		p.respondError(w, http.StatusServiceUnavailable, "Camera service not available")
+		return
+	}
+
+	id := chi.URLParam(r, "id")
+	cfg, err := p.cameraService.GetConfig(r.Context(), id)
+	if err != nil {
+		p.respondError(w, http.StatusNotFound, err.Error())
+		return
+	}
+
+	// Create a sanitized response (hide password)
+	response := map[string]interface{}{
+		"id":           cfg.ID,
+		"name":         cfg.Name,
+		"enabled":      cfg.Enabled,
+		"manufacturer": cfg.Manufacturer,
+		"model":        cfg.Model,
+		"stream": map[string]interface{}{
+			"url":      cfg.Stream.URL,
+			"sub_url":  cfg.Stream.SubURL,
+			"username": cfg.Stream.Username,
+			// Don't expose password
+			"has_password": cfg.Stream.Password != "",
+		},
+		"recording":  cfg.Recording,
+		"detection":  cfg.Detection,
+		"motion":     cfg.Motion,
+		"audio":      cfg.Audio,
+		"ptz":        cfg.PTZ,
+		"advanced":   cfg.Advanced,
+		"location":   cfg.Location,
+	}
+
+	p.respondJSON(w, response)
 }
 
 func (p *CoreAPIPlugin) handleGetSnapshot(w http.ResponseWriter, r *http.Request) {

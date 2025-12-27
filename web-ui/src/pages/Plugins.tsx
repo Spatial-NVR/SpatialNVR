@@ -17,7 +17,8 @@ import {
   AlertCircle,
   Loader2,
   Github,
-  Settings
+  Settings,
+  FolderSearch
 } from 'lucide-react'
 import { pluginsApi, CatalogPlugin } from '../lib/api'
 import { useToast } from '../components/Toast'
@@ -184,9 +185,16 @@ export function Plugins() {
     queryFn: pluginsApi.getCatalog,
   })
 
-  // Install from catalog mutation
+  // Install from catalog mutation - looks up repo URL from catalog and uses generic install
   const installFromCatalog = useMutation({
-    mutationFn: pluginsApi.installFromCatalog,
+    mutationFn: async (pluginId: string) => {
+      // Find the plugin in the catalog to get its repository URL
+      const plugin = catalog?.plugins?.find((p: CatalogPlugin) => p.id === pluginId)
+      if (!plugin?.repo) {
+        throw new Error(`Plugin ${pluginId} not found in catalog or has no repository URL`)
+      }
+      return pluginsApi.install(plugin.repo)
+    },
     onMutate: (pluginId) => {
       setInstallingPlugins(prev => new Set(prev).add(pluginId))
     },
@@ -269,6 +277,19 @@ export function Plugins() {
     },
   })
 
+  // Rescan plugins mutation
+  const rescanPlugins = useMutation({
+    mutationFn: pluginsApi.rescan,
+    onSuccess: (result) => {
+      addToast('success', result.message)
+      queryClient.invalidateQueries({ queryKey: ['plugin-catalog'] })
+      queryClient.invalidateQueries({ queryKey: ['plugins'] })
+    },
+    onError: (error: Error) => {
+      addToast('error', `Rescan failed: ${error.message}`)
+    },
+  })
+
   // Filter plugins by category
   const filteredPlugins = catalog?.plugins?.filter(p =>
     !activeCategory || p.category === activeCategory
@@ -314,13 +335,28 @@ export function Plugins() {
             Extend your NVR with camera integrations and features
           </p>
         </div>
-        <button
-          onClick={() => refetch()}
-          className="p-2 hover:bg-accent rounded-md"
-          title="Refresh catalog"
-        >
-          <RefreshCw className="w-5 h-5" />
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => rescanPlugins.mutate()}
+            disabled={rescanPlugins.isPending}
+            className="flex items-center gap-2 px-3 py-2 text-sm bg-accent hover:bg-accent/80 rounded-md disabled:opacity-50"
+            title="Rescan plugins directory to discover newly installed plugins"
+          >
+            {rescanPlugins.isPending ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+              <FolderSearch className="w-4 h-4" />
+            )}
+            Rescan
+          </button>
+          <button
+            onClick={() => refetch()}
+            className="p-2 hover:bg-accent rounded-md"
+            title="Refresh catalog"
+          >
+            <RefreshCw className="w-5 h-5" />
+          </button>
+        </div>
       </div>
 
       {/* Category filter */}

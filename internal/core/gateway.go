@@ -80,8 +80,8 @@ func (gw *APIGateway) routeToPlugin(pluginID string) func(chi.Router) {
 
 			pluginHandler.ServeHTTP(w, req)
 		}
-		// Handle both root path and subpaths
-		r.Get("/", handler)
+		// Handle all methods for both root path and subpaths
+		r.HandleFunc("/", handler)
 		r.HandleFunc("/*", handler)
 	}
 }

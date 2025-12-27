@@ -70,77 +70,77 @@ type LoggingConfig struct {
 
 // CameraConfig holds configuration for a single camera
 type CameraConfig struct {
-	ID           string           `yaml:"id"`
-	Name         string           `yaml:"name"`
-	Enabled      bool             `yaml:"enabled"`
-	Stream       StreamConfig     `yaml:"stream"`
-	Manufacturer string           `yaml:"manufacturer,omitempty"`
-	Model        string           `yaml:"model,omitempty"`
-	Location     LocationConfig   `yaml:"location,omitempty"`
-	Recording    RecordingConfig  `yaml:"recording"`
-	Detection    DetectionConfig  `yaml:"detection"`
-	Motion       MotionConfig     `yaml:"motion,omitempty"`
-	Audio        AudioConfig      `yaml:"audio,omitempty"`
-	PTZ          PTZConfig        `yaml:"ptz,omitempty"`
-	Advanced     AdvancedConfig   `yaml:"advanced,omitempty"`
+	ID           string           `yaml:"id" json:"id"`
+	Name         string           `yaml:"name" json:"name"`
+	Enabled      bool             `yaml:"enabled" json:"enabled"`
+	Stream       StreamConfig     `yaml:"stream" json:"stream"`
+	Manufacturer string           `yaml:"manufacturer,omitempty" json:"manufacturer,omitempty"`
+	Model        string           `yaml:"model,omitempty" json:"model,omitempty"`
+	Location     LocationConfig   `yaml:"location,omitempty" json:"location,omitempty"`
+	Recording    RecordingConfig  `yaml:"recording" json:"recording"`
+	Detection    DetectionConfig  `yaml:"detection" json:"detection"`
+	Motion       MotionConfig     `yaml:"motion,omitempty" json:"motion,omitempty"`
+	Audio        AudioConfig      `yaml:"audio,omitempty" json:"audio,omitempty"`
+	PTZ          PTZConfig        `yaml:"ptz,omitempty" json:"ptz,omitempty"`
+	Advanced     AdvancedConfig   `yaml:"advanced,omitempty" json:"advanced,omitempty"`
 }
 
 // MotionConfig holds motion detection settings for a camera
 type MotionConfig struct {
-	Enabled        bool    `yaml:"enabled"`
-	Method         string  `yaml:"method,omitempty"`        // frame_diff, mog2, knn
-	Threshold      float64 `yaml:"threshold,omitempty"`     // Percentage of frame change (0.0-1.0)
-	MinArea        int     `yaml:"min_area,omitempty"`      // Minimum contour area in pixels
-	MaskZones      bool    `yaml:"mask_zones,omitempty"`    // Apply detection zones as motion mask
-	PreMotionBuffer int    `yaml:"pre_motion_buffer,omitempty"` // Frames to buffer before motion
-	PostMotionBuffer int   `yaml:"post_motion_buffer,omitempty"` // Frames to buffer after motion stops
-	CooldownSeconds int    `yaml:"cooldown_seconds,omitempty"` // Minimum time between motion events
+	Enabled          bool    `yaml:"enabled" json:"enabled"`
+	Method           string  `yaml:"method,omitempty" json:"method,omitempty"`               // frame_diff, mog2, knn
+	Threshold        float64 `yaml:"threshold,omitempty" json:"threshold,omitempty"`         // Percentage of frame change (0.0-1.0)
+	MinArea          int     `yaml:"min_area,omitempty" json:"min_area,omitempty"`           // Minimum contour area in pixels
+	MaskZones        bool    `yaml:"mask_zones,omitempty" json:"mask_zones,omitempty"`       // Apply detection zones as motion mask
+	PreMotionBuffer  int     `yaml:"pre_motion_buffer,omitempty" json:"pre_motion_buffer,omitempty"`   // Frames to buffer before motion
+	PostMotionBuffer int     `yaml:"post_motion_buffer,omitempty" json:"post_motion_buffer,omitempty"` // Frames to buffer after motion stops
+	CooldownSeconds  int     `yaml:"cooldown_seconds,omitempty" json:"cooldown_seconds,omitempty"`     // Minimum time between motion events
 }
 
 // StreamConfig holds camera stream settings
 type StreamConfig struct {
-	URL      string `yaml:"url"`
-	SubURL   string `yaml:"sub_url,omitempty"`
-	Username string `yaml:"username,omitempty"`
-	Password string `yaml:"password,omitempty"`
-	AuthType string `yaml:"auth_type,omitempty"` // basic, digest, none
+	URL      string `yaml:"url" json:"url"`
+	SubURL   string `yaml:"sub_url,omitempty" json:"sub_url,omitempty"`
+	Username string `yaml:"username,omitempty" json:"username,omitempty"`
+	Password string `yaml:"password,omitempty" json:"password,omitempty"`
+	AuthType string `yaml:"auth_type,omitempty" json:"auth_type,omitempty"` // basic, digest, none
 }
 
 // LocationConfig holds camera location info
 type LocationConfig struct {
-	Lat         float64 `yaml:"lat,omitempty"`
-	Lon         float64 `yaml:"lon,omitempty"`
-	Description string  `yaml:"description,omitempty"`
+	Lat         float64 `yaml:"lat,omitempty" json:"lat,omitempty"`
+	Lon         float64 `yaml:"lon,omitempty" json:"lon,omitempty"`
+	Description string  `yaml:"description,omitempty" json:"description,omitempty"`
 }
 
 // RecordingConfig holds recording settings
 type RecordingConfig struct {
-	Enabled           bool            `yaml:"enabled"`
-	Mode              string          `yaml:"mode"` // continuous, motion, events
-	PreBufferSeconds  int             `yaml:"pre_buffer_seconds"`
-	PostBufferSeconds int             `yaml:"post_buffer_seconds"`
-	SegmentDuration   int             `yaml:"segment_duration"` // seconds, default 60
-	Retention         RetentionConfig `yaml:"retention"`
-	Codec             string          `yaml:"codec,omitempty"`
-	Resolution        string          `yaml:"resolution,omitempty"`
-	FPS               int             `yaml:"fps,omitempty"`
-	Bitrate           int             `yaml:"bitrate,omitempty"`
+	Enabled           bool            `yaml:"enabled" json:"enabled"`
+	Mode              string          `yaml:"mode" json:"mode"` // continuous, motion, events
+	PreBufferSeconds  int             `yaml:"pre_buffer_seconds" json:"pre_buffer_seconds"`
+	PostBufferSeconds int             `yaml:"post_buffer_seconds" json:"post_buffer_seconds"`
+	SegmentDuration   int             `yaml:"segment_duration" json:"segment_duration"` // seconds, default 60
+	Retention         RetentionConfig `yaml:"retention" json:"retention"`
+	Codec             string          `yaml:"codec,omitempty" json:"codec,omitempty"`
+	Resolution        string          `yaml:"resolution,omitempty" json:"resolution,omitempty"`
+	FPS               int             `yaml:"fps,omitempty" json:"fps,omitempty"`
+	Bitrate           int             `yaml:"bitrate,omitempty" json:"bitrate,omitempty"`
 }
 
 // RetentionConfig holds retention settings
 type RetentionConfig struct {
-	DefaultDays int `yaml:"default_days"`
-	EventsDays  int `yaml:"events_days"`
+	DefaultDays int `yaml:"default_days" json:"default_days"`
+	EventsDays  int `yaml:"events_days" json:"events_days"`
 }
 
 // DetectionConfig holds AI detection settings for a camera
 type DetectionConfig struct {
-	Enabled       bool             `yaml:"enabled"`
-	FPS           int              `yaml:"fps"`
-	Models        []string         `yaml:"models"`
-	Zones         []ZoneConfig     `yaml:"zones,omitempty"`
-	Filters       FiltersConfig    `yaml:"filters,omitempty"`
-	Notifications NotifyConfig     `yaml:"notifications,omitempty"`
+	Enabled       bool             `yaml:"enabled" json:"enabled"`
+	FPS           int              `yaml:"fps" json:"fps"`
+	Models        []string         `yaml:"models" json:"models"`
+	Zones         []ZoneConfig     `yaml:"zones,omitempty" json:"zones,omitempty"`
+	Filters       FiltersConfig    `yaml:"filters,omitempty" json:"filters,omitempty"`
+	Notifications NotifyConfig     `yaml:"notifications,omitempty" json:"notifications,omitempty"`
 }
 
 // ZoneConfig holds detection zone settings

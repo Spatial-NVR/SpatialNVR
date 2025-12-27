@@ -49,7 +49,7 @@ export interface ValidationError {
   message: string;
 }
 
-export type AspectRatio = '16:9' | '21:9' | '4:3' | '1:1' | 'auto';
+export type AspectRatio = '16:9' | '21:9' | '4:3' | '3:4' | '1:1' | 'auto';
 
 export interface Camera {
   id: string;
@@ -360,6 +360,13 @@ export const cameraApi = {
   },
 
   /**
+   * Get full camera configuration (including recording, detection, etc.)
+   */
+  getConfig: async (id: string): Promise<CameraConfig & { id: string; enabled: boolean }> => {
+    return request<CameraConfig & { id: string; enabled: boolean }>(`/api/v1/cameras/${id}/config`);
+  },
+
+  /**
    * Get camera snapshot as blob
    */
   getSnapshot: async (id: string): Promise<Blob> => {
@@ -602,6 +609,65 @@ export const storageApi = {
    */
   runRetention: async (): Promise<{ message: string; segments_deleted: number; bytes_freed: number }> => {
     return request<{ message: string; segments_deleted: number; bytes_freed: number }>('/api/v1/recordings/retention/run', {
+      method: 'POST',
+    });
+  },
+};
+
+// ============================================================================
+// Recording Control API
+// ============================================================================
+
+export interface RecordingStatus {
+  camera_id: string;
+  state: 'idle' | 'starting' | 'running' | 'stopping' | 'error';
+  current_segment?: string;
+  segment_start?: string;
+  bytes_written: number;
+  segments_created: number;
+  uptime: number;
+  last_error?: string;
+  last_error_time?: string;
+}
+
+export const recordingApi = {
+  /**
+   * Get recording status for a camera
+   */
+  getStatus: async (cameraId: string): Promise<RecordingStatus> => {
+    return request<RecordingStatus>(`/api/v1/recordings/status/${cameraId}`);
+  },
+
+  /**
+   * Get recording status for all cameras
+   */
+  getAllStatus: async (): Promise<Record<string, RecordingStatus>> => {
+    return request<Record<string, RecordingStatus>>('/api/v1/recordings/status');
+  },
+
+  /**
+   * Start recording for a camera
+   */
+  start: async (cameraId: string): Promise<{ camera_id: string; status: string }> => {
+    return request<{ camera_id: string; status: string }>(`/api/v1/recordings/cameras/${cameraId}/start`, {
+      method: 'POST',
+    });
+  },
+
+  /**
+   * Stop recording for a camera
+   */
+  stop: async (cameraId: string): Promise<{ camera_id: string; status: string }> => {
+    return request<{ camera_id: string; status: string }>(`/api/v1/recordings/cameras/${cameraId}/stop`, {
+      method: 'POST',
+    });
+  },
+
+  /**
+   * Restart recording for a camera
+   */
+  restart: async (cameraId: string): Promise<{ camera_id: string; status: string }> => {
+    return request<{ camera_id: string; status: string }>(`/api/v1/recordings/cameras/${cameraId}/restart`, {
       method: 'POST',
     });
   },
@@ -1246,6 +1312,15 @@ export const pluginsApi = {
   },
 
   /**
+   * Rescan the plugins directory to discover newly installed plugins
+   */
+  rescan: async (): Promise<{ success: boolean; plugins: Array<{ id: string; name: string; version: string; state: string; isBuiltin: boolean }>; message: string }> => {
+    return request('/api/v1/plugins/rescan', {
+      method: 'POST',
+    });
+  },
+
+  /**
    * Get plugin configuration
    */
   getConfig: async (pluginId: string): Promise<PluginConfig> => {
@@ -1459,7 +1534,8 @@ async function spatialRequest<T>(
 export const spatialApi = {
   // Maps
   listMaps: async (): Promise<SpatialMap[]> => {
-    return spatialRequest<SpatialMap[]>('/api/v1/maps');
+    const result = await spatialRequest<SpatialMap[] | null>('/api/v1/maps');
+    return result || [];
   },
 
   getMap: async (mapId: string): Promise<SpatialMap> => {
@@ -1488,7 +1564,8 @@ export const spatialApi = {
 
   // Camera Placements
   listPlacements: async (mapId: string): Promise<CameraPlacement[]> => {
-    return spatialRequest<CameraPlacement[]>(`/api/v1/maps/${mapId}/cameras`);
+    const result = await spatialRequest<CameraPlacement[] | null>(`/api/v1/maps/${mapId}/cameras`);
+    return result || [];
   },
 
   createPlacement: async (mapId: string, placement: CameraPlacementCreate): Promise<CameraPlacement> => {
@@ -1514,7 +1591,8 @@ export const spatialApi = {
   // Transitions
   listTransitions: async (mapId?: string): Promise<CameraTransition[]> => {
     const query = mapId ? `?map_id=${mapId}` : '';
-    return spatialRequest<CameraTransition[]>(`/api/v1/transitions${query}`);
+    const result = await spatialRequest<CameraTransition[] | null>(`/api/v1/transitions${query}`);
+    return result || [];
   },
 
   createTransition: async (transition: CameraTransitionCreate): Promise<CameraTransition> => {
@@ -1531,9 +1609,10 @@ export const spatialApi = {
   },
 
   autoDetectTransitions: async (mapId: string): Promise<CameraTransition[]> => {
-    return spatialRequest<CameraTransition[]>(`/api/v1/maps/${mapId}/auto-detect-transitions`, {
+    const result = await spatialRequest<CameraTransition[] | null>(`/api/v1/maps/${mapId}/auto-detect-transitions`, {
       method: 'POST',
     });
+    return result || [];
   },
 
   // Tracks
@@ -1542,7 +1621,8 @@ export const spatialApi = {
     if (params?.map_id) searchParams.set('map_id', params.map_id);
     if (params?.state) searchParams.set('state', params.state);
     const query = searchParams.toString();
-    return spatialRequest<GlobalTrack[]>(`/api/v1/tracks${query ? `?${query}` : ''}`);
+    const result = await spatialRequest<GlobalTrack[] | null>(`/api/v1/tracks${query ? `?${query}` : ''}`);
+    return result || [];
   },
 
   getTrack: async (trackId: string): Promise<GlobalTrack> => {

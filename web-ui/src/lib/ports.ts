@@ -117,19 +117,34 @@ export function clearPortsCache(): void {
 }
 
 /**
- * Get the go2rtc base URL
+ * Get the base hostname for service connections
+ * Uses the same host the browser is connected to
  */
-export function getGo2RTCUrl(): string {
-  const ports = getPorts();
-  return `http://localhost:${ports.go2rtc_api}`;
+function getServiceHost(): string {
+  return window.location.hostname || 'localhost';
 }
 
 /**
- * Get the go2rtc WebSocket URL
+ * Get the go2rtc base URL (proxied through backend API)
+ * This allows the UI to only need the API port exposed
+ */
+export function getGo2RTCUrl(): string {
+  const ports = getPorts();
+  const host = getServiceHost();
+  const protocol = window.location.protocol === 'https:' ? 'https' : 'http';
+  // Route through the backend proxy at /go2rtc/
+  return `${protocol}://${host}:${ports.api}/go2rtc`;
+}
+
+/**
+ * Get the go2rtc WebSocket URL (proxied through backend API)
  */
 export function getGo2RTCWsUrl(): string {
   const ports = getPorts();
-  return `ws://localhost:${ports.go2rtc_api}`;
+  const host = getServiceHost();
+  const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
+  // Route through the backend proxy at /go2rtc/
+  return `${protocol}://${host}:${ports.api}/go2rtc`;
 }
 
 /**
@@ -137,5 +152,7 @@ export function getGo2RTCWsUrl(): string {
  */
 export function getApiUrl(): string {
   const ports = getPorts();
-  return `http://localhost:${ports.api}`;
+  const host = getServiceHost();
+  const protocol = window.location.protocol === 'https:' ? 'https' : 'http';
+  return `${protocol}://${host}:${ports.api}`;
 }

@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -1302,6 +1303,80 @@ func (s *Store) DeleteTransitionCtx(ctx context.Context, id string) error {
 // GetAnalyticsCtx returns aggregate tracking statistics (context-aware wrapper)
 func (s *Store) GetAnalyticsCtx(ctx context.Context) (*Analytics, error) {
 	return s.GetAnalytics()
+}
+
+// GetMapAnalytics returns analytics for a specific map
+func (s *Store) GetMapAnalytics(mapID string) (*MapAnalytics, error) {
+	var analytics MapAnalytics
+
+	// Get placements in this map
+	placements, err := s.ListPlacementsByMap(mapID)
+	if err != nil {
+		return nil, err
+	}
+	cameraIDs := make([]string, 0, len(placements))
+	for _, p := range placements {
+		cameraIDs = append(cameraIDs, p.CameraID)
+	}
+
+	// Active tracks for cameras in this map
+	if len(cameraIDs) > 0 {
+		query := `SELECT COUNT(*) FROM global_tracks WHERE state = 'active' AND current_camera_id IN (?` + strings.Repeat(",?", len(cameraIDs)-1) + `)`
+		args := make([]interface{}, len(cameraIDs))
+		for i, id := range cameraIDs {
+			args[i] = id
+		}
+		err = s.db.QueryRow(query, args...).Scan(&analytics.ActiveTracks)
+		if err != nil && err != sql.ErrNoRows {
+			analytics.ActiveTracks = 0
+		}
+	}
+
+	// Total tracks for cameras in this map
+	if len(cameraIDs) > 0 {
+		query := `SELECT COUNT(DISTINCT id) FROM global_tracks WHERE current_camera_id IN (?` + strings.Repeat(",?", len(cameraIDs)-1) + `)`
+		args := make([]interface{}, len(cameraIDs))
+		for i, id := range cameraIDs {
+			args[i] = id
+		}
+		err = s.db.QueryRow(query, args...).Scan(&analytics.TotalTracks)
+		if err != nil && err != sql.ErrNoRows {
+			analytics.TotalTracks = 0
+		}
+	}
+
+	// Handoff stats for transitions in this map
+	if len(cameraIDs) > 0 {
+		query := `SELECT COALESCE(SUM(total_handoffs), 0), COALESCE(SUM(successful_handoffs), 0), COALESCE(AVG(avg_transit_time), 0)
+		          FROM camera_transitions WHERE map_id = ?`
+		var avgTransit sql.NullFloat64
+		err = s.db.QueryRow(query, mapID).Scan(&analytics.TotalHandoffs, &analytics.SuccessfulHandoffs, &avgTransit)
+		if err != nil && err != sql.ErrNoRows {
+			analytics.TotalHandoffs = 0
+			analytics.SuccessfulHandoffs = 0
+		}
+		if avgTransit.Valid {
+			analytics.AverageTransitTime = avgTransit.Float64
+		}
+	}
+
+	analytics.FailedHandoffs = analytics.TotalHandoffs - analytics.SuccessfulHandoffs
+	if analytics.FailedHandoffs < 0 {
+		analytics.FailedHandoffs = 0
+	}
+
+	// Coverage gaps (cameras without any transitions)
+	if len(cameraIDs) > 0 {
+		for _, camID := range cameraIDs {
+			var count int
+			s.db.QueryRow(`SELECT COUNT(*) FROM camera_transitions WHERE from_camera_id = ? OR to_camera_id = ?`, camID, camID).Scan(&count)
+			if count == 0 {
+				analytics.CoverageGaps = append(analytics.CoverageGaps, camID)
+			}
+		}
+	}
+
+	return &analytics, nil
 }
 
 // ============================================================================

@@ -1,0 +1,131 @@
+name: Plugin Release
+
+on:
+  push:
+    tags:
+      - 'plugins/*/v*.*.*'
+
+permissions:
+  contents: write
+
+jobs:
+  release-plugin:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Extract plugin info from tag
+        id: plugin
+        run: |
+          # Tag format: plugins/nvr-streaming/v1.0.3
+          TAG="${GITHUB_REF#refs/tags/}"
+          PLUGIN_NAME=$(echo "$TAG" | cut -d'/' -f2)
+          VERSION=$(echo "$TAG" | cut -d'/' -f3 | sed 's/^v//')
+
+          echo "TAG=$TAG" >> $GITHUB_OUTPUT
+          echo "PLUGIN_NAME=$PLUGIN_NAME" >> $GITHUB_OUTPUT
+          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+
+          # Map plugin name to directory
+          case "$PLUGIN_NAME" in
+            nvr-api|nvr-core-api)
+              echo "PLUGIN_DIR=plugins/nvr-core-api" >> $GITHUB_OUTPUT
+              echo "PLUGIN_TYPE=builtin" >> $GITHUB_OUTPUT
+              ;;
+            nvr-config|nvr-core-config)
+              echo "PLUGIN_DIR=plugins/nvr-core-config" >> $GITHUB_OUTPUT
+              echo "PLUGIN_TYPE=builtin" >> $GITHUB_OUTPUT
+              ;;
+            nvr-events|nvr-core-events)
+              echo "PLUGIN_DIR=plugins/nvr-core-events" >> $GITHUB_OUTPUT
+              echo "PLUGIN_TYPE=builtin" >> $GITHUB_OUTPUT
+              ;;
+            nvr-streaming)
+              echo "PLUGIN_DIR=plugins/nvr-streaming" >> $GITHUB_OUTPUT
+              echo "PLUGIN_TYPE=builtin" >> $GITHUB_OUTPUT
+              ;;
+            nvr-detection)
+              echo "PLUGIN_DIR=plugins/nvr-detection" >> $GITHUB_OUTPUT
+              echo "PLUGIN_TYPE=builtin" >> $GITHUB_OUTPUT
+              ;;
+            nvr-recording)
+              echo "PLUGIN_DIR=plugins/nvr-recording" >> $GITHUB_OUTPUT
+              echo "PLUGIN_TYPE=builtin" >> $GITHUB_OUTPUT
+              ;;
+            nvr-spatial-tracking)
+              echo "PLUGIN_DIR=plugins/nvr-spatial-tracking" >> $GITHUB_OUTPUT
+              echo "PLUGIN_TYPE=builtin" >> $GITHUB_OUTPUT
+              ;;
+            *)
+              echo "Unknown plugin: $PLUGIN_NAME"
+              exit 1
+              ;;
+          esac
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+
+      - name: Build plugin package
+        run: |
+          mkdir -p dist/${{ steps.plugin.outputs.PLUGIN_NAME }}
+
+          # Copy plugin source files
+          if [ -d "${{ steps.plugin.outputs.PLUGIN_DIR }}" ]; then
+            cp -r ${{ steps.plugin.outputs.PLUGIN_DIR }}/* dist/${{ steps.plugin.outputs.PLUGIN_NAME }}/
+          fi
+
+          # Create/update manifest with version
+          cat > dist/${{ steps.plugin.outputs.PLUGIN_NAME }}/manifest.yaml << EOF
+          name: ${{ steps.plugin.outputs.PLUGIN_NAME }}
+          version: ${{ steps.plugin.outputs.VERSION }}
+          description: SpatialNVR ${{ steps.plugin.outputs.PLUGIN_NAME }} plugin
+          type: ${{ steps.plugin.outputs.PLUGIN_TYPE }}
+          repository: https://github.com/Spatial-NVR/SpatialNVR
+          release_tag: ${{ steps.plugin.outputs.TAG }}
+          EOF
+
+          # Create version info JSON for update checking
+          cat > dist/${{ steps.plugin.outputs.PLUGIN_NAME }}/version.json << EOF
+          {
+            "name": "${{ steps.plugin.outputs.PLUGIN_NAME }}",
+            "version": "${{ steps.plugin.outputs.VERSION }}",
+            "release_date": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+            "download_url": "https://github.com/Spatial-NVR/SpatialNVR/releases/download/${{ steps.plugin.outputs.TAG }}/${{ steps.plugin.outputs.PLUGIN_NAME }}-${{ steps.plugin.outputs.VERSION }}.tar.gz"
+          }
+          EOF
+
+          # Archive plugin
+          tar -czf dist/${{ steps.plugin.outputs.PLUGIN_NAME }}-${{ steps.plugin.outputs.VERSION }}.tar.gz -C dist ${{ steps.plugin.outputs.PLUGIN_NAME }}
+
+      - name: Generate plugin changelog
+        run: |
+          # Get previous plugin tag
+          PREV_TAG=$(git tag -l "plugins/${{ steps.plugin.outputs.PLUGIN_NAME }}/v*" | sort -V | tail -2 | head -1)
+
+          if [ "$PREV_TAG" != "${{ github.ref_name }}" ] && [ -n "$PREV_TAG" ]; then
+            echo "## ${{ steps.plugin.outputs.PLUGIN_NAME }} Changes since $PREV_TAG" > CHANGELOG.md
+            git log $PREV_TAG..HEAD --pretty=format:"- %s (%h)" -- "${{ steps.plugin.outputs.PLUGIN_DIR }}" >> CHANGELOG.md
+          else
+            echo "## ${{ steps.plugin.outputs.PLUGIN_NAME }} v${{ steps.plugin.outputs.VERSION }}" > CHANGELOG.md
+            echo "Plugin release" >> CHANGELOG.md
+          fi
+
+      - name: Create Plugin Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: "${{ steps.plugin.outputs.PLUGIN_NAME }} v${{ steps.plugin.outputs.VERSION }}"
+          body_path: CHANGELOG.md
+          files: |
+            dist/${{ steps.plugin.outputs.PLUGIN_NAME }}-${{ steps.plugin.outputs.VERSION }}.tar.gz
+          draft: false
+          prerelease: ${{ contains(steps.plugin.outputs.VERSION, 'alpha') || contains(steps.plugin.outputs.VERSION, 'beta') || contains(steps.plugin.outputs.VERSION, 'rc') }}
+
+      - name: Update plugin versions index
+        run: |
+          # This creates a versions.json that can be used by the NVR to check for updates
+          echo "Plugin ${{ steps.plugin.outputs.PLUGIN_NAME }} v${{ steps.plugin.outputs.VERSION }} released"
+          echo "To update plugin versions index, run the update-versions workflow"

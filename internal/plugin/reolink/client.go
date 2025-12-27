@@ -79,7 +79,7 @@ func (c *Client) Login(ctx context.Context) error {
 
 	loginResp := resp[0]
 	if loginResp.Code != 0 {
-		return fmt.Errorf("login failed: code %d", loginResp.Code)
+		return fmt.Errorf("login failed: %s", reolinkErrorMessage(loginResp.Code))
 	}
 
 	value, ok := loginResp.Value.(map[string]interface{})
@@ -716,6 +716,28 @@ func (c *Client) hasAIDetection(model string) bool {
 		}
 	}
 	return true
+}
+
+// reolinkErrorMessage translates Reolink API error codes to human-readable messages
+func reolinkErrorMessage(code int) string {
+	switch code {
+	case 1:
+		return "invalid credentials - check username and password"
+	case 2:
+		return "account is locked - too many failed login attempts"
+	case 3:
+		return "session expired - please try again"
+	case 4:
+		return "command not supported on this device"
+	case 5:
+		return "device is busy - try again later"
+	case 6:
+		return "parameter error - invalid request"
+	case 7:
+		return "permission denied - account may not have admin access"
+	default:
+		return fmt.Sprintf("unknown error (code %d)", code)
+	}
 }
 
 // API types

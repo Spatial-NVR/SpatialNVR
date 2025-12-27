@@ -1,0 +1,77 @@
+name: Update Plugin Versions Index
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  update-index:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: main
+
+      - name: Generate versions index
+        run: |
+          mkdir -p .versions
+
+          # Core plugins list
+          PLUGINS=(
+            "nvr-core-api"
+            "nvr-core-config"
+            "nvr-core-events"
+            "nvr-streaming"
+            "nvr-detection"
+            "nvr-recording"
+            "nvr-spatial-tracking"
+          )
+
+          # Get latest core version
+          CORE_VERSION=$(git tag -l "v*.*.*" | grep -v "plugins/" | sort -V | tail -1 | sed 's/^v//')
+
+          # Start building versions.json
+          echo '{' > .versions/versions.json
+          echo '  "core_version": "'${CORE_VERSION:-"0.0.0"}'",  "updated_at": "'$(date -u +%Y-%m-%dT%H:%M:%SZ)'",' >> .versions/versions.json
+          echo '  "plugins": {' >> .versions/versions.json
+
+          FIRST=true
+          for PLUGIN in "${PLUGINS[@]}"; do
+            # Get latest plugin version from tags
+            PLUGIN_TAG=$(git tag -l "plugins/${PLUGIN}/v*" | sort -V | tail -1)
+
+            if [ -n "$PLUGIN_TAG" ]; then
+              PLUGIN_VERSION=$(echo "$PLUGIN_TAG" | sed 's/.*\/v//')
+            else
+              # Fall back to core version if no plugin-specific release
+              PLUGIN_VERSION="${CORE_VERSION:-0.0.0}"
+            fi
+
+            if [ "$FIRST" = true ]; then
+              FIRST=false
+            else
+              echo ',' >> .versions/versions.json
+            fi
+
+            echo -n "    \"${PLUGIN}\": {\"version\": \"${PLUGIN_VERSION}\", \"download_url\": \"https://github.com/Spatial-NVR/SpatialNVR/releases/download/plugins/${PLUGIN}/v${PLUGIN_VERSION}/${PLUGIN}-${PLUGIN_VERSION}.tar.gz\"}" >> .versions/versions.json
+          done
+
+          echo '' >> .versions/versions.json
+          echo '  }' >> .versions/versions.json
+          echo '}' >> .versions/versions.json
+
+          cat .versions/versions.json
+
+      - name: Commit versions index
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git add .versions/versions.json
+          git diff --staged --quiet || git commit -m "Update plugin versions index"
+          git push origin main

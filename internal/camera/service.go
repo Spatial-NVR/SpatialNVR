@@ -456,6 +456,15 @@ func (s *Service) Delete(ctx context.Context, id string) error {
 	return nil
 }
 
+// GetConfig returns the full configuration for a camera
+func (s *Service) GetConfig(ctx context.Context, id string) (*config.CameraConfig, error) {
+	cfg := s.cfg.GetCamera(id)
+	if cfg == nil {
+		return nil, fmt.Errorf("camera not found: %s", id)
+	}
+	return cfg, nil
+}
+
 // GetSnapshot returns a snapshot from a camera
 func (s *Service) GetSnapshot(ctx context.Context, id string) ([]byte, error) {
 	// Get snapshot URL from go2rtc
@@ -665,9 +674,19 @@ type StreamStats struct {
 
 // ProducerStats holds producer (source) statistics
 type ProducerStats struct {
-	URL       string   `json:"url"`
-	Recv      int64    `json:"bytes_recv"`
-	Medias    []string `json:"medias"` // go2rtc returns strings like "video, recvonly, H264"
+	URL       string        `json:"url"`
+	Recv      int64         `json:"bytes_recv"`
+	Medias    []string      `json:"medias"` // go2rtc returns strings like "video, recvonly, H264"
+	Tracks    []TrackStats  `json:"tracks,omitempty"` // detailed track info if available
+}
+
+// TrackStats holds detailed track statistics from go2rtc
+type TrackStats struct {
+	Codec  string `json:"codec,omitempty"`
+	Type   string `json:"type,omitempty"`   // "video" or "audio"
+	Width  int    `json:"width,omitempty"`
+	Height int    `json:"height,omitempty"`
+	FPS    float64 `json:"fps,omitempty"`
 }
 
 // ConsumerStats holds consumer statistics
@@ -782,14 +801,32 @@ func (s *Service) checkSingleCameraHealth(ctx context.Context, id string, stream
 	health.Status = StatusOnline
 	health.BytesRecv = producer.Recv
 
-	// Extract video codec from media strings (format: "video, recvonly, H264")
-	for _, media := range producer.Medias {
-		if strings.HasPrefix(media, "video") {
-			parts := strings.Split(media, ", ")
-			if len(parts) >= 3 {
-				health.Codec = parts[2]
+	// Extract video codec and resolution from tracks if available
+	for _, track := range producer.Tracks {
+		if track.Type == "video" || strings.HasPrefix(track.Codec, "H26") {
+			if track.Codec != "" {
+				health.Codec = track.Codec
+			}
+			if track.Width > 0 && track.Height > 0 {
+				health.Resolution = fmt.Sprintf("%dx%d", track.Width, track.Height)
+			}
+			if track.FPS > 0 {
+				health.FPS = track.FPS
 			}
 			break
+		}
+	}
+
+	// Fallback: extract video codec from media strings (format: "video, recvonly, H264")
+	if health.Codec == "" {
+		for _, media := range producer.Medias {
+			if strings.HasPrefix(media, "video") {
+				parts := strings.Split(media, ", ")
+				if len(parts) >= 3 {
+					health.Codec = parts[2]
+				}
+				break
+			}
 		}
 	}
 
@@ -807,11 +844,15 @@ func (s *Service) updateCameraHealth(ctx context.Context, id string, health Came
 
 	// Only update if status changed or periodically update stats
 	var fpsVal, bitrateVal interface{}
+	var resolutionVal interface{}
 	if health.FPS > 0 {
 		fpsVal = health.FPS
 	}
 	if health.Bitrate > 0 {
 		bitrateVal = health.Bitrate
+	}
+	if health.Resolution != "" {
+		resolutionVal = health.Resolution
 	}
 
 	_, err := s.db.ExecContext(ctx, `
@@ -820,9 +861,10 @@ func (s *Service) updateCameraHealth(ctx context.Context, id string, health Came
 		    last_seen = ?,
 		    fps_current = ?,
 		    bitrate_current = ?,
+		    resolution_current = ?,
 		    updated_at = ?
 		WHERE id = ?
-	`, health.Status, now.Unix(), fpsVal, bitrateVal, now.Unix(), id)
+	`, health.Status, now.Unix(), fpsVal, bitrateVal, resolutionVal, now.Unix(), id)
 
 	if err != nil {
 		s.logger.Error("Failed to update camera health", "camera", id, "error", err)

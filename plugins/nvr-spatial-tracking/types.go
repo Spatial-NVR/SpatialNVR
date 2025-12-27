@@ -299,6 +299,17 @@ type Analytics struct {
 	HourlyActivity     []HourlyActivityStat `json:"hourly_activity"`
 }
 
+// MapAnalytics contains analytics for a specific map (matches frontend SpatialAnalytics type)
+type MapAnalytics struct {
+	ActiveTracks       int      `json:"active_tracks"`
+	TotalTracks        int      `json:"total_tracks"`
+	SuccessfulHandoffs int      `json:"successful_handoffs"`
+	FailedHandoffs     int      `json:"failed_handoffs"`
+	TotalHandoffs      int      `json:"total_handoffs,omitempty"`
+	AverageTransitTime float64  `json:"average_transit_time"`
+	CoverageGaps       []string `json:"coverage_gaps"`
+}
+
 // TransitionStat contains stats for a specific transition
 type TransitionStat struct {
 	TransitionID   string  `json:"transition_id"`

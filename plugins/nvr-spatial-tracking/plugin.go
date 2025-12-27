@@ -185,6 +185,14 @@ func (p *Plugin) setupRoutes() chi.Router {
 		// Camera placements within a map
 		r.Get("/{mapId}/cameras", p.handleListPlacements)
 		r.Post("/{mapId}/cameras", p.handleCreatePlacement)
+		r.Put("/{mapId}/cameras/{placementId}", p.handleUpdatePlacement)
+		r.Delete("/{mapId}/cameras/{placementId}", p.handleDeletePlacement)
+
+		// Auto-detect transitions for a map
+		r.Post("/{mapId}/auto-detect-transitions", p.handleAutoDetectTransitionsForMap)
+
+		// Analytics for a map
+		r.Get("/{mapId}/analytics", p.handleGetMapAnalytics)
 	})
 
 	// Camera placements (direct access)
@@ -468,6 +476,9 @@ func (p *Plugin) handleAutoDetectTransitions(w http.ResponseWriter, r *http.Requ
 
 func (p *Plugin) handleListTracks(w http.ResponseWriter, r *http.Request) {
 	tracks := p.trackManager.ListActiveTracks()
+	if tracks == nil {
+		tracks = []GlobalTrack{}
+	}
 	jsonResponse(w, tracks)
 }
 
@@ -527,6 +538,39 @@ func (p *Plugin) handleTestHandoff(w http.ResponseWriter, r *http.Request) {
 
 func (p *Plugin) handleGetAnalytics(w http.ResponseWriter, r *http.Request) {
 	analytics, err := p.store.GetAnalytics()
+	if err != nil {
+		http.Error(w, jsonError(err.Error()), http.StatusInternalServerError)
+		return
+	}
+	jsonResponse(w, analytics)
+}
+
+// handleAutoDetectTransitionsForMap auto-detects transitions for a specific map
+func (p *Plugin) handleAutoDetectTransitionsForMap(w http.ResponseWriter, r *http.Request) {
+	mapID := chi.URLParam(r, "mapId")
+	if mapID == "" {
+		http.Error(w, jsonError("Map ID required"), http.StatusBadRequest)
+		return
+	}
+
+	transitions, err := p.store.AutoDetectTransitions(r.Context(), mapID)
+	if err != nil {
+		http.Error(w, jsonError(err.Error()), http.StatusInternalServerError)
+		return
+	}
+
+	jsonResponse(w, transitions)
+}
+
+// handleGetMapAnalytics returns analytics for a specific map
+func (p *Plugin) handleGetMapAnalytics(w http.ResponseWriter, r *http.Request) {
+	mapID := chi.URLParam(r, "mapId")
+	if mapID == "" {
+		http.Error(w, jsonError("Map ID required"), http.StatusBadRequest)
+		return
+	}
+
+	analytics, err := p.store.GetMapAnalytics(mapID)
 	if err != nil {
 		http.Error(w, jsonError(err.Error()), http.StatusInternalServerError)
 		return

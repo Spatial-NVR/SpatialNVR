@@ -13,10 +13,11 @@ services:
       - ./config:/config
       - ./data:/data
     ports:
-      - "12000:12000"       # Web UI and API
-      - "12010:12010"       # go2rtc API
-      - "12011:12011"       # RTSP streams
-      - "12012:12012/udp"   # WebRTC UDP
+      - "12000:12000"       # Web UI and API (go2rtc proxied through /go2rtc/)
+      # RTSP port for external clients (e.g., other NVR software)
+      # - "12011:12011"     # RTSP streams (uncomment if needed)
+      # WebRTC UDP for low-latency streaming
+      # - "12012:12012/udp" # WebRTC UDP (uncomment if needed)
     # Uncomment for Intel QSV hardware acceleration:
     # devices:
     #   - /dev/dri:/dev/dri

@@ -407,7 +407,7 @@ export function PluginDetail() {
         <AlertCircle className="w-12 h-12 text-destructive" />
         <p className="text-muted-foreground">Plugin not found</p>
         <Link
-          to="/settings/plugins"
+          to="/plugins"
           className="px-4 py-2 bg-primary text-primary-foreground rounded-md"
         >
           Back to Plugins
@@ -425,7 +425,7 @@ export function PluginDetail() {
       <div className="flex items-start justify-between gap-4">
         <div className="flex items-start gap-4">
           <Link
-            to="/settings/plugins"
+            to="/plugins"
             className="p-2 hover:bg-accent rounded-md mt-1"
           >
             <ArrowLeft className="w-5 h-5" />
@@ -598,7 +598,7 @@ export function PluginDetail() {
                   {plugin.dependencies.map(dep => (
                     <Link
                       key={dep}
-                      to={`/settings/plugins/${dep}`}
+                      to={`/plugins/${dep}`}
                       className="flex items-center gap-2 text-sm hover:text-primary"
                     >
                       <ChevronRight className="w-4 h-4" />

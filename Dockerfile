@@ -56,6 +56,7 @@ RUN apk add --no-cache \
     ca-certificates \
     tzdata \
     curl \
+    git \
     # FFmpeg with all codecs for stream processing
     ffmpeg \
     # Intel Quick Sync Video support (x86_64 only)

@@ -1,4 +1,4 @@
-import { Routes, Route } from 'react-router-dom'
+import { Routes, Route, Navigate } from 'react-router-dom'
 import { Layout } from './components/Layout'
 import { Dashboard } from './pages/Dashboard'
 import { CameraList } from './pages/CameraList'
@@ -29,11 +29,14 @@ function App() {
           <Route path="events" element={<Events />} />
           <Route path="recordings" element={<Recordings />} />
           <Route path="search" element={<Search />} />
-          <Route path="settings" element={<Settings />} />
+          {/* Settings handles its own /settings/plugins redirect internally */}
+          <Route path="settings/*" element={<Settings />} />
           <Route path="health" element={<Health />} />
           <Route path="plugins" element={<Plugins />} />
           <Route path="plugins/:id" element={<PluginDetail />} />
           <Route path="spatial" element={<SpatialTracking />} />
+          {/* Catch unknown paths */}
+          <Route path="*" element={<Navigate to="/" replace />} />
         </Route>
       </Routes>
     </PortsProvider>

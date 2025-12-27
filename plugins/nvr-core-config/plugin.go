@@ -103,6 +103,11 @@ func (p *ConfigPlugin) Start(ctx context.Context) error {
 		}
 	}
 
+	// Register RPC handlers for other plugins to request camera configs
+	if err := p.registerRPCHandlers(runtime); err != nil {
+		runtime.Logger().Warn("Failed to register RPC handlers", "error", err)
+	}
+
 	p.mu.Lock()
 	p.started = true
 	p.mu.Unlock()
@@ -111,6 +116,22 @@ func (p *ConfigPlugin) Start(ctx context.Context) error {
 	runtime.Logger().Info("Config plugin started", "path", p.configPath)
 
 	return nil
+}
+
+// registerRPCHandlers registers handlers for inter-plugin communication
+func (p *ConfigPlugin) registerRPCHandlers(runtime *sdk.PluginRuntime) error {
+	// Handler for getting all camera configs
+	return runtime.HandleRequests("get-cameras", func(data []byte) ([]byte, error) {
+		p.mu.RLock()
+		cfg := p.config
+		p.mu.RUnlock()
+
+		if cfg == nil {
+			return json.Marshal([]config.CameraConfig{})
+		}
+
+		return json.Marshal(cfg.Cameras)
+	})
 }
 
 // Stop stops the configuration service

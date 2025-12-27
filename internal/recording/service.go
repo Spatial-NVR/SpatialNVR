@@ -507,3 +507,80 @@ func (s *Service) OnConfigChange(cfg *config.Config) {
 		}
 	}
 }
+
+// UpdateCameraConfig updates or adds a single camera's configuration
+// This is used by the plugin mode to receive camera configs via events
+func (s *Service) UpdateCameraConfig(camCfg config.CameraConfig) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	// Update config's camera list
+	found := false
+	for i, cam := range s.config.Cameras {
+		if cam.ID == camCfg.ID {
+			s.config.Cameras[i] = camCfg
+			found = true
+			break
+		}
+	}
+	if !found {
+		s.config.Cameras = append(s.config.Cameras, camCfg)
+	}
+
+	// Start or stop recorder based on new config
+	_, running := s.recorders[camCfg.ID]
+	shouldRun := camCfg.Enabled && camCfg.Recording.Enabled
+
+	if shouldRun && !running {
+		if err := s.startRecorder(camCfg); err != nil {
+			s.logger.Error("Failed to start recorder after config update", "camera", camCfg.ID, "error", err)
+		}
+	} else if !shouldRun && running {
+		if recorder, exists := s.recorders[camCfg.ID]; exists {
+			if err := recorder.Stop(); err != nil {
+				s.logger.Error("Failed to stop recorder after config update", "camera", camCfg.ID, "error", err)
+			}
+			delete(s.recorders, camCfg.ID)
+		}
+	} else if shouldRun && running {
+		// Restart recorder if config changed for a running camera
+		if recorder, exists := s.recorders[camCfg.ID]; exists {
+			if err := recorder.Stop(); err != nil {
+				s.logger.Warn("Failed to stop recorder for restart", "camera", camCfg.ID, "error", err)
+			}
+			delete(s.recorders, camCfg.ID)
+		}
+		if err := s.startRecorder(camCfg); err != nil {
+			s.logger.Error("Failed to restart recorder after config update", "camera", camCfg.ID, "error", err)
+		}
+	}
+
+	s.logger.Info("Camera config updated", "camera", camCfg.ID,
+		"enabled", camCfg.Enabled,
+		"recording_enabled", camCfg.Recording.Enabled,
+		"running", s.recorders[camCfg.ID] != nil)
+}
+
+// RemoveCameraConfig removes a camera's configuration
+func (s *Service) RemoveCameraConfig(cameraID string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	// Stop recorder if running
+	if recorder, exists := s.recorders[cameraID]; exists {
+		if err := recorder.Stop(); err != nil {
+			s.logger.Warn("Failed to stop recorder during removal", "camera", cameraID, "error", err)
+		}
+		delete(s.recorders, cameraID)
+	}
+
+	// Remove from config
+	for i, cam := range s.config.Cameras {
+		if cam.ID == cameraID {
+			s.config.Cameras = append(s.config.Cameras[:i], s.config.Cameras[i+1:]...)
+			break
+		}
+	}
+
+	s.logger.Info("Camera config removed", "camera", cameraID)
+}

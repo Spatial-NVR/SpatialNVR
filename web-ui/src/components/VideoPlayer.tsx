@@ -13,6 +13,8 @@ interface VideoPlayerProps {
   showDetectionToggle?: boolean  // Show the detection overlay toggle button
   initialDetectionOverlay?: boolean  // Initial state of detection overlay
   showRecordingIndicator?: boolean  // Show recording status indicator
+  aspectRatio?: string  // CSS aspect-ratio like "16/9" or "3/4" for doorbells
+  maxHeight?: string  // Max height constraint like "70vh" for tall videos
 }
 
 type StreamMode = 'mse' | 'mse-h264' | 'mjpeg'
@@ -79,6 +81,8 @@ export const VideoPlayer = memo(function VideoPlayer({
   showDetectionToggle = true,
   initialDetectionOverlay = false,
   showRecordingIndicator = true,
+  aspectRatio,
+  maxHeight,
 }: VideoPlayerProps) {
   const videoRef = useRef<HTMLVideoElement>(null)
   const [isLoading, setIsLoading] = useState(true)
@@ -383,15 +387,27 @@ export const VideoPlayer = memo(function VideoPlayer({
     setShowDetections(!showDetections)
   }
 
+  // Build inline styles for aspect ratio and max height
+  const containerStyle: React.CSSProperties = {}
+  if (aspectRatio) {
+    containerStyle.aspectRatio = aspectRatio
+  }
+  if (maxHeight) {
+    containerStyle.maxHeight = maxHeight
+  }
+
   return (
-    <div className={`relative bg-black rounded-lg overflow-hidden ${className}`}>
+    <div
+      className={`relative bg-black rounded-lg overflow-hidden ${className}`}
+      style={containerStyle}
+    >
       <video
         ref={videoRef}
         autoPlay={autoPlay}
         muted={isMuted}
         playsInline
         preload="auto"
-        className={`w-full ${fit === 'cover' ? 'h-full object-cover' : 'h-auto'}`}
+        className={`w-full h-full ${fit === 'cover' ? 'object-cover' : 'object-contain'}`}
       />
 
       {/* Detection bounding box overlay */}
