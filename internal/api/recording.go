@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -15,13 +16,32 @@ import (
 	"github.com/Spatial-NVR/SpatialNVR/internal/recording"
 )
 
+// RecordingService defines the interface for recording operations
+type RecordingService interface {
+	ListSegments(ctx context.Context, opts recording.ListOptions) ([]recording.Segment, int, error)
+	GetSegment(ctx context.Context, id string) (*recording.Segment, error)
+	DeleteSegment(ctx context.Context, id string) error
+	StartCamera(cameraID string) error
+	StopCamera(cameraID string) error
+	RestartCamera(cameraID string) error
+	GetRecorderStatus(cameraID string) (*recording.RecorderStatus, error)
+	GetAllRecorderStatus() map[string]*recording.RecorderStatus
+	GetStorageStats(ctx context.Context) (*recording.StorageStats, error)
+	GetPlaybackInfo(ctx context.Context, cameraID string, timestamp time.Time) (string, float64, error)
+	ExportSegments(ctx context.Context, cameraID string, start, end time.Time, outputPath string) error
+	RunRetention(ctx context.Context) (*recording.RetentionStats, error)
+	GetTimeline(ctx context.Context, cameraID string, start, end time.Time) (*recording.Timeline, error)
+	GetTimelineSegments(ctx context.Context, cameraID string, start, end time.Time) ([]*recording.TimelineSegment, error)
+	GenerateThumbnail(ctx context.Context, segmentID string) (string, error)
+}
+
 // RecordingHandler handles recording API endpoints
 type RecordingHandler struct {
-	service *recording.Service
+	service RecordingService
 }
 
 // NewRecordingHandler creates a new recording handler
-func NewRecordingHandler(service *recording.Service) *RecordingHandler {
+func NewRecordingHandler(service RecordingService) *RecordingHandler {
 	return &RecordingHandler{
 		service: service,
 	}

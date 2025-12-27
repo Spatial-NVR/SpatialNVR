@@ -80,23 +80,24 @@ func TestParseTimeRange(t *testing.T) {
 
 // MockRecordingService is a mock implementation of the recording service
 type MockRecordingService struct {
-	ListSegmentsFunc        func(ctx context.Context, opts recording.ListOptions) ([]*recording.Segment, int, error)
-	GetSegmentFunc          func(ctx context.Context, id string) (*recording.Segment, error)
-	DeleteSegmentFunc       func(ctx context.Context, id string) error
-	GetTimelineFunc         func(ctx context.Context, cameraID string, start, end time.Time) (*recording.Timeline, error)
-	GetTimelineSegmentsFunc func(ctx context.Context, cameraID string, start, end time.Time) ([]*recording.TimelineSegment, error)
-	StartCameraFunc         func(cameraID string) error
-	StopCameraFunc          func(cameraID string) error
-	RestartCameraFunc       func(cameraID string) error
-	GetRecorderStatusFunc   func(cameraID string) (*recording.RecorderStatus, error)
+	ListSegmentsFunc         func(ctx context.Context, opts recording.ListOptions) ([]recording.Segment, int, error)
+	GetSegmentFunc           func(ctx context.Context, id string) (*recording.Segment, error)
+	DeleteSegmentFunc        func(ctx context.Context, id string) error
+	GetTimelineFunc          func(ctx context.Context, cameraID string, start, end time.Time) (*recording.Timeline, error)
+	GetTimelineSegmentsFunc  func(ctx context.Context, cameraID string, start, end time.Time) ([]*recording.TimelineSegment, error)
+	StartCameraFunc          func(cameraID string) error
+	StopCameraFunc           func(cameraID string) error
+	RestartCameraFunc        func(cameraID string) error
+	GetRecorderStatusFunc    func(cameraID string) (*recording.RecorderStatus, error)
 	GetAllRecorderStatusFunc func() map[string]*recording.RecorderStatus
-	GetStorageStatsFunc     func(ctx context.Context) (*recording.StorageStats, error)
-	GetPlaybackInfoFunc     func(ctx context.Context, cameraID string, timestamp time.Time) (string, float64, error)
-	ExportSegmentsFunc      func(ctx context.Context, cameraID string, start, end time.Time, outputPath string) error
-	RunRetentionFunc        func(ctx context.Context) (*recording.RetentionStats, error)
+	GetStorageStatsFunc      func(ctx context.Context) (*recording.StorageStats, error)
+	GetPlaybackInfoFunc      func(ctx context.Context, cameraID string, timestamp time.Time) (string, float64, error)
+	ExportSegmentsFunc       func(ctx context.Context, cameraID string, start, end time.Time, outputPath string) error
+	RunRetentionFunc         func(ctx context.Context) (*recording.RetentionStats, error)
+	GenerateThumbnailFunc    func(ctx context.Context, segmentID string) (string, error)
 }
 
-func (m *MockRecordingService) ListSegments(ctx context.Context, opts recording.ListOptions) ([]*recording.Segment, int, error) {
+func (m *MockRecordingService) ListSegments(ctx context.Context, opts recording.ListOptions) ([]recording.Segment, int, error) {
 	if m.ListSegmentsFunc != nil {
 		return m.ListSegmentsFunc(ctx, opts)
 	}
@@ -194,6 +195,13 @@ func (m *MockRecordingService) RunRetention(ctx context.Context) (*recording.Ret
 	return nil, nil
 }
 
+func (m *MockRecordingService) GenerateThumbnail(ctx context.Context, segmentID string) (string, error) {
+	if m.GenerateThumbnailFunc != nil {
+		return m.GenerateThumbnailFunc(ctx, segmentID)
+	}
+	return "", errors.New("not implemented")
+}
+
 // Helper to create request with chi URL params
 func requestWithParams(method, url string, body []byte, params map[string]string) *http.Request {
 	var req *http.Request
@@ -215,51 +223,51 @@ func TestRecordingHandler_ListSegments(t *testing.T) {
 	tests := []struct {
 		name           string
 		query          string
-		mockReturn     func(ctx context.Context, opts recording.ListOptions) ([]*recording.Segment, int, error)
+		mockReturn     func(ctx context.Context, opts recording.ListOptions) ([]recording.Segment, int, error)
 		expectedStatus int
 	}{
 		{
 			name:  "success with defaults",
 			query: "",
-			mockReturn: func(ctx context.Context, opts recording.ListOptions) ([]*recording.Segment, int, error) {
-				return []*recording.Segment{{ID: "seg1"}}, 1, nil
+			mockReturn: func(ctx context.Context, opts recording.ListOptions) ([]recording.Segment, int, error) {
+				return []recording.Segment{{ID: "seg1"}}, 1, nil
 			},
 			expectedStatus: http.StatusOK,
 		},
 		{
 			name:  "success with query params",
 			query: "?camera_id=cam1&limit=10&offset=5&order_by=start_time&order_desc=true",
-			mockReturn: func(ctx context.Context, opts recording.ListOptions) ([]*recording.Segment, int, error) {
+			mockReturn: func(ctx context.Context, opts recording.ListOptions) ([]recording.Segment, int, error) {
 				if opts.CameraID != "cam1" || opts.Limit != 10 || opts.Offset != 5 {
 					return nil, 0, errors.New("wrong options")
 				}
-				return []*recording.Segment{{ID: "seg1"}}, 1, nil
+				return []recording.Segment{{ID: "seg1"}}, 1, nil
 			},
 			expectedStatus: http.StatusOK,
 		},
 		{
 			name:  "success with time range",
 			query: "?start_time=2024-01-01T00:00:00Z&end_time=2024-01-02T00:00:00Z",
-			mockReturn: func(ctx context.Context, opts recording.ListOptions) ([]*recording.Segment, int, error) {
-				return []*recording.Segment{}, 0, nil
+			mockReturn: func(ctx context.Context, opts recording.ListOptions) ([]recording.Segment, int, error) {
+				return []recording.Segment{}, 0, nil
 			},
 			expectedStatus: http.StatusOK,
 		},
 		{
 			name:  "success with has_events filter",
 			query: "?has_events=true",
-			mockReturn: func(ctx context.Context, opts recording.ListOptions) ([]*recording.Segment, int, error) {
+			mockReturn: func(ctx context.Context, opts recording.ListOptions) ([]recording.Segment, int, error) {
 				if opts.HasEvents == nil || !*opts.HasEvents {
 					return nil, 0, errors.New("has_events not set")
 				}
-				return []*recording.Segment{}, 0, nil
+				return []recording.Segment{}, 0, nil
 			},
 			expectedStatus: http.StatusOK,
 		},
 		{
 			name:  "service error",
 			query: "",
-			mockReturn: func(ctx context.Context, opts recording.ListOptions) ([]*recording.Segment, int, error) {
+			mockReturn: func(ctx context.Context, opts recording.ListOptions) ([]recording.Segment, int, error) {
 				return nil, 0, errors.New("database error")
 			},
 			expectedStatus: http.StatusInternalServerError,
@@ -867,19 +875,7 @@ func TestRecordingHandler_GetTimelineSegments(t *testing.T) {
 	}
 }
 
-// Helper type to wrap our mock into something the handler can use
-// Since RecordingHandler takes *recording.Service, we need to work around this
-// For now, this is a workaround - in real code you'd use an interface
-
-type mockableService struct {
-	*MockRecordingService
-}
-
-// createServiceFromMock creates a service wrapper that can be used by the handler
-// Note: This is a simplified mock - in production you'd define an interface
-func createServiceFromMock(mock *MockRecordingService) *recording.Service {
-	// Since we can't easily mock the recording.Service directly without an interface,
-	// we'll skip actual service creation for these tests
-	// This would require refactoring the handler to use an interface instead of concrete type
-	return nil
+// createServiceFromMock returns the mock directly since RecordingHandler now uses an interface
+func createServiceFromMock(mock *MockRecordingService) RecordingService {
+	return mock
 }

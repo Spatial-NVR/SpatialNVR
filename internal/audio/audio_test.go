@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -228,9 +229,9 @@ func TestDoorbellHandler_OnRing(t *testing.T) {
 	twa := NewTwoWayAudio()
 	db := NewDoorbellHandler(twa)
 
-	called := false
+	var called atomic.Bool
 	db.OnRing(func(cameraID string) {
-		called = true
+		called.Store(true)
 		if cameraID != "cam_1" {
 			t.Errorf("Expected cam_1, got %s", cameraID)
 		}
@@ -241,7 +242,7 @@ func TestDoorbellHandler_OnRing(t *testing.T) {
 	// Give time for goroutine
 	time.Sleep(10 * time.Millisecond)
 
-	if !called {
+	if !called.Load() {
 		t.Error("OnRing callback should have been called")
 	}
 }
@@ -250,10 +251,10 @@ func TestDoorbellHandler_NotifyRing_MultipleCallbacks(t *testing.T) {
 	twa := NewTwoWayAudio()
 	db := NewDoorbellHandler(twa)
 
-	callCount := 0
+	var callCount atomic.Int32
 	for i := 0; i < 3; i++ {
 		db.OnRing(func(cameraID string) {
-			callCount++
+			callCount.Add(1)
 		})
 	}
 
@@ -262,8 +263,8 @@ func TestDoorbellHandler_NotifyRing_MultipleCallbacks(t *testing.T) {
 	// Give time for goroutines
 	time.Sleep(50 * time.Millisecond)
 
-	if callCount != 3 {
-		t.Errorf("Expected 3 callbacks, got %d", callCount)
+	if callCount.Load() != 3 {
+		t.Errorf("Expected 3 callbacks, got %d", callCount.Load())
 	}
 }
 
