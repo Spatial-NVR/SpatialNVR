@@ -127,7 +127,7 @@ func TestDefaultSegmentHandler_CalculateChecksum(t *testing.T) {
 	// Create test file with known content
 	testFile := filepath.Join(tmpDir, "test.mp4")
 	content := []byte("test video content for checksum")
-	os.WriteFile(testFile, content, 0644)
+	_ = os.WriteFile(testFile, content, 0644)
 
 	checksum, err := handler.CalculateChecksum(testFile)
 	if err != nil {
@@ -182,7 +182,7 @@ func TestDefaultSegmentHandler_ValidateSegment_EmptyFile(t *testing.T) {
 
 	// Create empty file
 	emptyFile := filepath.Join(tmpDir, "empty.mp4")
-	os.WriteFile(emptyFile, []byte{}, 0644)
+	_ = os.WriteFile(emptyFile, []byte{}, 0644)
 
 	err := handler.ValidateSegment(emptyFile)
 	if err == nil {

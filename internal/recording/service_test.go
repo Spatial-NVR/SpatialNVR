@@ -194,7 +194,7 @@ func TestService_StartCamera_NotFound(t *testing.T) {
 	if err := svc.Start(ctx); err != nil {
 		t.Fatalf("Start() error = %v", err)
 	}
-	defer svc.Stop()
+	defer func() { _ = svc.Stop() }()
 
 	// Try to start a camera that doesn't exist
 	err = svc.StartCamera("nonexistent_camera")
@@ -217,7 +217,7 @@ func TestService_StopCamera_NotRunning(t *testing.T) {
 	if err := svc.Start(ctx); err != nil {
 		t.Fatalf("Start() error = %v", err)
 	}
-	defer svc.Stop()
+	defer func() { _ = svc.Stop() }()
 
 	// Try to stop a camera that isn't running - should be no-op
 	err = svc.StopCamera("test_cam_1")
@@ -245,7 +245,7 @@ func TestService_GetRecorderStatus_NotRunning(t *testing.T) {
 	if err := svc.Start(ctx); err != nil {
 		t.Fatalf("Start() error = %v", err)
 	}
-	defer svc.Stop()
+	defer func() { _ = svc.Stop() }()
 
 	// Camera exists but recorder is not running
 	status, err := svc.GetRecorderStatus("test_cam_1")
@@ -274,7 +274,7 @@ func TestService_GetAllRecorderStatus(t *testing.T) {
 	if err := svc.Start(ctx); err != nil {
 		t.Fatalf("Start() error = %v", err)
 	}
-	defer svc.Stop()
+	defer func() { _ = svc.Stop() }()
 
 	statuses := svc.GetAllRecorderStatus()
 	if statuses == nil {
@@ -296,7 +296,7 @@ func TestService_GetStorageStats(t *testing.T) {
 	if err := svc.Start(ctx); err != nil {
 		t.Fatalf("Start() error = %v", err)
 	}
-	defer svc.Stop()
+	defer func() { _ = svc.Stop() }()
 
 	stats, err := svc.GetStorageStats(ctx)
 	if err != nil {
@@ -321,12 +321,12 @@ func TestService_SegmentOperations(t *testing.T) {
 	if err := svc.Start(ctx); err != nil {
 		t.Fatalf("Start() error = %v", err)
 	}
-	defer svc.Stop()
+	defer func() { _ = svc.Stop() }()
 
 	// Create a test segment file
 	segmentPath := filepath.Join(tmpDir, "recordings", "test_cam_1", "test_segment.mp4")
-	os.MkdirAll(filepath.Dir(segmentPath), 0755)
-	os.WriteFile(segmentPath, []byte("test video content"), 0644)
+	_ = os.MkdirAll(filepath.Dir(segmentPath), 0755)
+	_ = os.WriteFile(segmentPath, []byte("test video content"), 0644)
 
 	// Create a test segment in the database
 	segment := &Segment{
@@ -390,7 +390,7 @@ func TestService_GetTimeline(t *testing.T) {
 	if err := svc.Start(ctx); err != nil {
 		t.Fatalf("Start() error = %v", err)
 	}
-	defer svc.Stop()
+	defer func() { _ = svc.Stop() }()
 
 	end := time.Now()
 	start := end.Add(-24 * time.Hour)
@@ -418,7 +418,7 @@ func TestService_GetTimelineSegments(t *testing.T) {
 	if err := svc.Start(ctx); err != nil {
 		t.Fatalf("Start() error = %v", err)
 	}
-	defer svc.Stop()
+	defer func() { _ = svc.Stop() }()
 
 	end := time.Now()
 	start := end.Add(-24 * time.Hour)
@@ -447,7 +447,7 @@ func TestService_ExportSegments_NoSegments(t *testing.T) {
 	if err := svc.Start(ctx); err != nil {
 		t.Fatalf("Start() error = %v", err)
 	}
-	defer svc.Stop()
+	defer func() { _ = svc.Stop() }()
 
 	end := time.Now()
 	start := end.Add(-time.Hour)
@@ -473,7 +473,7 @@ func TestService_RunRetention(t *testing.T) {
 	if err := svc.Start(ctx); err != nil {
 		t.Fatalf("Start() error = %v", err)
 	}
-	defer svc.Stop()
+	defer func() { _ = svc.Stop() }()
 
 	stats, err := svc.RunRetention(ctx)
 	if err != nil {
@@ -503,7 +503,7 @@ func TestService_OnConfigChange(t *testing.T) {
 	if err := svc.Start(ctx); err != nil {
 		t.Fatalf("Start() error = %v", err)
 	}
-	defer svc.Stop()
+	defer func() { _ = svc.Stop() }()
 
 	// Create new config with different camera settings
 	newCfg := testConfig(tmpDir)
@@ -539,7 +539,7 @@ func TestService_TriggerEventRecording_NotRunning(t *testing.T) {
 	if err := svc.Start(ctx); err != nil {
 		t.Fatalf("Start() error = %v", err)
 	}
-	defer svc.Stop()
+	defer func() { _ = svc.Stop() }()
 
 	// Try to trigger event recording on a camera that doesn't exist
 	err = svc.TriggerEventRecording("nonexistent_camera", "event_123")
@@ -562,7 +562,7 @@ func TestService_GenerateThumbnail_SegmentNotFound(t *testing.T) {
 	if err := svc.Start(ctx); err != nil {
 		t.Fatalf("Start() error = %v", err)
 	}
-	defer svc.Stop()
+	defer func() { _ = svc.Stop() }()
 
 	_, err = svc.GenerateThumbnail(ctx, "nonexistent_segment_id")
 	if err == nil {
@@ -584,7 +584,7 @@ func TestService_GenerateThumbnail_FileNotFound(t *testing.T) {
 	if err := svc.Start(ctx); err != nil {
 		t.Fatalf("Start() error = %v", err)
 	}
-	defer svc.Stop()
+	defer func() { _ = svc.Stop() }()
 
 	// Create a segment record without the actual file
 	segment := &Segment{
@@ -623,7 +623,7 @@ func TestService_GetPlaybackInfo(t *testing.T) {
 	if err := svc.Start(ctx); err != nil {
 		t.Fatalf("Start() error = %v", err)
 	}
-	defer svc.Stop()
+	defer func() { _ = svc.Stop() }()
 
 	// Should return empty when no segments exist
 	url, offset, err := svc.GetPlaybackInfo(ctx, "test_cam_1", time.Now())

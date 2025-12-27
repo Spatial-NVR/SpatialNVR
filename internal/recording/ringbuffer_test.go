@@ -228,11 +228,11 @@ func TestMemoryRingBuffer_EvictOld(t *testing.T) {
 
 	// Write some old frames
 	oldTime := time.Now().Add(-200 * time.Millisecond)
-	buf.WriteFrame(FrameData{Data: []byte{1}, Timestamp: oldTime})
-	buf.WriteFrame(FrameData{Data: []byte{2}, Timestamp: oldTime})
+	_ = buf.WriteFrame(FrameData{Data: []byte{1}, Timestamp: oldTime})
+	_ = buf.WriteFrame(FrameData{Data: []byte{2}, Timestamp: oldTime})
 
 	// Write a new frame - this should trigger eviction
-	buf.WriteFrame(FrameData{Data: []byte{3}, Timestamp: time.Now()})
+	_ = buf.WriteFrame(FrameData{Data: []byte{3}, Timestamp: time.Now()})
 
 	// Old frames should be evicted
 	if buf.Count() != 1 {
@@ -248,7 +248,7 @@ func TestMemoryRingBuffer_ConcurrentAccess(t *testing.T) {
 	for i := 0; i < 10; i++ {
 		go func(id int) {
 			for j := 0; j < 100; j++ {
-				buf.Write([]byte{byte(id), byte(j)})
+				_ = buf.Write([]byte{byte(id), byte(j)})
 			}
 			done <- true
 		}(i)
