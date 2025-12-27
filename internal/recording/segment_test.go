@@ -58,9 +58,9 @@ func TestDefaultSegmentHandler_Delete(t *testing.T) {
 	segmentPath := filepath.Join(tmpDir, "test_segment.mp4")
 	thumbnailPath := filepath.Join(tmpDir, "thumbs", "test_segment.jpg")
 
-	os.MkdirAll(filepath.Join(tmpDir, "thumbs"), 0755)
-	os.WriteFile(segmentPath, []byte("video content"), 0644)
-	os.WriteFile(thumbnailPath, []byte("image content"), 0644)
+	_ = os.MkdirAll(filepath.Join(tmpDir, "thumbs"), 0755)
+	_ = os.WriteFile(segmentPath, []byte("video content"), 0644)
+	_ = os.WriteFile(thumbnailPath, []byte("image content"), 0644)
 
 	segment := &Segment{
 		FilePath:  segmentPath,
@@ -103,7 +103,7 @@ func TestDefaultSegmentHandler_Delete_NoThumbnail(t *testing.T) {
 
 	// Create test file
 	segmentPath := filepath.Join(tmpDir, "test_segment.mp4")
-	os.WriteFile(segmentPath, []byte("video content"), 0644)
+	_ = os.WriteFile(segmentPath, []byte("video content"), 0644)
 
 	segment := &Segment{
 		FilePath:  segmentPath,

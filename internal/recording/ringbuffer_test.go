@@ -90,7 +90,7 @@ func TestMemoryRingBuffer_ReadFrames(t *testing.T) {
 	// Add some frames
 	now := time.Now()
 	for i := 0; i < 3; i++ {
-		buf.WriteFrame(FrameData{
+		_ = buf.WriteFrame(FrameData{
 			Data:      []byte{byte(i)},
 			Timestamp: now.Add(time.Duration(i) * time.Second),
 		})
@@ -124,7 +124,7 @@ func TestMemoryRingBuffer_ReadSince(t *testing.T) {
 	now := time.Now()
 	// Add frames at different times
 	for i := 0; i < 5; i++ {
-		buf.WriteFrame(FrameData{
+		_ = buf.WriteFrame(FrameData{
 			Data:      []byte{byte(i)},
 			Timestamp: now.Add(time.Duration(i) * time.Second),
 		})
@@ -159,13 +159,13 @@ func TestMemoryRingBuffer_Duration(t *testing.T) {
 
 	// Single frame should return 0 duration
 	now := time.Now()
-	buf.WriteFrame(FrameData{Data: []byte{1}, Timestamp: now})
+	_ = buf.WriteFrame(FrameData{Data: []byte{1}, Timestamp: now})
 	if buf.Duration() != 0 {
 		t.Errorf("Expected 0 duration for single frame, got %v", buf.Duration())
 	}
 
 	// Multiple frames
-	buf.WriteFrame(FrameData{Data: []byte{2}, Timestamp: now.Add(5 * time.Second)})
+	_ = buf.WriteFrame(FrameData{Data: []byte{2}, Timestamp: now.Add(5 * time.Second)})
 	duration := buf.Duration()
 	if duration != 5*time.Second {
 		t.Errorf("Expected 5 seconds, got %v", duration)
@@ -179,8 +179,8 @@ func TestMemoryRingBuffer_Size(t *testing.T) {
 		t.Errorf("Expected size 0 for empty buffer, got %d", buf.Size())
 	}
 
-	buf.Write([]byte("hello"))
-	buf.Write([]byte("world"))
+	_ = buf.Write([]byte("hello"))
+	_ = buf.Write([]byte("world"))
 
 	expectedSize := int64(len("hello") + len("world"))
 	if buf.Size() != expectedSize {
@@ -191,7 +191,7 @@ func TestMemoryRingBuffer_Size(t *testing.T) {
 func TestMemoryRingBuffer_Clear(t *testing.T) {
 	buf := NewMemoryRingBuffer(10, 0)
 
-	buf.Write([]byte("test"))
+	_ = buf.Write([]byte("test"))
 	buf.Clear()
 
 	if buf.Count() != 0 {
