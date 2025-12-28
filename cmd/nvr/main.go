@@ -1088,10 +1088,122 @@ const (
 
 // Cached catalog
 var (
-	cachedCatalog     map[string]interface{}
-	cachedCatalogTime time.Time
-	catalogCacheTTL   = 15 * time.Minute
+	cachedCatalog        map[string]interface{}
+	cachedCatalogTime    time.Time
+	catalogCacheTTL      = 15 * time.Minute
+	cachedVersions       map[string]string // pluginID -> latest version
+	cachedVersionsTime   time.Time
+	versionsCacheTTL     = 5 * time.Minute
 )
+
+// GitHubReleaseInfo represents minimal release info from GitHub API
+type GitHubReleaseInfo struct {
+	TagName string `json:"tag_name"`
+}
+
+// fetchLatestVersion fetches the latest release version from GitHub
+func fetchLatestVersion(ctx context.Context, repoURL string) (string, error) {
+	// Parse repo URL to get owner/repo
+	// Expected format: https://github.com/owner/repo
+	repoURL = strings.TrimSuffix(repoURL, ".git")
+	parts := strings.Split(repoURL, "/")
+	if len(parts) < 2 {
+		return "", fmt.Errorf("invalid repo URL: %s", repoURL)
+	}
+	owner := parts[len(parts)-2]
+	repo := parts[len(parts)-1]
+
+	apiURL := fmt.Sprintf("https://api.github.com/repos/%s/%s/releases/latest", owner, repo)
+
+	req, err := http.NewRequestWithContext(ctx, "GET", apiURL, nil)
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Accept", "application/vnd.github.v3+json")
+	req.Header.Set("User-Agent", "SpatialNVR-PluginCatalog")
+
+	client := &http.Client{Timeout: 5 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode == 404 {
+		return "", nil // No releases
+	}
+	if resp.StatusCode != 200 {
+		return "", fmt.Errorf("GitHub API returned %d", resp.StatusCode)
+	}
+
+	var release GitHubReleaseInfo
+	if err := json.NewDecoder(resp.Body).Decode(&release); err != nil {
+		return "", err
+	}
+
+	return release.TagName, nil
+}
+
+// fetchAllLatestVersions fetches latest versions for all plugins in parallel
+func fetchAllLatestVersions(ctx context.Context, plugins []interface{}) map[string]string {
+	versions := make(map[string]string)
+	type result struct {
+		id      string
+		version string
+	}
+	results := make(chan result, len(plugins))
+
+	for _, p := range plugins {
+		plugin, ok := p.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		id, _ := plugin["id"].(string)
+		repoURL, _ := plugin["repo"].(string)
+		if id == "" || repoURL == "" {
+			continue
+		}
+
+		go func(id, repoURL string) {
+			version, err := fetchLatestVersion(ctx, repoURL)
+			if err != nil {
+				slog.Debug("Failed to fetch latest version", "plugin", id, "error", err)
+			}
+			results <- result{id: id, version: version}
+		}(id, repoURL)
+	}
+
+	// Collect results with timeout
+	timeout := time.After(8 * time.Second)
+	collected := 0
+	expected := 0
+	for _, p := range plugins {
+		if plugin, ok := p.(map[string]interface{}); ok {
+			if id, _ := plugin["id"].(string); id != "" {
+				if repo, _ := plugin["repo"].(string); repo != "" {
+					expected++
+				}
+			}
+		}
+	}
+
+	for collected < expected {
+		select {
+		case r := <-results:
+			if r.version != "" {
+				versions[r.id] = r.version
+			}
+			collected++
+		case <-timeout:
+			slog.Debug("Timeout fetching plugin versions", "collected", collected, "expected", expected)
+			return versions
+		case <-ctx.Done():
+			return versions
+		}
+	}
+
+	return versions
+}
 
 // handleGetPluginCatalog returns the available plugin catalog with installed status merged
 func handleGetPluginCatalog(loader *core.PluginLoader) http.HandlerFunc {
@@ -1144,6 +1256,19 @@ func handleGetPluginCatalog(loader *core.PluginLoader) http.HandlerFunc {
 			}
 		}
 
+		// Fetch latest versions from GitHub (with caching)
+		var latestVersions map[string]string
+		if cachedVersions != nil && time.Since(cachedVersionsTime) < versionsCacheTTL {
+			latestVersions = cachedVersions
+		} else if plugins, ok := catalog["plugins"].([]interface{}); ok {
+			versionCtx, versionCancel := context.WithTimeout(r.Context(), 10*time.Second)
+			latestVersions = fetchAllLatestVersions(versionCtx, plugins)
+			versionCancel()
+			// Cache the versions
+			cachedVersions = latestVersions
+			cachedVersionsTime = time.Now()
+		}
+
 		// Merge installed plugin status into catalog
 		installedPlugins := loader.ListPlugins()
 		installedMap := make(map[string]*core.LoadedPlugin)
@@ -1151,16 +1276,34 @@ func handleGetPluginCatalog(loader *core.PluginLoader) http.HandlerFunc {
 			installedMap[p.Manifest.ID] = p
 		}
 
-		// Update plugins in catalog with installed status
+		// Update plugins in catalog with installed status and latest version
 		if plugins, ok := catalog["plugins"].([]interface{}); ok {
 			for _, p := range plugins {
 				if plugin, ok := p.(map[string]interface{}); ok {
 					pluginID, _ := plugin["id"].(string)
+
+					// Add latest version from GitHub
+					if latestVersion, hasVersion := latestVersions[pluginID]; hasVersion {
+						plugin["latest_version"] = latestVersion
+					}
+
 					if installed, exists := installedMap[pluginID]; exists {
 						plugin["installed"] = true
 						plugin["installed_version"] = installed.Manifest.Version
 						plugin["enabled"] = installed.State == core.PluginStateRunning
 						plugin["state"] = string(installed.State)
+
+						// Check if update is available
+						if latestVersion, hasVersion := latestVersions[pluginID]; hasVersion {
+							installedVersion := installed.Manifest.Version
+							// Compare versions (strip 'v' prefix for comparison)
+							latestClean := strings.TrimPrefix(latestVersion, "v")
+							installedClean := strings.TrimPrefix(installedVersion, "v")
+							if latestClean != installedClean && latestVersion != "" {
+								plugin["update_available"] = true
+							}
+						}
+
 						// Remove from map so we can track non-catalog plugins
 						delete(installedMap, pluginID)
 					}
@@ -1238,9 +1381,11 @@ func getDefaultCatalog() map[string]interface{} {
 // handleReloadPluginCatalog forces a refresh of the plugin catalog
 func handleReloadPluginCatalog() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		// Clear cache to force refresh
+		// Clear all caches to force refresh
 		cachedCatalog = nil
 		cachedCatalogTime = time.Time{}
+		cachedVersions = nil
+		cachedVersionsTime = time.Time{}
 
 		// Fetch fresh catalog
 		ctx, cancel := context.WithTimeout(r.Context(), catalogTimeout)
