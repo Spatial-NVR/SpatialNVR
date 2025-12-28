@@ -501,9 +501,10 @@ func (p *ConfigPlugin) handleUpdateCameraConfig(w http.ResponseWriter, r *http.R
 		return
 	}
 
-	// Publish camera updated event
-	_ = p.PublishEvent(sdk.EventTypeCameraUpdated, map[string]string{
+	// Publish camera updated event with full config for other plugins (e.g., recording)
+	_ = p.PublishEvent(sdk.EventTypeCameraUpdated, map[string]interface{}{
 		"camera_id": id,
+		"config":    camCfg,
 	})
 
 	p.respondJSON(w, map[string]string{"status": "updated"})

@@ -200,7 +200,12 @@ export function Recordings() {
         `${apiUrl}/api/v1/recordings/timeline/${selectedCamera}?start=${start.toISOString()}&end=${end.toISOString()}`
       )
       const data = await res.json()
-      return data.data
+      // Backend returns Timeline directly, not wrapped in data.data
+      // Ensure segments is always an array
+      return {
+        ...data,
+        segments: data.segments || []
+      }
     },
     enabled: !!selectedCamera,
   })
