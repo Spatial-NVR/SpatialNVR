@@ -151,6 +151,11 @@ func NewManager(
 	// Create installer for Git-based plugin installation
 	mgr.installer = NewInstaller(pluginsDir, logger)
 
+	// Pass GitHub token from config to installer for higher API rate limits
+	if cfg.System.Updates.GitHubToken != "" {
+		mgr.installer.SetGitHubToken(cfg.System.Updates.GitHubToken)
+	}
+
 	// Load plugin catalog
 	catalog, err := LoadCatalogFromDir(mgr.catalogDir)
 	if err != nil {
