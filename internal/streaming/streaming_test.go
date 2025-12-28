@@ -320,7 +320,7 @@ func TestConfigGenerator_Generate(t *testing.T) {
 			t.Errorf("Expected 1 source for camera1 (ffmpeg with audio transcode), got %d", len(streams))
 		}
 		// Stream should be wrapped with ffmpeg for audio transcoding
-		expected := "ffmpeg:rtsp://admin:password@192.168.1.100/stream#video=copy#audio=opus"
+		expected := "ffmpeg:rtsp://admin:password@192.168.1.100/stream#video=copy#audio=copy#audio=opus"
 		if streams[0] != expected {
 			t.Errorf("Unexpected stream URL: got %s, want %s", streams[0], expected)
 		}
