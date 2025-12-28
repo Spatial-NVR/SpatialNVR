@@ -183,10 +183,12 @@ func (i *Installer) installFromAsset(ctx context.Context, owner, repo, tag strin
 	manifest, err := i.readManifest(tempDir)
 	if err != nil {
 		// Try to generate a basic manifest using repo name as fallback
+		// Strip common suffixes like "-plugin" from repo name for cleaner ID
+		pluginID := strings.TrimSuffix(repo, "-plugin")
 		manifest = &PluginManifest{
-			ID:      repo,
-			Name:    repo,
-			Version: tag,
+			ID:      pluginID,
+			Name:    pluginID,
+			Version: stripVersionPrefix(tag),
 			Runtime: PluginRuntime{Type: "binary", Binary: asset.Name},
 		}
 		// Write the generated manifest
@@ -736,4 +738,10 @@ func copyDir(src, dest string) error {
 	}
 
 	return nil
+}
+
+// stripVersionPrefix removes common version prefixes like "v" from version strings
+// e.g., "v1.2.0" -> "1.2.0"
+func stripVersionPrefix(version string) string {
+	return strings.TrimPrefix(version, "v")
 }
