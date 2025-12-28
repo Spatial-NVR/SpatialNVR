@@ -127,7 +127,7 @@ func main() {
 	}
 
 	slog.Info("Starting NVR System (Plugin Architecture)",
-		"version", "0.2.1",
+		"version", nvrVersion,
 		"mode", "plugin-based",
 		"api_port", ports.API,
 		"nats_port", ports.NATS,
@@ -569,7 +569,7 @@ func setupRouter(gateway *core.APIGateway, loader *core.PluginLoader, eventBus *
 
 		w.Header().Set("Content-Type", "application/json")
 		// Include ready:true so UI knows backend is fully started
-		_, _ = fmt.Fprintf(w, `{"status":"%s","ready":true,"version":"0.2.1","plugins":%d,"mode":"plugin-based"}`, status, len(plugins))
+		_, _ = fmt.Fprintf(w, `{"status":"%s","ready":true,"version":"%s","plugins":%d,"mode":"plugin-based"}`, status, nvrVersion, len(plugins))
 	})
 
 	// API routes
@@ -1314,6 +1314,9 @@ const (
 	catalogTimeout = 10 * time.Second
 )
 
+// Current NVR version
+const nvrVersion = "0.0.3"
+
 // Cached catalog
 var (
 	cachedCatalog        map[string]interface{}
@@ -1322,7 +1325,74 @@ var (
 	cachedVersions       map[string]string // pluginID -> latest version
 	cachedVersionsTime   time.Time
 	versionsCacheTTL     = 5 * time.Minute
+	cachedNVRVersion     string
+	cachedNVRVersionTime time.Time
+	nvrVersionCacheTTL   = 30 * time.Minute
 )
+
+// checkNVRUpdate checks if a newer NVR version is available
+func checkNVRUpdate() (bool, string) {
+	// Check cache first
+	if cachedNVRVersion != "" && time.Since(cachedNVRVersionTime) < nvrVersionCacheTTL {
+		return compareVersions(nvrVersion, cachedNVRVersion), cachedNVRVersion
+	}
+
+	// Fetch from GitHub API
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, "GET", "https://api.github.com/repos/Spatial-NVR/SpatialNVR/releases/latest", nil)
+	if err != nil {
+		return false, ""
+	}
+	req.Header.Set("Accept", "application/vnd.github.v3+json")
+	req.Header.Set("User-Agent", "SpatialNVR/"+nvrVersion)
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		slog.Debug("Failed to check NVR update", "error", err)
+		return false, ""
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		return false, ""
+	}
+
+	var release GitHubReleaseInfo
+	if err := json.NewDecoder(resp.Body).Decode(&release); err != nil {
+		return false, ""
+	}
+
+	latestVersion := strings.TrimPrefix(release.TagName, "v")
+	cachedNVRVersion = latestVersion
+	cachedNVRVersionTime = time.Now()
+
+	return compareVersions(nvrVersion, latestVersion), latestVersion
+}
+
+// compareVersions returns true if latestVersion is newer than currentVersion
+func compareVersions(current, latest string) bool {
+	currentParts := strings.Split(current, ".")
+	latestParts := strings.Split(latest, ".")
+
+	for i := 0; i < 3; i++ {
+		var c, l int
+		if i < len(currentParts) {
+			fmt.Sscanf(currentParts[i], "%d", &c)
+		}
+		if i < len(latestParts) {
+			fmt.Sscanf(latestParts[i], "%d", &l)
+		}
+		if l > c {
+			return true
+		}
+		if l < c {
+			return false
+		}
+	}
+	return false
+}
 
 // GitHubReleaseInfo represents minimal release info from GitHub API
 type GitHubReleaseInfo struct {
@@ -1541,13 +1611,9 @@ func handleGetPluginCatalog(loader *core.PluginLoader) http.HandlerFunc {
 			}
 		}
 
-		// Add any installed plugins not in the catalog (externally installed)
+		// Add any installed plugins not in the catalog (externally installed or builtin)
 		if plugins, ok := catalog["plugins"].([]interface{}); ok {
 			for id, p := range installedMap {
-				// Skip builtin plugins
-				if p.IsBuiltin {
-					continue
-				}
 				plugin := map[string]interface{}{
 					"id":                id,
 					"name":              p.Manifest.Name,
@@ -1557,7 +1623,19 @@ func handleGetPluginCatalog(loader *core.PluginLoader) http.HandlerFunc {
 					"installed_version": p.Manifest.Version,
 					"enabled":           p.State == core.PluginStateRunning,
 					"state":             string(p.State),
+					"builtin":           p.IsBuiltin,
 				}
+
+				// For builtin plugins, check if NVR core update is available
+				if p.IsBuiltin {
+					plugin["category"] = "core"
+					// Check if there's a newer NVR version available
+					if nvrUpdateAvailable, latestNVRVersion := checkNVRUpdate(); nvrUpdateAvailable {
+						plugin["update_available"] = true
+						plugin["latest_version"] = latestNVRVersion
+					}
+				}
+
 				plugins = append(plugins, plugin)
 			}
 			catalog["plugins"] = plugins

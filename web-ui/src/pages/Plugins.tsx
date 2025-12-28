@@ -28,6 +28,7 @@ const categoryIcons: Record<string, typeof Camera> = {
   cameras: Camera,
   integrations: Plug,
   detectors: Cpu,
+  core: Cpu,
 }
 
 // Get status color
@@ -72,6 +73,11 @@ function PluginCard({
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2">
               <h3 className="font-medium truncate">{plugin.name}</h3>
+              {plugin.builtin && (
+                <span className="px-1.5 py-0.5 text-xs bg-blue-500/20 text-blue-500 rounded shrink-0">
+                  Core
+                </span>
+              )}
               {plugin.featured && (
                 <Star className="w-4 h-4 text-yellow-500 fill-yellow-500 shrink-0" />
               )}
@@ -117,7 +123,7 @@ function PluginCard({
                 >
                   <Settings className="w-4 h-4" />
                 </Link>
-                {plugin.update_available && (
+                {plugin.update_available && !plugin.builtin && (
                   <button
                     onClick={() => onUpdate(plugin.id)}
                     className="p-1.5 text-yellow-500 hover:bg-yellow-500/10 rounded"
@@ -126,11 +132,20 @@ function PluginCard({
                     <RefreshCw className="w-4 h-4" />
                   </button>
                 )}
+                {plugin.update_available && plugin.builtin && (
+                  <span
+                    className="p-1.5 text-yellow-500"
+                    title={`System update available: v${plugin.latest_version}`}
+                  >
+                    <AlertCircle className="w-4 h-4" />
+                  </span>
+                )}
                 {plugin.enabled ? (
                   <button
                     onClick={() => onDisable(plugin.id)}
                     className="p-1.5 text-muted-foreground hover:text-red-500 hover:bg-red-500/10 rounded"
                     title="Disable"
+                    disabled={plugin.builtin}
                   >
                     <PowerOff className="w-4 h-4" />
                   </button>
@@ -143,13 +158,15 @@ function PluginCard({
                     <Power className="w-4 h-4" />
                   </button>
                 )}
-                <button
-                  onClick={() => onUninstall(plugin.id)}
-                  className="p-1.5 text-muted-foreground hover:text-red-500 hover:bg-red-500/10 rounded"
-                  title="Uninstall"
-                >
-                  <Trash2 className="w-4 h-4" />
-                </button>
+                {!plugin.builtin && (
+                  <button
+                    onClick={() => onUninstall(plugin.id)}
+                    className="p-1.5 text-muted-foreground hover:text-red-500 hover:bg-red-500/10 rounded"
+                    title="Uninstall"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                )}
               </div>
             </>
           ) : (

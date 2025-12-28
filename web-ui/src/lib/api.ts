@@ -1136,6 +1136,7 @@ export interface CatalogPlugin {
   update_available: boolean;
   enabled: boolean;
   state?: string;
+  builtin?: boolean;
 }
 
 export interface CatalogCategory {
