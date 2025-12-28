@@ -94,6 +94,7 @@ jobs:
           platforms: linux/amd64
           push: true
           tags: |
+            ghcr.io/spatial-nvr/spatialnvr:latest
             ghcr.io/spatial-nvr/spatialnvr:main
             ghcr.io/spatial-nvr/spatialnvr:main-amd64
             ghcr.io/spatial-nvr/spatialnvr:sha-${{ steps.sha.outputs.SHORT_SHA }}
