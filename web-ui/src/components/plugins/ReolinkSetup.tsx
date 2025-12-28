@@ -141,9 +141,10 @@ export function ReolinkSetup({ pluginId, onCameraAdded }: ReolinkSetupProps) {
         // Also register with NVR camera service for go2rtc
         const pluginCamera = data.result
 
-        // Build proper stream URL with credentials
-        const streamUrl = channelInfo?.rtsp_main || pluginCamera?.main_stream
-        const subStreamUrl = channelInfo?.rtsp_sub || pluginCamera?.sub_stream
+        // Use the plugin camera's stream URLs (which respect the protocol setting - HLS by default)
+        // Fall back to probe result RTSP URLs only if plugin doesn't provide URLs
+        const streamUrl = pluginCamera?.main_stream || channelInfo?.rtsp_main
+        const subStreamUrl = pluginCamera?.sub_stream || channelInfo?.rtsp_sub
 
         // Format the camera configuration with proper structure expected by the API
         const cameraConfig = {
@@ -459,13 +460,14 @@ export function ReolinkSetup({ pluginId, onCameraAdded }: ReolinkSetupProps) {
                         <div>Codec: {ch.sub_stream.codec || 'H.264'}</div>
                       </div>
                     </div>
-                    {/* Stream URLs */}
+                    {/* Stream Info */}
                     <div className="md:col-span-2 p-3 bg-gray-900 rounded-md font-mono text-xs">
                       <div className="flex items-center gap-2 text-muted-foreground mb-1">
-                        <Wifi className="w-3 h-3" /> RTSP URLs
+                        <Wifi className="w-3 h-3" /> Stream Protocol: <span className="text-green-400">HLS (HTTP-FLV)</span>
                       </div>
-                      <div className="text-green-400 break-all">{ch.rtsp_main}</div>
-                      <div className="text-blue-400 break-all mt-1">{ch.rtsp_sub}</div>
+                      <div className="text-muted-foreground text-xs mt-1">
+                        Streams will use HLS for better compatibility with go2rtc/ffmpeg
+                      </div>
                     </div>
                   </div>
                 )}
