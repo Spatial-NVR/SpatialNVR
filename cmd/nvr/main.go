@@ -1812,14 +1812,9 @@ func handleUninstallPlugin(installer *plugin.Installer, loader *core.PluginLoade
 			}
 		}
 
-		// First, try to stop the plugin if it's running or in error state
-		if err := loader.DisablePlugin(r.Context(), actualID); err != nil {
-			slog.Debug("Could not disable plugin during uninstall", "id", actualID, "error", err)
-		}
-
-		// Unregister the plugin from the loader
-		if err := loader.UnregisterPlugin(actualID); err != nil {
-			slog.Debug("Could not unregister plugin during uninstall", "id", actualID, "error", err)
+		// Force unregister the plugin (this will stop it if running and remove from loader)
+		if err := loader.ForceUnregisterPlugin(actualID); err != nil {
+			slog.Warn("Could not force unregister plugin during uninstall", "id", actualID, "error", err)
 		}
 
 		// Remove plugin files - try both the original ID and resolved ID

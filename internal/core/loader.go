@@ -749,6 +749,16 @@ func (l *PluginLoader) ScanAndStart(ctx context.Context, pluginID string) error 
 
 // UnregisterPlugin removes a plugin from the loader (for uninstallation)
 func (l *PluginLoader) UnregisterPlugin(pluginID string) error {
+	return l.unregisterPlugin(pluginID, false)
+}
+
+// ForceUnregisterPlugin removes a plugin from the loader even if it's running
+// This is used during uninstallation when we need to clean up regardless of state
+func (l *PluginLoader) ForceUnregisterPlugin(pluginID string) error {
+	return l.unregisterPlugin(pluginID, true)
+}
+
+func (l *PluginLoader) unregisterPlugin(pluginID string, force bool) error {
 	l.pluginsMu.Lock()
 	defer l.pluginsMu.Unlock()
 
@@ -761,12 +771,26 @@ func (l *PluginLoader) UnregisterPlugin(pluginID string) error {
 		return fmt.Errorf("cannot unregister builtin plugin: %s", pluginID)
 	}
 
-	// Allow unregistering stopped or error state plugins
-	if lp.State == PluginStateRunning || lp.State == PluginStateStarting {
+	// Check if plugin is still running (unless force is set)
+	if !force && (lp.State == PluginStateRunning || lp.State == PluginStateStarting) {
 		return fmt.Errorf("plugin is still running or starting, stop it first: %s", pluginID)
 	}
 
+	// If force and plugin is running, try to stop it first
+	if force && lp.State == PluginStateRunning {
+		l.logger.Warn("Force unregistering running plugin", "id", pluginID)
+		// Stop the plugin without holding the lock (unlock temporarily)
+		l.pluginsMu.Unlock()
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		_ = lp.Plugin.Stop(ctx)
+		cancel()
+		if lp.Runtime != nil {
+			lp.Runtime.Stop()
+		}
+		l.pluginsMu.Lock()
+	}
+
 	delete(l.plugins, pluginID)
-	l.logger.Info("Plugin unregistered", "id", pluginID)
+	l.logger.Info("Plugin unregistered", "id", pluginID, "force", force)
 	return nil
 }
