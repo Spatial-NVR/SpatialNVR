@@ -1,0 +1,158 @@
+name: Release Binaries
+
+# This workflow builds and releases standalone binaries for in-app hot updates
+# Use this for code-only releases that don't require container rebuilds
+#
+# Trigger with: git tag v1.0.0-bin && git push origin v1.0.0-bin
+# Or manually via workflow_dispatch
+
+on:
+  push:
+    tags:
+      - 'v*.*.*-bin'      # Binary-only releases (e.g., v1.0.0-bin)
+      - 'v*.*.*-hotfix'   # Hotfix releases
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to release (e.g., 1.0.0)'
+        required: true
+      create_tag:
+        description: 'Create git tag'
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - goos: linux
+            goarch: amd64
+            suffix: linux-amd64
+          - goos: linux
+            goarch: arm64
+            suffix: linux-arm64
+          - goos: darwin
+            goarch: amd64
+            suffix: darwin-amd64
+          - goos: darwin
+            goarch: arm64
+            suffix: darwin-arm64
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+
+      - name: Get version
+        id: version
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            VERSION="${{ github.event.inputs.version }}"
+          else
+            # Extract version from tag, removing suffixes like -bin, -hotfix
+            TAG="${GITHUB_REF#refs/tags/v}"
+            VERSION=$(echo "$TAG" | sed 's/-bin$//' | sed 's/-hotfix$//')
+          fi
+          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Build binary
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: 0
+        run: |
+          go build -ldflags="-s -w -X main.Version=${{ steps.version.outputs.VERSION }}" \
+            -o spatialnvr-${{ matrix.suffix }} ./cmd/nvr
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: spatialnvr-${{ matrix.suffix }}
+          path: spatialnvr-${{ matrix.suffix }}
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Get version
+        id: version
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            VERSION="${{ github.event.inputs.version }}"
+            TAG="v${VERSION}-bin"
+          else
+            TAG="${GITHUB_REF#refs/tags/}"
+            VERSION=$(echo "${TAG#v}" | sed 's/-bin$//' | sed 's/-hotfix$//')
+          fi
+          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+          echo "TAG=$TAG" >> $GITHUB_OUTPUT
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+
+      - name: Prepare release assets
+        run: |
+          mkdir -p release
+
+          for dir in dist/*/; do
+            name=$(basename "$dir")
+            binary=$(ls "$dir")
+            cp "$dir/$binary" "release/$binary"
+            chmod +x "release/$binary"
+          done
+
+          ls -la release/
+
+      - name: Generate changelog
+        run: |
+          # Get previous tag (excluding -bin and -hotfix suffixes for comparison)
+          PREV_TAG=$(git tag -l 'v*' | grep -v '\-bin$' | grep -v '\-hotfix$' | sort -V | tail -1)
+
+          echo "## SpatialNVR v${{ steps.version.outputs.VERSION }} (Binary Release)" > CHANGELOG.md
+          echo "" >> CHANGELOG.md
+          echo "This is a binary-only release for in-app hot updates." >> CHANGELOG.md
+          echo "No container rebuild is required." >> CHANGELOG.md
+          echo "" >> CHANGELOG.md
+          echo "### Installation" >> CHANGELOG.md
+          echo "These binaries can be used for hot updates via the NVR update system." >> CHANGELOG.md
+          echo "Place the appropriate binary in \`/data/bin/nvr\` and restart." >> CHANGELOG.md
+          echo "" >> CHANGELOG.md
+
+          if [ -n "$PREV_TAG" ]; then
+            echo "### Changes since $PREV_TAG" >> CHANGELOG.md
+            git log $PREV_TAG..HEAD --pretty=format:"- %s (%h)" >> CHANGELOG.md
+          fi
+
+      - name: Create tag (for workflow_dispatch)
+        if: github.event_name == 'workflow_dispatch' && github.event.inputs.create_tag == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag -a "${{ steps.version.outputs.TAG }}" -m "Binary release ${{ steps.version.outputs.VERSION }}"
+          git push origin "${{ steps.version.outputs.TAG }}"
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: "SpatialNVR v${{ steps.version.outputs.VERSION }} (Binaries)"
+          tag_name: ${{ steps.version.outputs.TAG }}
+          body_path: CHANGELOG.md
+          files: release/*
+          draft: false
+          prerelease: false

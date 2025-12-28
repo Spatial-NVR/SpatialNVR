@@ -1,26 +1,76 @@
-name: Release
+name: Release (Full)
+
+# This workflow builds Docker images AND binaries for full releases
+# Use for major/minor version releases that include container updates
+#
+# Trigger with: git tag v1.0.0 && git push origin v1.0.0
+#
+# For binary-only releases (hotfixes, in-app updates), use:
+#   git tag v1.0.0-bin && git push origin v1.0.0-bin
+# Which triggers release-binaries.yml instead
 
 on:
   push:
     tags:
-      - 'v*.*.*'
+      - 'v[0-9]+.[0-9]+.[0-9]+'           # Full releases: v1.0.0, v2.1.3
+      - 'v[0-9]+.[0-9]+.[0-9]+-alpha*'    # Alpha: v1.0.0-alpha1
+      - 'v[0-9]+.[0-9]+.[0-9]+-beta*'     # Beta: v1.0.0-beta2
+      - 'v[0-9]+.[0-9]+.[0-9]+-rc*'       # Release candidates: v1.0.0-rc1
 
 permissions:
   contents: write
   packages: write
 
 jobs:
-  release:
+  build-binaries:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - goos: linux
+            goarch: amd64
+            suffix: linux-amd64
+          - goos: linux
+            goarch: arm64
+            suffix: linux-arm64
+          - goos: darwin
+            goarch: amd64
+            suffix: darwin-amd64
+          - goos: darwin
+            goarch: arm64
+            suffix: darwin-arm64
+
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
           go-version: '1.24'
+
+      - name: Extract version
+        id: version
+        run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+
+      - name: Build binary
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: 0
+        run: |
+          go build -ldflags="-s -w -X main.Version=${{ steps.version.outputs.VERSION }}" \
+            -o spatialnvr-${{ matrix.suffix }} ./cmd/nvr
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: spatialnvr-${{ matrix.suffix }}
+          path: spatialnvr-${{ matrix.suffix }}
+
+  build-docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -64,66 +114,64 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: Build plugin binaries
+  release:
+    needs: [build-binaries, build-docker]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Extract version
+        id: version
+        run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+
+      - name: Prepare release assets
         run: |
-          mkdir -p dist/plugins
+          mkdir -p release
 
-          # Build each embedded plugin as standalone binary
-          for plugin in api config events streaming detection recording spatial-tracking; do
-            echo "Building nvr-${plugin} plugin..."
-
-            # Create plugin directory
-            mkdir -p dist/plugins/nvr-${plugin}
-
-            # Create manifest
-            cat > dist/plugins/nvr-${plugin}/manifest.yaml << EOF
-          name: nvr-${plugin}
-          version: ${{ steps.version.outputs.VERSION }}
-          description: Core NVR ${plugin} plugin
-          type: builtin
-          min_nvr_version: ${{ steps.version.outputs.VERSION }}
-          EOF
-
-            # Archive plugin
-            tar -czf dist/plugins/nvr-${plugin}-${{ steps.version.outputs.VERSION }}.tar.gz -C dist/plugins nvr-${plugin}
+          for dir in dist/*/; do
+            name=$(basename "$dir")
+            binary=$(ls "$dir")
+            cp "$dir/$binary" "release/$binary"
+            chmod +x "release/$binary"
           done
 
-      - name: Build binaries for multiple platforms
-        run: |
-          mkdir -p dist/bin
-
-          # Linux AMD64
-          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w -X main.Version=${{ steps.version.outputs.VERSION }}" -o dist/bin/spatialnvr-linux-amd64 ./cmd/nvr
-
-          # Linux ARM64
-          CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -ldflags="-s -w -X main.Version=${{ steps.version.outputs.VERSION }}" -o dist/bin/spatialnvr-linux-arm64 ./cmd/nvr
-
-          # macOS ARM64
-          CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -ldflags="-s -w -X main.Version=${{ steps.version.outputs.VERSION }}" -o dist/bin/spatialnvr-darwin-arm64 ./cmd/nvr
-
-          # macOS AMD64
-          CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 go build -ldflags="-s -w -X main.Version=${{ steps.version.outputs.VERSION }}" -o dist/bin/spatialnvr-darwin-amd64 ./cmd/nvr
+          ls -la release/
 
       - name: Generate changelog
-        id: changelog
         run: |
           # Get previous tag
           PREV_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
 
+          echo "## SpatialNVR v${{ steps.version.outputs.VERSION }}" > CHANGELOG.md
+          echo "" >> CHANGELOG.md
+          echo "### Docker Images" >> CHANGELOG.md
+          echo "- \`ghcr.io/spatial-nvr/spatialnvr:${{ steps.version.outputs.VERSION }}\` (amd64, default)" >> CHANGELOG.md
+          echo "- \`ghcr.io/spatial-nvr/spatialnvr:${{ steps.version.outputs.VERSION }}-arm64\` (arm64)" >> CHANGELOG.md
+          echo "" >> CHANGELOG.md
+          echo "### Standalone Binaries" >> CHANGELOG.md
+          echo "Download the appropriate binary for your platform below." >> CHANGELOG.md
+          echo "" >> CHANGELOG.md
+
           if [ -n "$PREV_TAG" ]; then
-            echo "## Changes since $PREV_TAG" > CHANGELOG.md
+            echo "### Changes since $PREV_TAG" >> CHANGELOG.md
             git log $PREV_TAG..HEAD --pretty=format:"- %s (%h)" >> CHANGELOG.md
           else
-            echo "## Initial Release" > CHANGELOG.md
+            echo "### Initial Release" >> CHANGELOG.md
             echo "First release of SpatialNVR" >> CHANGELOG.md
           fi
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
+          name: "SpatialNVR v${{ steps.version.outputs.VERSION }}"
           body_path: CHANGELOG.md
-          files: |
-            dist/bin/*
-            dist/plugins/*.tar.gz
+          files: release/*
           draft: false
           prerelease: ${{ contains(github.ref, 'alpha') || contains(github.ref, 'beta') || contains(github.ref, 'rc') }}
