@@ -63,6 +63,8 @@ func (p *ConfigPlugin) Initialize(ctx context.Context, runtime *sdk.PluginRuntim
 			Version: "1.0.0",
 			Cameras: []config.CameraConfig{},
 		}
+		// IMPORTANT: Set the path so Save() knows where to write
+		cfg.SetPath(p.configPath)
 	}
 	p.config = cfg
 

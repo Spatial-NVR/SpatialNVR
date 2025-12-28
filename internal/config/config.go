@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -460,6 +461,12 @@ func (c *Config) saveUnlocked() error {
 	// Add header
 	header := "# NVR System Configuration\n# Auto-generated - manual edits are preserved\n\n"
 	data = append([]byte(header), data...)
+
+	// Ensure parent directory exists
+	dir := filepath.Dir(c.path)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return fmt.Errorf("failed to create config directory: %w", err)
+	}
 
 	// Atomic write
 	tmpPath := c.path + ".tmp"
