@@ -590,6 +590,7 @@ func setupRouter(gateway *core.APIGateway, loader *core.PluginLoader, eventBus *
 			r.Post("/{id}/enable", handleEnablePlugin(loader))
 			r.Post("/{id}/disable", handleDisablePlugin(loader))
 			r.Post("/{id}/restart", handleRestartPlugin(loader))
+			r.Post("/{id}/update", handleUpdatePlugin(installer, loader))
 			r.Delete("/{id}", handleUninstallPlugin(installer, loader))
 			r.Get("/{id}/config", handleGetPluginConfig(loader))
 			r.Put("/{id}/config", handleSetPluginConfig(loader))
@@ -755,15 +756,19 @@ func handleRescanPlugins(loader *core.PluginLoader) http.HandlerFunc {
 			return
 		}
 
+		// Invalidate version cache so updates are re-checked
+		cachedVersions = nil
+		cachedVersionsTime = time.Time{}
+
 		// Return list of all plugins (including newly discovered ones)
 		plugins := loader.ListPlugins()
 		result := make([]map[string]interface{}, 0, len(plugins))
 		for _, p := range plugins {
 			result = append(result, map[string]interface{}{
-				"id":       p.Manifest.ID,
-				"name":     p.Manifest.Name,
-				"version":  p.Manifest.Version,
-				"state":    string(p.State),
+				"id":        p.Manifest.ID,
+				"name":      p.Manifest.Name,
+				"version":   p.Manifest.Version,
+				"state":     string(p.State),
 				"isBuiltin": p.IsBuiltin,
 			})
 		}
@@ -1951,6 +1956,87 @@ func handleInstallPlugin(installer *plugin.Installer, loader *core.PluginLoader)
 				"version": manifest.Version,
 			},
 			"message": message,
+		})
+	}
+}
+
+// handleUpdatePlugin updates a plugin to the latest version
+func handleUpdatePlugin(installer *plugin.Installer, loader *core.PluginLoader) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		id := chi.URLParam(r, "id")
+		slog.Info("Updating plugin", "id", id)
+
+		// Find the plugin info from catalog to get the repository URL
+		var repoURL string
+
+		// Check cached catalog for the plugin
+		if cachedCatalog != nil {
+			if plugins, ok := cachedCatalog["plugins"].([]interface{}); ok {
+				for _, p := range plugins {
+					if plugin, ok := p.(map[string]interface{}); ok {
+						if pluginID, _ := plugin["id"].(string); pluginID == id {
+							if repo, ok := plugin["repository"].(string); ok {
+								repoURL = repo
+							}
+							break
+						}
+					}
+				}
+			}
+		}
+
+		// If not found in catalog, check tracked repos in installer
+		if repoURL == "" {
+			for _, repo := range installer.GetTrackedRepos() {
+				if repo.PluginID == id {
+					repoURL = repo.URL
+					break
+				}
+			}
+		}
+
+		if repoURL == "" {
+			slog.Error("Plugin not found for update", "id", id)
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusNotFound)
+			_ = json.NewEncoder(w).Encode(map[string]string{"error": "Plugin not found or no repository URL available"})
+			return
+		}
+
+		// Stop the plugin if it's running
+		if err := loader.ForceUnregisterPlugin(id); err != nil {
+			slog.Debug("Could not stop plugin during update (may not be running)", "id", id, "error", err)
+		}
+
+		// Install the latest version from the repository
+		manifest, err := installer.InstallFromGitHub(r.Context(), repoURL)
+		if err != nil {
+			slog.Error("Failed to update plugin", "id", id, "error", err)
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusInternalServerError)
+			_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+			return
+		}
+
+		// Rescan plugins to pick up the updated version
+		if err := loader.ScanExternalPlugins(); err != nil {
+			slog.Warn("Failed to rescan plugins after update", "error", err)
+		}
+
+		// Invalidate version cache so next catalog request shows correct status
+		cachedVersions = nil
+		cachedVersionsTime = time.Time{}
+
+		slog.Info("Plugin updated successfully", "id", manifest.ID, "version", manifest.Version)
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": true,
+			"message": fmt.Sprintf("Plugin %s updated to v%s", manifest.Name, manifest.Version),
+			"plugin": map[string]interface{}{
+				"id":      manifest.ID,
+				"name":    manifest.Name,
+				"version": manifest.Version,
+			},
 		})
 	}
 }
