@@ -20,8 +20,8 @@ import (
 	"github.com/Spatial-NVR/SpatialNVR/sdk"
 )
 
-// Version is set at build time
-var Version = "0.2.1"
+// Version is set at build time (should match versions.json)
+var Version = "0.0.6"
 
 // Plugin implements the NVR updates plugin
 type Plugin struct {

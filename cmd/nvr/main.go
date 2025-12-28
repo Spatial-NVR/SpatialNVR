@@ -586,6 +586,13 @@ func setupRouter(gateway *core.APIGateway, loader *core.PluginLoader, eventBus *
 			r.Get("/", handleListPlugins(loader))
 			r.Post("/install", handleInstallPlugin(installer, loader))
 			r.Post("/rescan", handleRescanPlugins(loader))
+
+			// Catalog routes - must be before /{id} wildcard to avoid shadowing
+			r.Get("/catalog", handleGetPluginCatalog(loader))
+			r.Post("/catalog/reload", handleReloadPluginCatalog())
+			r.Post("/catalog/{pluginId}/install", handleInstallFromCatalog(installer, loader))
+
+			// Individual plugin routes - /{id} wildcard must be after specific routes
 			r.Get("/{id}", handleGetPlugin(loader))
 			r.Post("/{id}/enable", handleEnablePlugin(loader))
 			r.Post("/{id}/disable", handleDisablePlugin(loader))
@@ -620,11 +627,6 @@ func setupRouter(gateway *core.APIGateway, loader *core.PluginLoader, eventBus *
 
 		// Log streaming endpoint
 		r.Get("/logs/stream", handleLogStream())
-
-		// Plugin catalog endpoints
-		r.Get("/plugins/catalog", handleGetPluginCatalog(loader))
-		r.Post("/plugins/catalog/reload", handleReloadPluginCatalog())
-		r.Post("/plugins/catalog/{pluginId}/install", handleInstallFromCatalog(installer, loader))
 	})
 
 	// Serve static frontend files in production
