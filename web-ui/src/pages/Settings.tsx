@@ -360,21 +360,6 @@ export function Settings() {
               ]}
             />
           </SettingRow>
-
-          <SettingRow label="GitHub Token">
-            <div className="space-y-1">
-              <input
-                type="password"
-                value={githubToken}
-                onChange={(e) => setGithubToken(e.target.value)}
-                placeholder="ghp_... or github_pat_..."
-                className="w-full px-3 py-2 bg-background border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary font-mono text-sm"
-              />
-              <p className="text-xs text-muted-foreground">
-                Required for update checks on private repositories
-              </p>
-            </div>
-          </SettingRow>
         </div>
       </section>
 
@@ -493,7 +478,7 @@ export function Settings() {
       </section>
 
       {/* Updates Section */}
-      <UpdatesSection />
+      <UpdatesSection githubToken={githubToken} setGithubToken={setGithubToken} />
 
       {/* Detection Settings */}
       <section className="bg-card rounded-lg border">
@@ -830,7 +815,7 @@ function ModelStatusBadge({ status }: { status?: ModelDownloadStatus }) {
 }
 
 // Updates Section Component
-function UpdatesSection() {
+function UpdatesSection({ githubToken, setGithubToken }: { githubToken: string; setGithubToken: (token: string) => void }) {
   const queryClient = useQueryClient()
   const { addToast } = useToast()
   const [isCheckingUpdates, setIsCheckingUpdates] = useState(false)
@@ -990,6 +975,24 @@ function UpdatesSection() {
             Update All ({pendingUpdates})
           </button>
         )}
+
+        {/* GitHub Token for Private Repos */}
+        <div className="pt-4 border-t">
+          <SettingRow label="GitHub Token">
+            <div className="space-y-1">
+              <input
+                type="password"
+                value={githubToken}
+                onChange={(e) => setGithubToken(e.target.value)}
+                placeholder="ghp_... or github_pat_..."
+                className="w-full px-3 py-2 bg-background border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary font-mono text-sm"
+              />
+              <p className="text-xs text-muted-foreground">
+                Required for update checks on private repositories. Save settings to apply.
+              </p>
+            </div>
+          </SettingRow>
+        </div>
 
         {/* Last Checked */}
         {updatesData?.components?.[0]?.last_checked && (
