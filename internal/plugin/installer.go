@@ -540,6 +540,8 @@ func (i *Installer) UninstallPlugin(pluginID string) error {
 	i.mu.Lock()
 	defer i.mu.Unlock()
 
+	i.logger.Info("Uninstalling plugin", "id", pluginID)
+
 	// Find and remove from tracked repos
 	var repoKey string
 	for key, r := range i.repos {
@@ -552,52 +554,100 @@ func (i *Installer) UninstallPlugin(pluginID string) error {
 	if repoKey != "" {
 		delete(i.repos, repoKey)
 		_ = i.saveTrackedRepos()
+		i.logger.Debug("Removed plugin from tracked repos", "id", pluginID, "key", repoKey)
 	}
 
 	// Find the plugin directory by scanning for manifest with matching ID
 	// This handles both old-style (repo name) and new-style (manifest ID) directories
 	pluginDir := i.findPluginDirectory(pluginID)
 	if pluginDir == "" {
-		// Fallback to direct ID match
-		pluginDir = filepath.Join(i.pluginsDir, pluginID)
+		// Fallback to direct ID match (the pluginID might be the directory name)
+		fallbackDir := filepath.Join(i.pluginsDir, pluginID)
+		if _, err := os.Stat(fallbackDir); err == nil {
+			pluginDir = fallbackDir
+			i.logger.Debug("Using fallback directory path", "id", pluginID, "dir", pluginDir)
+		}
+	}
+
+	if pluginDir == "" {
+		i.logger.Warn("Plugin directory not found, may already be uninstalled", "id", pluginID)
+		return nil // Not an error - plugin may already be uninstalled
+	}
+
+	// Verify directory exists before attempting removal
+	if _, err := os.Stat(pluginDir); os.IsNotExist(err) {
+		i.logger.Warn("Plugin directory does not exist, may already be uninstalled", "id", pluginID, "dir", pluginDir)
+		return nil // Not an error - already gone
 	}
 
 	if err := os.RemoveAll(pluginDir); err != nil {
-		return fmt.Errorf("failed to remove plugin directory: %w", err)
+		return fmt.Errorf("failed to remove plugin directory %s: %w", pluginDir, err)
 	}
 
-	i.logger.Info("Plugin uninstalled", "id", pluginID, "dir", pluginDir)
+	i.logger.Info("Plugin uninstalled successfully", "id", pluginID, "dir", pluginDir)
 	return nil
 }
 
 // findPluginDirectory scans for a plugin directory with a manifest matching the given ID
+// It also checks if the pluginID matches a directory name directly (for backwards compatibility)
 func (i *Installer) findPluginDirectory(pluginID string) string {
 	entries, err := os.ReadDir(i.pluginsDir)
 	if err != nil {
+		i.logger.Debug("Failed to read plugins directory", "error", err)
 		return ""
 	}
 
+	// First pass: check manifest IDs
 	for _, entry := range entries {
 		if !entry.IsDir() {
 			continue
 		}
 
-		manifestPath := filepath.Join(i.pluginsDir, entry.Name(), "manifest.yaml")
+		dirPath := filepath.Join(i.pluginsDir, entry.Name())
+
+		// Try manifest.yaml first
+		manifestPath := filepath.Join(dirPath, "manifest.yaml")
 		data, err := os.ReadFile(manifestPath)
 		if err != nil {
-			continue
+			// Try manifest.json as fallback
+			manifestPath = filepath.Join(dirPath, "manifest.json")
+			data, err = os.ReadFile(manifestPath)
+			if err != nil {
+				continue
+			}
 		}
 
 		var manifest PluginManifest
-		if err := yaml.Unmarshal(data, &manifest); err != nil {
-			continue
+		if strings.HasSuffix(manifestPath, ".json") {
+			if err := json.Unmarshal(data, &manifest); err != nil {
+				continue
+			}
+		} else {
+			if err := yaml.Unmarshal(data, &manifest); err != nil {
+				continue
+			}
 		}
 
 		if manifest.ID == pluginID {
-			return filepath.Join(i.pluginsDir, entry.Name())
+			i.logger.Debug("Found plugin by manifest ID", "id", pluginID, "dir", dirPath)
+			return dirPath
 		}
 	}
 
+	// Second pass: check if pluginID matches a directory name directly
+	// This handles cases where the directory name doesn't match the manifest ID
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		if entry.Name() == pluginID {
+			dirPath := filepath.Join(i.pluginsDir, entry.Name())
+			i.logger.Debug("Found plugin by directory name", "id", pluginID, "dir", dirPath)
+			return dirPath
+		}
+	}
+
+	i.logger.Debug("Plugin directory not found", "id", pluginID)
 	return ""
 }
 
