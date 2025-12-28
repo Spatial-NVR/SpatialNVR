@@ -580,7 +580,7 @@ export function Recordings() {
               {timeline && (
                 <div
                   ref={timelineRef}
-                  className="mt-3 h-8 bg-muted/30 rounded cursor-pointer overflow-hidden relative"
+                  className="mt-3 h-8 bg-muted/50 rounded cursor-pointer overflow-hidden relative border border-border"
                   onClick={(e) => {
                     if (!timelineRef.current) return
                     const rect = timelineRef.current.getBoundingClientRect()
@@ -597,7 +597,7 @@ export function Recordings() {
                     seekToTime(clickTime)
                   }}
                 >
-                  {/* Recording segments */}
+                  {/* Recording segments - bright blue bars */}
                   {timeline.segments?.map((segment, i) => {
                     if (segment.type !== 'recording') return null
 
@@ -611,13 +611,15 @@ export function Recordings() {
                     const segEnd = new Date(segment.end_time)
 
                     const left = ((segStart.getTime() - dayStart.getTime()) / dayDuration) * 100
-                    const width = ((segEnd.getTime() - segStart.getTime()) / dayDuration) * 100
+                    // Ensure minimum width of 0.5% so short segments are visible
+                    const width = Math.max(0.5, ((segEnd.getTime() - segStart.getTime()) / dayDuration) * 100)
 
                     return (
                       <div
                         key={i}
-                        className="absolute top-1 bottom-1 bg-primary/60 rounded"
+                        className="absolute top-0.5 bottom-0.5 bg-blue-500 rounded shadow-sm"
                         style={{ left: `${Math.max(0, left)}%`, width: `${Math.min(100 - left, width)}%` }}
+                        title={`Recording: ${segStart.toLocaleTimeString()} - ${segEnd.toLocaleTimeString()}`}
                       />
                     )
                   })}
@@ -655,6 +657,13 @@ export function Recordings() {
                       )}
                     </div>
                   ))}
+
+                  {/* No recordings indicator */}
+                  {!timeline.segments?.some(s => s.type === 'recording') && (
+                    <div className="absolute inset-0 flex items-center justify-center">
+                      <span className="text-xs text-muted-foreground">No recordings for this day</span>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -802,9 +811,10 @@ export function Recordings() {
                         </div>
                       ))}
 
-                      {/* Recording segments */}
+                      {/* Recording segments - bright blue bars */}
                       {timeline?.segments?.map((segment, i) => {
-                        if (segment.type !== 'recording') return null
+                        // Show all segments that are recordings (type === 'recording' or no type for raw segments)
+                        if (segment.type && segment.type !== 'recording') return null
 
                         const segStart = new Date(segment.start_time)
                         const segEnd = new Date(segment.end_time)
@@ -815,16 +825,26 @@ export function Recordings() {
                         const startMinutes = (segStart.getTime() - dayStart.getTime()) / 60000
                         const endMinutes = (segEnd.getTime() - dayStart.getTime()) / 60000
                         const top = startMinutes
-                        const height = Math.max(2, endMinutes - startMinutes)
+                        const height = Math.max(4, endMinutes - startMinutes) // Minimum 4px height
 
                         return (
                           <div
                             key={i}
-                            className="absolute left-12 right-2 bg-primary/30 rounded-sm border-l-2 border-primary"
+                            className="absolute left-10 right-2 bg-blue-500 rounded border-l-4 border-blue-600 shadow-sm"
                             style={{ top: `${top}px`, height: `${height}px` }}
+                            title={`Recording: ${segStart.toLocaleTimeString()} - ${segEnd.toLocaleTimeString()}`}
                           />
                         )
                       })}
+
+                      {/* Show "No recordings" message if no segments */}
+                      {(!timeline?.segments || timeline.segments.length === 0) && !timelineLoading && (
+                        <div className="absolute inset-0 flex items-center justify-center">
+                          <div className="text-center text-muted-foreground bg-background/80 px-4 py-2 rounded">
+                            <p className="text-sm">No recordings for this day</p>
+                          </div>
+                        </div>
+                      )}
 
                       {/* Event markers on timeline */}
                       {events?.map((event) => {
