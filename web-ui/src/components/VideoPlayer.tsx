@@ -18,7 +18,7 @@ interface VideoPlayerProps {
   maxHeight?: string  // Max height constraint like "70vh" for tall videos
 }
 
-type StreamMode = 'mse' | 'mse-h264' | 'hls' | 'mjpeg'
+type StreamMode = 'webrtc' | 'mse' | 'mse-h264' | 'hls' | 'mjpeg'
 
 // Detect iOS/Safari which doesn't support MSE well
 function isIOSOrSafari(): boolean {
@@ -49,12 +49,12 @@ function getSupportedCodecs(): string {
     'hvc1.1.6.L153.B0', // H.265 main 5.1
   ]
 
-  // Audio codecs need to be tested differently - with audio/mp4 or combined with video
+  // Audio codecs - opus is most universally supported for transcoded streams
   const audioCodecs = [
+    'opus',             // OPUS - best browser support, go2rtc can transcode to this
     'mp4a.40.2',        // AAC LC
     'mp4a.40.5',        // AAC HE (SBR)
     'flac',             // FLAC (for PCM audio)
-    'opus',             // OPUS
   ]
 
   // Test video codecs with video/mp4
@@ -74,6 +74,9 @@ function getSupportedCodecs(): string {
     }
     return false
   })
+
+  console.log('[VideoPlayer] Supported video codecs:', supportedVideo)
+  console.log('[VideoPlayer] Supported audio codecs:', supportedAudio)
 
   return [...supportedVideo, ...supportedAudio].join(',')
 }
@@ -137,14 +140,175 @@ export const VideoPlayer = memo(function VideoPlayer({
   // Use cached working mode or start with appropriate mode for platform
   const getInitialMode = (): StreamMode => {
     if (workingModes[cameraId]) return workingModes[cameraId]
-    // iOS/Safari: prefer HLS as MSE support is poor
-    if (isIOSOrSafari()) {
-      return 'hls'
-    }
-    // Most browsers don't support H265, so skip straight to H264 transcoding
-    return supportsH265() ? 'mse' : 'mse-h264'
+    // Try WebRTC first - best audio support and low latency
+    // Falls back to MSE/HLS if WebRTC fails
+    return 'webrtc'
   }
   const [mode, setMode] = useState<StreamMode>(getInitialMode)
+
+  // WebRTC streaming - best audio support via native browser WebRTC
+  useEffect(() => {
+    if (mode !== 'webrtc' || !cameraId) return
+
+    const video = videoRef.current
+    if (!video) return
+
+    setIsLoading(true)
+    setError(null)
+    const streamName = cameraId.toLowerCase().replace(/\s+/g, '_')
+    let mounted = true
+    let pc: RTCPeerConnection | null = null
+    let ws: WebSocket | null = null
+
+    const connect = async () => {
+      try {
+        // Create peer connection
+        pc = new RTCPeerConnection({
+          iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+        })
+
+        // Handle incoming tracks
+        pc.ontrack = (event) => {
+          console.log('[VideoPlayer] WebRTC track received:', event.track.kind)
+          if (event.streams && event.streams[0]) {
+            video.srcObject = event.streams[0]
+            if (mounted) {
+              setIsLoading(false)
+              workingModes[cameraId] = 'webrtc'
+              // Check if we have audio tracks
+              const audioTracks = event.streams[0].getAudioTracks()
+              console.log('[VideoPlayer] WebRTC audio tracks:', audioTracks.length)
+              if (audioTracks.length > 0) {
+                setHasAudioTrack(true)
+              }
+            }
+            video.play().catch(() => {})
+          }
+        }
+
+        pc.oniceconnectionstatechange = () => {
+          console.log('[VideoPlayer] WebRTC ICE state:', pc?.iceConnectionState)
+          if (pc?.iceConnectionState === 'failed' || pc?.iceConnectionState === 'disconnected') {
+            console.log('[VideoPlayer] WebRTC failed, falling back to MSE')
+            if (mounted) {
+              // Fall back based on platform
+              if (isIOSOrSafari()) {
+                setMode('hls')
+              } else {
+                setMode(supportsH265() ? 'mse' : 'mse-h264')
+              }
+            }
+          }
+        }
+
+        // Add transceivers for audio and video (receive only)
+        pc.addTransceiver('video', { direction: 'recvonly' })
+        pc.addTransceiver('audio', { direction: 'recvonly' })
+
+        // Create offer
+        const offer = await pc.createOffer()
+        await pc.setLocalDescription(offer)
+
+        // Wait for ICE gathering to complete (with timeout)
+        await new Promise<void>((resolve) => {
+          if (pc!.iceGatheringState === 'complete') {
+            resolve()
+            return
+          }
+          const checkState = () => {
+            if (pc?.iceGatheringState === 'complete') {
+              pc.removeEventListener('icegatheringstatechange', checkState)
+              resolve()
+            }
+          }
+          pc!.addEventListener('icegatheringstatechange', checkState)
+          // Timeout after 2 seconds
+          setTimeout(resolve, 2000)
+        })
+
+        // Connect to go2rtc WebRTC endpoint via WebSocket
+        const wsUrl = `${getGo2RTCWsUrl()}/api/ws?src=${streamName}`
+        console.log('[VideoPlayer] WebRTC connecting to:', wsUrl)
+        ws = new WebSocket(wsUrl)
+
+        ws.onopen = () => {
+          // Send offer to go2rtc
+          const localDesc = pc!.localDescription
+          if (localDesc) {
+            ws!.send(JSON.stringify({
+              type: 'webrtc/offer',
+              value: localDesc.sdp
+            }))
+          }
+        }
+
+        ws.onmessage = async (event) => {
+          const msg = JSON.parse(event.data)
+
+          if (msg.type === 'webrtc/answer') {
+            console.log('[VideoPlayer] WebRTC answer received')
+            await pc!.setRemoteDescription({
+              type: 'answer',
+              sdp: msg.value
+            })
+          } else if (msg.type === 'webrtc/candidate') {
+            console.log('[VideoPlayer] WebRTC ICE candidate received')
+            await pc!.addIceCandidate({
+              candidate: msg.value,
+              sdpMid: '0'
+            })
+          }
+        }
+
+        ws.onerror = (e) => {
+          console.error('[VideoPlayer] WebRTC WebSocket error:', e)
+          if (mounted) {
+            if (isIOSOrSafari()) {
+              setMode('hls')
+            } else {
+              setMode(supportsH265() ? 'mse' : 'mse-h264')
+            }
+          }
+        }
+
+      } catch (e) {
+        console.error('[VideoPlayer] WebRTC error:', e)
+        if (mounted) {
+          if (isIOSOrSafari()) {
+            setMode('hls')
+          } else {
+            setMode(supportsH265() ? 'mse' : 'mse-h264')
+          }
+        }
+      }
+    }
+
+    connect()
+
+    // Timeout for WebRTC connection
+    const timeout = setTimeout(() => {
+      if (mounted && video.readyState < 2) {
+        console.log('[VideoPlayer] WebRTC timeout, falling back')
+        if (isIOSOrSafari()) {
+          setMode('hls')
+        } else {
+          setMode(supportsH265() ? 'mse' : 'mse-h264')
+        }
+      }
+    }, 10000)
+
+    return () => {
+      mounted = false
+      clearTimeout(timeout)
+      if (ws) {
+        ws.close()
+      }
+      if (pc) {
+        pc.close()
+      }
+      video.srcObject = null
+    }
+  }, [cameraId, mode])
 
   // MSE streaming - tries native H265 first, then H264 transcoded
   useEffect(() => {
@@ -446,11 +610,33 @@ export const VideoPlayer = memo(function VideoPlayer({
         }
 
         // Debug: Check audio state
-        console.log('[VideoPlayer] Audio unmuted')
+        console.log('[VideoPlayer] Audio unmuted - debugging audio state:')
         console.log('[VideoPlayer] - video.volume:', video.volume)
         console.log('[VideoPlayer] - video.muted:', video.muted)
         console.log('[VideoPlayer] - video.paused:', video.paused)
+        console.log('[VideoPlayer] - video.readyState:', video.readyState)
         console.log('[VideoPlayer] - video.src type:', video.src.startsWith('blob:') ? 'MSE blob' : 'direct')
+
+        // Check audio tracks (audioTracks API is not in standard TypeScript types)
+        const videoWithAudio = video as HTMLVideoElement & { audioTracks?: { length: number; [index: number]: { enabled: boolean; kind: string; label: string } } }
+        if (videoWithAudio.audioTracks && videoWithAudio.audioTracks.length > 0) {
+          console.log('[VideoPlayer] - audioTracks:', videoWithAudio.audioTracks.length)
+          for (let i = 0; i < videoWithAudio.audioTracks.length; i++) {
+            const track = videoWithAudio.audioTracks[i]
+            console.log(`[VideoPlayer] - track ${i}: enabled=${track.enabled}, kind=${track.kind}, label=${track.label}`)
+            // Enable the track if disabled
+            if (!track.enabled) {
+              track.enabled = true
+              console.log(`[VideoPlayer] - Enabled audio track ${i}`)
+            }
+          }
+        } else {
+          console.log('[VideoPlayer] - No audioTracks API or no tracks found')
+        }
+
+        // Also log the current stream mode
+        console.log('[VideoPlayer] - Current mode:', mode)
+        console.log('[VideoPlayer] - hasAudioTrack state:', hasAudioTrack)
       } else {
         console.log('[VideoPlayer] Audio muted')
       }
@@ -472,7 +658,9 @@ export const VideoPlayer = memo(function VideoPlayer({
 
   const retry = () => {
     setError(null)
-    setMode('mse')
+    // Clear cached working mode to retry from the beginning
+    delete workingModes[cameraId]
+    setMode('webrtc')
     setIsLoading(true)
   }
 
@@ -535,7 +723,7 @@ export const VideoPlayer = memo(function VideoPlayer({
         <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/50">
           <Loader2 className="h-8 w-8 animate-spin text-white mb-2" />
           <p className="text-white/70 text-xs">
-            {mode === 'mse' ? 'Connecting (H265)...' : mode === 'mse-h264' ? 'Transcoding to H264...' : mode === 'hls' ? 'Connecting (HLS)...' : 'Loading...'}
+            {mode === 'webrtc' ? 'Connecting (WebRTC)...' : mode === 'mse' ? 'Connecting (H265)...' : mode === 'mse-h264' ? 'Transcoding to H264...' : mode === 'hls' ? 'Connecting (HLS)...' : 'Loading...'}
           </p>
         </div>
       )}
@@ -567,7 +755,7 @@ export const VideoPlayer = memo(function VideoPlayer({
         <div className="absolute bottom-0 left-0 right-0 p-2 bg-gradient-to-t from-black/60 to-transparent opacity-0 hover:opacity-100 transition-opacity">
           <div className="flex items-center justify-between">
             <span className="text-white/50 text-xs uppercase">
-              {mode === 'mse' ? 'H265' : mode === 'mse-h264' ? 'H264' : mode === 'hls' ? 'HLS' : 'MJPEG'}
+              {mode === 'webrtc' ? 'WebRTC' : mode === 'mse' ? 'H265' : mode === 'mse-h264' ? 'H264' : mode === 'hls' ? 'HLS' : 'MJPEG'}
             </span>
             <div className="flex items-center gap-2">
               {showDetectionToggle && (

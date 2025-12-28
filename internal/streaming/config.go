@@ -108,31 +108,17 @@ func (g *ConfigGenerator) Generate(cameras []CameraStream) *Go2RTCConfig {
 		streamURL := g.buildStreamURL(cam.URL, cam.Username, cam.Password)
 		streamName := sanitizeStreamName(cam.ID)
 
-		// Use the Frigate/go2rtc pattern for audio transcoding:
-		// 1. First entry: Raw stream URL (source)
-		// 2. Second entry: ffmpeg:stream_name#audio=opus (references source by name, transcodes to opus)
-		//
-		// This pattern works because:
-		// - go2rtc connects to the raw URL as the source
-		// - The ffmpeg reference uses the already-connected stream
-		// - audio=opus transcodes whatever audio codec to opus (required for WebRTC)
-		// - Video is automatically copied without re-encoding
-		//
-		// See: https://docs.frigate.video/configuration/restream/
-		config.Streams[streamName] = []string{
-			streamURL,                                           // Raw source stream
-			fmt.Sprintf("ffmpeg:%s#audio=opus", streamName),     // Transcode audio to opus
-		}
+		// go2rtc stream configuration:
+		// Just use the raw stream URL - go2rtc handles audio transcoding via request params
+		// When client requests `audio=opus`, go2rtc will transcode on-the-fly
+		// Using ffmpeg:#audio=opus in stream definition can cause issues
+		config.Streams[streamName] = []string{streamURL}
 
 		// Sub stream if available
 		if cam.SubURL != "" {
 			subStreamURL := g.buildStreamURL(cam.SubURL, cam.Username, cam.Password)
 			subStreamName := streamName + "_sub"
-
-			config.Streams[subStreamName] = []string{
-				subStreamURL,                                          // Raw source stream
-				fmt.Sprintf("ffmpeg:%s#audio=opus", subStreamName),    // Transcode audio to opus
-			}
+			config.Streams[subStreamName] = []string{subStreamURL}
 		}
 	}
 
