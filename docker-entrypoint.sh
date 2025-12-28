@@ -64,19 +64,17 @@ mkdir -p "$DATA_DIR" \
 
 # Set ownership of directories if running as root
 if [ "$(id -u)" = "0" ]; then
-    chown nvr:nvr "$DATA_DIR" \
-                  "$DATA_DIR/bin" \
-                  "$DATA_DIR/web" \
-                  "$DATA_DIR/plugins" \
-                  "$DATA_DIR/updates" \
-                  "$DATA_DIR/recordings" \
-                  "$DATA_DIR/thumbnails" \
-                  "$DATA_DIR/snapshots" \
-                  "$DATA_DIR/exports" \
-                  "$DATA_DIR/models" \
-                  /config \
-                  /tokens \
-                  /img 2>/dev/null || true
+    # Recursively chown directories that need write access
+    chown -R nvr:nvr "$DATA_DIR" \
+                     /config \
+                     /tokens \
+                     /img 2>/dev/null || true
+
+    # Ensure config file is writable if it exists (0600 for security - contains secrets)
+    if [ -f "/config/config.yaml" ]; then
+        chown nvr:nvr /config/config.yaml 2>/dev/null || true
+        chmod 600 /config/config.yaml 2>/dev/null || true
+    fi
 fi
 
 # Determine which NVR binary to use
