@@ -310,18 +310,22 @@ func configurePlugins(loader *core.PluginLoader, dataPath, configPath string, po
 
 // findConfigFile looks for config file in multiple locations
 func findConfigFile(dataPath string) string {
-	// Check environment variable first
+	// Check environment variable first - always respect it if set
+	// This is the primary way to configure the config path in Docker
 	if configPath := os.Getenv("CONFIG_PATH"); configPath != "" {
-		if _, err := os.Stat(configPath); err == nil {
-			return configPath
+		// Ensure parent directory exists
+		dir := filepath.Dir(configPath)
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			slog.Warn("Failed to create config directory", "dir", dir, "error", err)
 		}
+		return configPath
 	}
 
-	// Check common locations
+	// Check common locations for existing config files
 	locations := []string{
+		"/config/config.yaml",
 		filepath.Join(dataPath, "config.yaml"),
 		"./config/config.yaml",
-		"/config/config.yaml",
 		filepath.Join(os.Getenv("HOME"), "nvr-prototype/config/config.yaml"),
 	}
 
@@ -331,7 +335,10 @@ func findConfigFile(dataPath string) string {
 		}
 	}
 
-	// Default fallback
+	// Default fallback - prefer /config in Docker environments
+	if _, err := os.Stat("/config"); err == nil {
+		return "/config/config.yaml"
+	}
 	return filepath.Join(dataPath, "config.yaml")
 }
 
