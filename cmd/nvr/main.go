@@ -1785,31 +1785,60 @@ func handleInstallPlugin(installer *plugin.Installer, loader *core.PluginLoader)
 func handleUninstallPlugin(installer *plugin.Installer, loader *core.PluginLoader) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		id := chi.URLParam(r, "id")
+		slog.Info("Uninstalling plugin", "id", id)
+
+		// Try to find the actual plugin ID by checking the loader
+		// The ID might be "wyze-plugin" (directory name) but loader has "wyze" (manifest ID)
+		actualID := id
+		plugins := loader.ListPlugins()
+		for _, p := range plugins {
+			// Check if the provided ID matches either the manifest ID or could be derived from it
+			if p.Manifest.ID == id {
+				actualID = id
+				break
+			}
+			// Also check if provided ID with "-plugin" suffix stripped matches
+			if strings.TrimSuffix(id, "-plugin") == p.Manifest.ID {
+				actualID = p.Manifest.ID
+				slog.Info("Resolved plugin ID", "provided", id, "actual", actualID)
+				break
+			}
+		}
 
 		// First, try to stop the plugin if it's running or in error state
-		if err := loader.DisablePlugin(r.Context(), id); err != nil {
-			// Log but don't fail - plugin might already be stopped or not exist in loader
-			slog.Debug("Could not disable plugin during uninstall", "id", id, "error", err)
+		if err := loader.DisablePlugin(r.Context(), actualID); err != nil {
+			slog.Debug("Could not disable plugin during uninstall", "id", actualID, "error", err)
 		}
 
 		// Unregister the plugin from the loader
-		if err := loader.UnregisterPlugin(id); err != nil {
-			// Log but don't fail - we still want to remove the files
-			slog.Debug("Could not unregister plugin during uninstall", "id", id, "error", err)
+		if err := loader.UnregisterPlugin(actualID); err != nil {
+			slog.Debug("Could not unregister plugin during uninstall", "id", actualID, "error", err)
 		}
 
-		// Remove plugin files
-		if err := installer.UninstallPlugin(id); err != nil {
+		// Remove plugin files - try both the original ID and resolved ID
+		var uninstallErr error
+		if err := installer.UninstallPlugin(actualID); err != nil {
+			// If that failed and we have a different original ID, try that too
+			if actualID != id {
+				uninstallErr = installer.UninstallPlugin(id)
+			} else {
+				uninstallErr = err
+			}
+		}
+
+		if uninstallErr != nil {
+			slog.Error("Failed to uninstall plugin files", "id", id, "error", uninstallErr)
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusInternalServerError)
-			_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+			_ = json.NewEncoder(w).Encode(map[string]string{"error": uninstallErr.Error()})
 			return
 		}
 
+		slog.Info("Plugin uninstalled successfully", "id", actualID)
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{
 			"success": true,
-			"id":      id,
+			"id":      actualID,
 			"message": "Plugin uninstalled successfully",
 		})
 	}
