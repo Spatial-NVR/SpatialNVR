@@ -1,0 +1,416 @@
+name: Auto Release
+
+# Automatically detect changes and create appropriate releases
+# - Core/Docker changes → Full release (v1.2.3)
+# - Plugin-only changes → Component release (v1.2.3-streaming)
+# - Multiple components → Multiple tags
+
+on:
+  push:
+    branches:
+      - main
+    paths-ignore:
+      - '*.md'
+      - 'docs/**'
+      - '.github/workflows/ci.yml'
+
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  analyze:
+    runs-on: ubuntu-latest
+    outputs:
+      should_release: ${{ steps.analyze.outputs.should_release }}
+      release_type: ${{ steps.analyze.outputs.release_type }}
+      components: ${{ steps.analyze.outputs.components }}
+      version: ${{ steps.version.outputs.version }}
+      next_patch: ${{ steps.version.outputs.next_patch }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Get current version
+        id: version
+        run: |
+          # Get latest version tag (excluding component-specific tags)
+          LATEST_TAG=$(git tag -l 'v[0-9]*.[0-9]*.[0-9]*' | grep -v '\-' | sort -V | tail -1 || echo "v0.0.0")
+
+          if [ -z "$LATEST_TAG" ] || [ "$LATEST_TAG" = "" ]; then
+            LATEST_TAG="v0.0.0"
+          fi
+
+          echo "Current version: $LATEST_TAG"
+
+          # Parse version components
+          VERSION="${LATEST_TAG#v}"
+          MAJOR=$(echo "$VERSION" | cut -d. -f1)
+          MINOR=$(echo "$VERSION" | cut -d. -f2)
+          PATCH=$(echo "$VERSION" | cut -d. -f3)
+
+          # Increment patch for next release
+          NEXT_PATCH=$((PATCH + 1))
+          NEXT_VERSION="${MAJOR}.${MINOR}.${NEXT_PATCH}"
+
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "next_patch=$NEXT_VERSION" >> $GITHUB_OUTPUT
+          echo "Next version will be: $NEXT_VERSION"
+
+      - name: Analyze changes
+        id: analyze
+        run: |
+          # Get files changed since last release tag
+          LATEST_TAG=$(git tag -l 'v[0-9]*.[0-9]*.[0-9]*' | grep -v '\-' | sort -V | tail -1 || echo "")
+
+          if [ -n "$LATEST_TAG" ]; then
+            CHANGED_FILES=$(git diff --name-only $LATEST_TAG..HEAD)
+          else
+            CHANGED_FILES=$(git diff --name-only HEAD~1..HEAD 2>/dev/null || git ls-files)
+          fi
+
+          echo "Changed files:"
+          echo "$CHANGED_FILES"
+
+          # Categorize changes
+          NEEDS_DOCKER=false
+          NEEDS_CORE=false
+          CHANGED_PLUGINS=""
+
+          while IFS= read -r file; do
+            case "$file" in
+              Dockerfile*|docker-entrypoint.sh|.dockerignore)
+                NEEDS_DOCKER=true
+                ;;
+              cmd/nvr/*|internal/*|sdk/*|go.mod|go.sum)
+                NEEDS_CORE=true
+                ;;
+              plugins/nvr-streaming/*)
+                CHANGED_PLUGINS="$CHANGED_PLUGINS streaming"
+                ;;
+              plugins/nvr-recording/*)
+                CHANGED_PLUGINS="$CHANGED_PLUGINS recording"
+                ;;
+              plugins/nvr-detection/*)
+                CHANGED_PLUGINS="$CHANGED_PLUGINS detection"
+                ;;
+              plugins/nvr-core-api/*)
+                CHANGED_PLUGINS="$CHANGED_PLUGINS api"
+                ;;
+              plugins/nvr-core-config/*)
+                CHANGED_PLUGINS="$CHANGED_PLUGINS config"
+                ;;
+              plugins/nvr-core-events/*)
+                CHANGED_PLUGINS="$CHANGED_PLUGINS events"
+                ;;
+              plugins/nvr-spatial-tracking/*)
+                CHANGED_PLUGINS="$CHANGED_PLUGINS spatial"
+                ;;
+              plugins/nvr-updates/*)
+                CHANGED_PLUGINS="$CHANGED_PLUGINS updates"
+                ;;
+              web-ui/*)
+                NEEDS_DOCKER=true  # Web UI changes need container rebuild
+                ;;
+            esac
+          done <<< "$CHANGED_FILES"
+
+          # Deduplicate plugins
+          CHANGED_PLUGINS=$(echo "$CHANGED_PLUGINS" | tr ' ' '\n' | sort -u | tr '\n' ' ' | xargs)
+
+          echo "Needs Docker: $NEEDS_DOCKER"
+          echo "Needs Core: $NEEDS_CORE"
+          echo "Changed plugins: $CHANGED_PLUGINS"
+
+          # Determine release type
+          if [ "$NEEDS_DOCKER" = "true" ] || [ "$NEEDS_CORE" = "true" ]; then
+            RELEASE_TYPE="full"
+            SHOULD_RELEASE=true
+          elif [ -n "$CHANGED_PLUGINS" ]; then
+            RELEASE_TYPE="components"
+            SHOULD_RELEASE=true
+          else
+            RELEASE_TYPE="none"
+            SHOULD_RELEASE=false
+          fi
+
+          echo "Release type: $RELEASE_TYPE"
+          echo "Should release: $SHOULD_RELEASE"
+
+          echo "should_release=$SHOULD_RELEASE" >> $GITHUB_OUTPUT
+          echo "release_type=$RELEASE_TYPE" >> $GITHUB_OUTPUT
+          echo "components=$CHANGED_PLUGINS" >> $GITHUB_OUTPUT
+
+  # Full release - Docker + all binaries
+  full-release:
+    needs: analyze
+    if: needs.analyze.outputs.should_release == 'true' && needs.analyze.outputs.release_type == 'full'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create release tag
+        id: tag
+        run: |
+          VERSION="${{ needs.analyze.outputs.next_patch }}"
+          TAG="v${VERSION}"
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag -a "$TAG" -m "Release $TAG"
+          git push origin "$TAG"
+
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Build binaries
+        run: |
+          mkdir -p dist
+          VERSION="${{ steps.tag.outputs.version }}"
+
+          for platform in "linux/amd64" "linux/arm64" "darwin/amd64" "darwin/arm64"; do
+            GOOS=$(echo $platform | cut -d/ -f1)
+            GOARCH=$(echo $platform | cut -d/ -f2)
+            OUTPUT="dist/spatialnvr-${GOOS}-${GOARCH}"
+
+            echo "Building $OUTPUT..."
+            CGO_ENABLED=0 GOOS=$GOOS GOARCH=$GOARCH go build \
+              -ldflags="-s -w -X main.Version=$VERSION" \
+              -o "$OUTPUT" ./cmd/nvr
+          done
+
+          ls -la dist/
+
+      - name: Build and push Docker (amd64)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64
+          push: true
+          tags: |
+            ghcr.io/spatial-nvr/spatialnvr:${{ steps.tag.outputs.version }}
+            ghcr.io/spatial-nvr/spatialnvr:${{ steps.tag.outputs.version }}-amd64
+            ghcr.io/spatial-nvr/spatialnvr:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build and push Docker (arm64)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/arm64
+          push: true
+          tags: |
+            ghcr.io/spatial-nvr/spatialnvr:${{ steps.tag.outputs.version }}-arm64
+            ghcr.io/spatial-nvr/spatialnvr:arm64
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Generate changelog
+        run: |
+          PREV_TAG=$(git tag -l 'v[0-9]*.[0-9]*.[0-9]*' | grep -v '\-' | sort -V | tail -2 | head -1 || echo "")
+
+          cat > CHANGELOG.md << EOF
+          ## SpatialNVR v${{ steps.tag.outputs.version }}
+
+          ### Docker Images
+          - \`ghcr.io/spatial-nvr/spatialnvr:${{ steps.tag.outputs.version }}\` (amd64)
+          - \`ghcr.io/spatial-nvr/spatialnvr:${{ steps.tag.outputs.version }}-arm64\` (arm64)
+
+          ### Binaries
+          Download the appropriate binary for your platform.
+
+          EOF
+
+          if [ -n "$PREV_TAG" ]; then
+            echo "### Changes" >> CHANGELOG.md
+            git log $PREV_TAG..HEAD --pretty=format:"- %s" >> CHANGELOG.md
+          fi
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.tag.outputs.tag }}
+          name: "SpatialNVR v${{ steps.tag.outputs.version }}"
+          body_path: CHANGELOG.md
+          files: dist/*
+
+      - name: Update versions.json
+        run: |
+          VERSION="${{ steps.tag.outputs.version }}"
+          DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+
+          # Create or update versions.json
+          cat > versions.json << EOF
+          {
+            "latest": {
+              "version": "$VERSION",
+              "date": "$DATE",
+              "docker": {
+                "amd64": "ghcr.io/spatial-nvr/spatialnvr:$VERSION",
+                "arm64": "ghcr.io/spatial-nvr/spatialnvr:$VERSION-arm64"
+              },
+              "binaries": {
+                "linux-amd64": "https://github.com/Spatial-NVR/SpatialNVR/releases/download/v$VERSION/spatialnvr-linux-amd64",
+                "linux-arm64": "https://github.com/Spatial-NVR/SpatialNVR/releases/download/v$VERSION/spatialnvr-linux-arm64",
+                "darwin-amd64": "https://github.com/Spatial-NVR/SpatialNVR/releases/download/v$VERSION/spatialnvr-darwin-amd64",
+                "darwin-arm64": "https://github.com/Spatial-NVR/SpatialNVR/releases/download/v$VERSION/spatialnvr-darwin-arm64"
+              }
+            },
+            "components": {}
+          }
+          EOF
+
+          # Commit versions.json
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add versions.json
+          git commit -m "Update versions.json to v$VERSION" || true
+          git push origin main || true
+
+  # Component release - specific plugin binaries only
+  component-release:
+    needs: analyze
+    if: needs.analyze.outputs.should_release == 'true' && needs.analyze.outputs.release_type == 'components'
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        platform:
+          - { goos: linux, goarch: amd64, suffix: linux-amd64 }
+          - { goos: linux, goarch: arm64, suffix: linux-arm64 }
+          - { goos: darwin, goarch: amd64, suffix: darwin-amd64 }
+          - { goos: darwin, goarch: arm64, suffix: darwin-arm64 }
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+
+      - name: Build binary
+        env:
+          GOOS: ${{ matrix.platform.goos }}
+          GOARCH: ${{ matrix.platform.goarch }}
+          CGO_ENABLED: 0
+        run: |
+          VERSION="${{ needs.analyze.outputs.next_patch }}"
+          go build -ldflags="-s -w -X main.Version=$VERSION" \
+            -o spatialnvr-${{ matrix.platform.suffix }} ./cmd/nvr
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: spatialnvr-${{ matrix.platform.suffix }}
+          path: spatialnvr-${{ matrix.platform.suffix }}
+
+  component-release-finalize:
+    needs: [analyze, component-release]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+
+      - name: Prepare binaries
+        run: |
+          mkdir -p release
+          for dir in dist/*/; do
+            name=$(basename "$dir")
+            cp "$dir/$name" "release/$name"
+            chmod +x "release/$name"
+          done
+          ls -la release/
+
+      - name: Create component tags and releases
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION="${{ needs.analyze.outputs.next_patch }}"
+          COMPONENTS="${{ needs.analyze.outputs.components }}"
+          DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          # Create a tag for each changed component
+          for component in $COMPONENTS; do
+            TAG="v${VERSION}-${component}"
+            echo "Creating release for $TAG..."
+
+            # Create tag
+            git tag -a "$TAG" -m "Component release: $component v$VERSION" || true
+            git push origin "$TAG" || true
+
+            # Create release with binaries
+            NOTES="## Component Update: $component v$VERSION
+
+          This is a component-specific update. Only the $component plugin was modified.
+
+          ### Installation
+          Replace the binary in \`/data/bin/nvr\` and restart the NVR.
+
+          ### Changed Component
+          - \`$component\`
+          "
+
+            gh release create "$TAG" \
+              --title "$component v$VERSION" \
+              --notes "$NOTES" \
+              release/* || true
+          done
+
+          # Update versions.json with component versions
+          if [ -f versions.json ]; then
+            # Read existing versions.json
+            CURRENT=$(cat versions.json)
+          else
+            CURRENT='{"latest":{},"components":{}}'
+          fi
+
+          # Build component updates
+          COMPONENT_JSON="{"
+          for component in $COMPONENTS; do
+            if [ "$COMPONENT_JSON" != "{" ]; then
+              COMPONENT_JSON="$COMPONENT_JSON,"
+            fi
+            COMPONENT_JSON="$COMPONENT_JSON\"$component\":{\"version\":\"$VERSION\",\"date\":\"$DATE\",\"tag\":\"v${VERSION}-${component}\"}"
+          done
+          COMPONENT_JSON="$COMPONENT_JSON}"
+
+          # Create updated versions.json
+          cat > versions.json << EOF
+          {
+            "latest": $(echo "$CURRENT" | jq '.latest // {}'),
+            "components": $(echo "$CURRENT" | jq --argjson updates "$COMPONENT_JSON" '.components + $updates')
+          }
+          EOF
+
+          git add versions.json
+          git commit -m "Update versions.json with component releases" || true
+          git push origin main || true
