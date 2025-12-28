@@ -14,6 +14,23 @@
 
 set -e
 
+# Ensure required directories exist with correct permissions
+# This is needed when volumes are mounted on a fresh system
+DATA_DIR="${DATA_PATH:-/data}"
+mkdir -p "$DATA_DIR" \
+         "$DATA_DIR/bin" \
+         "$DATA_DIR/web" \
+         "$DATA_DIR/plugins" \
+         "$DATA_DIR/updates" \
+         "$DATA_DIR/recordings" \
+         "$DATA_DIR/thumbnails" \
+         "$DATA_DIR/snapshots" \
+         "$DATA_DIR/exports" \
+         "$DATA_DIR/models" \
+         /config \
+         /tokens \
+         /img 2>/dev/null || true
+
 # Determine which NVR binary to use
 if [ -x "/data/bin/nvr" ]; then
     NVR_BIN="/data/bin/nvr"
