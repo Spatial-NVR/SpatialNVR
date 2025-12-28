@@ -21,10 +21,11 @@ import (
 
 // Installer handles plugin installation from Git repositories
 type Installer struct {
-	pluginsDir string
-	cacheDir   string
-	logger     *slog.Logger
-	httpClient *http.Client
+	pluginsDir  string
+	cacheDir    string
+	logger      *slog.Logger
+	httpClient  *http.Client
+	githubToken string // GitHub token for API rate limits
 
 	// Tracked repositories for update checking
 	repos map[string]*TrackedRepo
@@ -71,6 +72,9 @@ type GitHubAsset struct {
 func NewInstaller(pluginsDir string, logger *slog.Logger) *Installer {
 	cacheDir := filepath.Join(pluginsDir, ".cache")
 
+	// Check for GitHub token from environment
+	githubToken := os.Getenv("GITHUB_TOKEN")
+
 	return &Installer{
 		pluginsDir:    pluginsDir,
 		cacheDir:      cacheDir,
@@ -78,7 +82,15 @@ func NewInstaller(pluginsDir string, logger *slog.Logger) *Installer {
 		httpClient:    &http.Client{Timeout: 30 * time.Second},
 		repos:         make(map[string]*TrackedRepo),
 		checkInterval: 1 * time.Hour, // Check for updates hourly
+		githubToken:   githubToken,
 	}
+}
+
+// SetGitHubToken sets the GitHub token for API requests (higher rate limits)
+func (i *Installer) SetGitHubToken(token string) {
+	i.mu.Lock()
+	defer i.mu.Unlock()
+	i.githubToken = token
 }
 
 // Start begins the update checking loop
@@ -286,6 +298,14 @@ func (i *Installer) getLatestRelease(ctx context.Context, owner, repo string) (*
 	}
 	req.Header.Set("Accept", "application/vnd.github.v3+json")
 	req.Header.Set("User-Agent", "NVR-Plugin-Installer")
+
+	// Add GitHub token if available (for higher rate limits)
+	i.mu.RLock()
+	token := i.githubToken
+	i.mu.RUnlock()
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
 
 	resp, err := i.httpClient.Do(req)
 	if err != nil {
