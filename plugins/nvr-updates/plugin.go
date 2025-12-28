@@ -15,6 +15,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/Spatial-NVR/SpatialNVR/internal/config"
 	"github.com/Spatial-NVR/SpatialNVR/internal/updater"
 	"github.com/Spatial-NVR/SpatialNVR/sdk"
 )
@@ -26,9 +27,10 @@ var Version = "0.2.1"
 type Plugin struct {
 	sdk.BaseServicePlugin
 
-	updater *updater.Updater
-	config  *PluginConfig
-	logger  *slog.Logger
+	updater    *updater.Updater
+	config     *PluginConfig
+	configPath string // Path to the system config file
+	logger     *slog.Logger
 
 	mu sync.RWMutex
 }
@@ -105,11 +107,17 @@ func (p *Plugin) Initialize(ctx context.Context, rt *sdk.PluginRuntime) error {
 	}
 	p.config.AutoUpdate = rt.ConfigBool("auto_update", false)
 
+	// Store config path for later use
+	p.configPath = rt.ConfigString("config_path", "")
+
 	// Get GitHub token from config or environment
 	if token := rt.ConfigString("github_token", ""); token != "" {
 		p.config.GitHubToken = token
 	} else if token := os.Getenv("GITHUB_TOKEN"); token != "" {
 		p.config.GitHubToken = token
+	} else {
+		// Try to read from system config file
+		p.config.GitHubToken = p.loadGitHubTokenFromConfig()
 	}
 
 	return nil
@@ -410,4 +418,42 @@ func (p *Plugin) Health() sdk.HealthStatus {
 			"needs_restart":   strconv.FormatBool(p.updater.NeedsRestart()),
 		},
 	}
+}
+
+// EventSubscriptions returns events this plugin subscribes to
+func (p *Plugin) EventSubscriptions() []string {
+	return []string{sdk.EventTypeConfigChanged}
+}
+
+// HandleEvent handles events from the event bus
+func (p *Plugin) HandleEvent(eventType string, data interface{}) {
+	if eventType == sdk.EventTypeConfigChanged {
+		// Reload GitHub token from config
+		newToken := p.loadGitHubTokenFromConfig()
+		if newToken != "" && newToken != p.config.GitHubToken {
+			p.mu.Lock()
+			p.config.GitHubToken = newToken
+			// Update the updater's config if running
+			if p.updater != nil {
+				p.updater.SetGitHubToken(newToken)
+			}
+			p.mu.Unlock()
+			p.logger.Info("GitHub token updated from config")
+		}
+	}
+}
+
+// loadGitHubTokenFromConfig reads the GitHub token from the system config file
+func (p *Plugin) loadGitHubTokenFromConfig() string {
+	if p.configPath == "" {
+		return ""
+	}
+
+	cfg, err := config.Load(p.configPath)
+	if err != nil {
+		p.logger.Debug("Could not load config for GitHub token", "error", err)
+		return ""
+	}
+
+	return cfg.System.Updates.GitHubToken
 }

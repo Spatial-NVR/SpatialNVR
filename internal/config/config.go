@@ -56,6 +56,7 @@ type UpdatesConfig struct {
 	CheckInterval      string `yaml:"check_interval" json:"check_interval"`           // How often to check (e.g., "6h")
 	IncludePrereleases bool   `yaml:"include_prereleases" json:"include_prereleases"` // Include beta/alpha releases
 	NotifyOnly         bool   `yaml:"notify_only" json:"notify_only"`                 // Only notify, don't auto-update
+	GitHubToken        string `yaml:"github_token" json:"github_token"`               // GitHub token for private repos
 }
 
 // DatabaseConfig holds database settings

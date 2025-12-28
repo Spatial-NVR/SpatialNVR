@@ -135,6 +135,7 @@ export function Settings() {
   const [systemName, setSystemName] = useState('')
   const [timezone, setTimezone] = useState('UTC')
   const [gridColumns, setGridColumns] = useState(3)
+  const [githubToken, setGithubToken] = useState('')
 
   // Storage settings
   const [maxStorage, setMaxStorage] = useState(1000)
@@ -169,6 +170,7 @@ export function Settings() {
       setMaxStorage(config.system?.max_storage_gb || 1000)
       setRetentionDays(config.storage?.retention?.default_days || 30)
       setGridColumns(config.preferences?.ui?.dashboard?.grid_columns || 3)
+      setGithubToken(config.system?.updates?.github_token || '')
 
       // Detection settings
       if (config.detection) {
@@ -221,6 +223,7 @@ export function Settings() {
         name: systemName,
         timezone: timezone,
         max_storage_gb: maxStorage,
+        updates: githubToken ? { github_token: githubToken } : undefined,
       },
       storage: {
         retention: {
@@ -356,6 +359,21 @@ export function Settings() {
                 { value: '4', label: '4 columns' },
               ]}
             />
+          </SettingRow>
+
+          <SettingRow label="GitHub Token">
+            <div className="space-y-1">
+              <input
+                type="password"
+                value={githubToken}
+                onChange={(e) => setGithubToken(e.target.value)}
+                placeholder="ghp_... or github_pat_..."
+                className="w-full px-3 py-2 bg-background border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary font-mono text-sm"
+              />
+              <p className="text-xs text-muted-foreground">
+                Required for update checks on private repositories
+              </p>
+            </div>
           </SettingRow>
         </div>
       </section>

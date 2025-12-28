@@ -304,6 +304,7 @@ func configurePlugins(loader *core.PluginLoader, dataPath, configPath string, po
 		"data_path":       filepath.Join(dataPath, "updates"),
 		"check_interval":  "6h",
 		"auto_update":     false,
+		"config_path":     configPath, // Pass config path so plugin can read github_token from system config
 	})
 }
 

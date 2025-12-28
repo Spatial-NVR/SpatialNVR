@@ -137,6 +137,13 @@ func (u *Updater) SetOnRestartNeeded(fn func()) {
 	u.onRestartNeeded = fn
 }
 
+// SetGitHubToken updates the GitHub token dynamically
+func (u *Updater) SetGitHubToken(token string) {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	u.config.GitHubToken = token
+}
+
 // Start begins the update checking loop
 func (u *Updater) Start(ctx context.Context) error {
 	// Ensure data directory exists

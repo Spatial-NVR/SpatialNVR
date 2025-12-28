@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -210,6 +211,9 @@ func (p *ConfigPlugin) handleGetConfig(w http.ResponseWriter, r *http.Request) {
 			"timezone":       cfg.System.Timezone,
 			"storage_path":   cfg.System.StoragePath,
 			"max_storage_gb": cfg.System.MaxStorageGB,
+			"updates": map[string]interface{}{
+				"github_token": maskToken(cfg.System.Updates.GitHubToken),
+			},
 		},
 		"storage": map[string]interface{}{
 			"retention": map[string]interface{}{
@@ -267,6 +271,15 @@ func (p *ConfigPlugin) handleUpdateConfig(w http.ResponseWriter, r *http.Request
 		}
 		if maxStorage, ok := system["max_storage_gb"].(float64); ok {
 			cfg.System.MaxStorageGB = int(maxStorage)
+		}
+		// Handle updates.github_token
+		if updatesConfig, ok := system["updates"].(map[string]interface{}); ok {
+			if token, ok := updatesConfig["github_token"].(string); ok {
+				// Only update if it's a new token (not the masked version)
+				if token != "" && !strings.Contains(token, "****") {
+					cfg.System.Updates.GitHubToken = token
+				}
+			}
 		}
 	}
 
@@ -534,6 +547,17 @@ func (p *ConfigPlugin) respondError(w http.ResponseWriter, status int, message s
 	_ = json.NewEncoder(w).Encode(map[string]string{
 		"error": message,
 	})
+}
+
+// maskToken returns a masked version of the token for display (shows first 4 and last 4 chars)
+func maskToken(token string) string {
+	if token == "" {
+		return ""
+	}
+	if len(token) <= 8 {
+		return "********"
+	}
+	return token[:4] + "****" + token[len(token)-4:]
 }
 
 // Ensure ConfigPlugin implements the sdk.Plugin interface

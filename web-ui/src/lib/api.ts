@@ -174,6 +174,9 @@ export interface SystemConfig {
     timezone: string;
     storage_path: string;
     max_storage_gb: number;
+    updates?: {
+      github_token?: string;
+    };
     deployment: {
       mode: string;
     };
@@ -467,6 +470,9 @@ export interface ConfigUpdate {
     name?: string;
     timezone?: string;
     max_storage_gb?: number;
+    updates?: {
+      github_token?: string;
+    };
   };
   storage?: {
     retention?: {
