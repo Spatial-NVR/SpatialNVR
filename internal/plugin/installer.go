@@ -409,6 +409,10 @@ func (i *Installer) loadTrackedRepos() error {
 
 // saveTrackedRepos saves the tracked repos to disk
 func (i *Installer) saveTrackedRepos() error {
+	// Don't write empty repos file
+	if len(i.repos) == 0 {
+		return nil
+	}
 	data, err := yaml.Marshal(i.repos)
 	if err != nil {
 		return err
