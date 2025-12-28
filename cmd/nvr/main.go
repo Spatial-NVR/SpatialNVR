@@ -538,8 +538,8 @@ func setupRouter(gateway *core.APIGateway, loader *core.PluginLoader, eventBus *
 	go2rtcURL := fmt.Sprintf("http://localhost:%d", ports.Go2RTCAPI)
 	go2rtcProxy := createGo2RTCProxy(go2rtcURL, ports)
 
-	// Health check endpoint
-	r.Get("/health", func(w http.ResponseWriter, r *http.Request) {
+	// Health check endpoint - includes ready flag for startup detection
+	r.Get("/health", func(w http.ResponseWriter, req *http.Request) {
 		plugins := loader.ListPlugins()
 		pluginHealth := make(map[string]interface{})
 		allHealthy := true
@@ -560,7 +560,7 @@ func setupRouter(gateway *core.APIGateway, loader *core.PluginLoader, eventBus *
 			status = "degraded"
 		}
 
-		if err := db.Health(r.Context()); err != nil {
+		if err := db.Health(req.Context()); err != nil {
 			status = "degraded"
 			pluginHealth["database"] = "error"
 		} else {
@@ -568,7 +568,15 @@ func setupRouter(gateway *core.APIGateway, loader *core.PluginLoader, eventBus *
 		}
 
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = fmt.Fprintf(w, `{"status":"%s","version":"0.2.1","plugins":%d,"mode":"plugin-based"}`, status, len(plugins))
+		// Include ready:true so UI knows backend is fully started
+		_, _ = fmt.Fprintf(w, `{"status":"%s","ready":true,"version":"0.2.1","plugins":%d,"mode":"plugin-based"}`, status, len(plugins))
+	})
+
+	// Startup status endpoint - persists after router swap for UI polling
+	r.Get("/api/v1/startup", func(w http.ResponseWriter, req *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		state := getStartupState()
+		_ = json.NewEncoder(w).Encode(state)
 	})
 
 	// API routes
