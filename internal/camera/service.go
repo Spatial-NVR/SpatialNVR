@@ -182,6 +182,7 @@ func (s *Service) List(ctx context.Context) ([]*Camera, error) {
 			cam.Manufacturer = cfgCam.Manufacturer
 			cam.Model = cfgCam.Model
 			cam.StreamURL = cfgCam.Stream.URL
+			cam.DisplayAspectRatio = cfgCam.DisplayAspectRatio
 		}
 
 		cameras = append(cameras, cam)
@@ -242,6 +243,7 @@ func (s *Service) Get(ctx context.Context, id string) (*Camera, error) {
 		cam.Manufacturer = cfgCam.Manufacturer
 		cam.Model = cfgCam.Model
 		cam.StreamURL = cfgCam.Stream.URL
+		cam.DisplayAspectRatio = cfgCam.DisplayAspectRatio
 	}
 
 	return cam, nil
