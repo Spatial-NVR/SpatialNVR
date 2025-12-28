@@ -40,6 +40,7 @@ type PluginConfig struct {
 	AutoUpdateTime     string `json:"auto_update_time"` // e.g., "03:00"
 	IncludePrereleases bool   `json:"include_prereleases"`
 	DataPath           string `json:"data_path"`
+	GitHubToken        string `json:"github_token"` // GitHub token for private repos
 
 	// Per-component settings
 	Components map[string]ComponentConfig `json:"components"`
@@ -104,6 +105,13 @@ func (p *Plugin) Initialize(ctx context.Context, rt *sdk.PluginRuntime) error {
 	}
 	p.config.AutoUpdate = rt.ConfigBool("auto_update", false)
 
+	// Get GitHub token from config or environment
+	if token := rt.ConfigString("github_token", ""); token != "" {
+		p.config.GitHubToken = token
+	} else if token := os.Getenv("GITHUB_TOKEN"); token != "" {
+		p.config.GitHubToken = token
+	}
+
 	return nil
 }
 
@@ -122,6 +130,7 @@ func (p *Plugin) Start(ctx context.Context) error {
 		AutoUpdateTime:     p.config.AutoUpdateTime,
 		IncludePrereleases: p.config.IncludePrereleases,
 		DataPath:           p.config.DataPath,
+		GitHubToken:        p.config.GitHubToken,
 	}, p.logger)
 
 	// Register core components

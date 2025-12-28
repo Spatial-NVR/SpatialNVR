@@ -62,11 +62,12 @@ type UpdateStatus struct {
 
 // Config holds updater configuration
 type Config struct {
-	CheckInterval    time.Duration `json:"check_interval"`    // How often to check for updates
-	AutoUpdate       bool          `json:"auto_update"`       // Enable automatic updates
-	AutoUpdateTime   string        `json:"auto_update_time"`  // Time to apply auto-updates (e.g., "03:00")
-	IncludePrereleases bool        `json:"include_prereleases"`
-	DataPath         string        `json:"data_path"`         // Where to store downloaded updates
+	CheckInterval      time.Duration `json:"check_interval"`      // How often to check for updates
+	AutoUpdate         bool          `json:"auto_update"`         // Enable automatic updates
+	AutoUpdateTime     string        `json:"auto_update_time"`    // Time to apply auto-updates (e.g., "03:00")
+	IncludePrereleases bool          `json:"include_prereleases"`
+	DataPath           string        `json:"data_path"`           // Where to store downloaded updates
+	GitHubToken        string        `json:"github_token"`        // GitHub token for private repos
 }
 
 // Updater manages component updates
@@ -374,6 +375,11 @@ func (u *Updater) getLatestRelease(ctx context.Context, repo string) (*GitHubRel
 	req.Header.Set("Accept", "application/vnd.github.v3+json")
 	req.Header.Set("User-Agent", "SpatialNVR-Updater")
 
+	// Add GitHub token for private repos if configured
+	if u.config.GitHubToken != "" {
+		req.Header.Set("Authorization", "Bearer "+u.config.GitHubToken)
+	}
+
 	resp, err := u.client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch release: %w", err)
@@ -414,6 +420,12 @@ func (u *Updater) downloadAsset(ctx context.Context, url, destPath, componentNam
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
 		return err
+	}
+
+	// Add GitHub token for private repos if configured
+	if u.config.GitHubToken != "" {
+		req.Header.Set("Authorization", "Bearer "+u.config.GitHubToken)
+		req.Header.Set("Accept", "application/octet-stream")
 	}
 
 	resp, err := u.client.Do(req)
