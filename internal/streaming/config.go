@@ -108,21 +108,20 @@ func (g *ConfigGenerator) Generate(cameras []CameraStream) *Go2RTCConfig {
 		streamURL := g.buildStreamURL(cam.URL, cam.Username, cam.Password)
 		streamName := sanitizeStreamName(cam.ID)
 
-		// Use ffmpeg for all streams to ensure proper audio transcoding to opus
-		// The #video=copy#audio=copy#audio=opus approach:
-		// - video=copy: Copy video codec without re-encoding (fast, no quality loss)
-		// - audio=copy: First copy/extract the audio from the source
-		// - audio=opus: Then transcode audio to opus (required for WebRTC compatibility)
-		// This is the proven Frigate/go2rtc pattern for handling various camera audio codecs
-		if strings.HasPrefix(streamURL, "ffmpeg:") {
-			// Already an ffmpeg source, add audio transcoding parameters
-			streamURL = streamURL + "#video=copy#audio=copy#audio=opus"
-			config.Streams[streamName] = []string{streamURL}
-		} else {
-			// Wrap all streams with ffmpeg for consistent audio transcoding
-			config.Streams[streamName] = []string{
-				fmt.Sprintf("ffmpeg:%s#video=copy#audio=copy#audio=opus", streamURL),
-			}
+		// Use the Frigate/go2rtc pattern for audio transcoding:
+		// 1. First entry: Raw stream URL (source)
+		// 2. Second entry: ffmpeg:stream_name#audio=opus (references source by name, transcodes to opus)
+		//
+		// This pattern works because:
+		// - go2rtc connects to the raw URL as the source
+		// - The ffmpeg reference uses the already-connected stream
+		// - audio=opus transcodes whatever audio codec to opus (required for WebRTC)
+		// - Video is automatically copied without re-encoding
+		//
+		// See: https://docs.frigate.video/configuration/restream/
+		config.Streams[streamName] = []string{
+			streamURL,                                           // Raw source stream
+			fmt.Sprintf("ffmpeg:%s#audio=opus", streamName),     // Transcode audio to opus
 		}
 
 		// Sub stream if available
@@ -130,13 +129,9 @@ func (g *ConfigGenerator) Generate(cameras []CameraStream) *Go2RTCConfig {
 			subStreamURL := g.buildStreamURL(cam.SubURL, cam.Username, cam.Password)
 			subStreamName := streamName + "_sub"
 
-			if strings.HasPrefix(subStreamURL, "ffmpeg:") {
-				subStreamURL = subStreamURL + "#video=copy#audio=copy#audio=opus"
-				config.Streams[subStreamName] = []string{subStreamURL}
-			} else {
-				config.Streams[subStreamName] = []string{
-					fmt.Sprintf("ffmpeg:%s#video=copy#audio=copy#audio=opus", subStreamURL),
-				}
+			config.Streams[subStreamName] = []string{
+				subStreamURL,                                          // Raw source stream
+				fmt.Sprintf("ffmpeg:%s#audio=opus", subStreamName),    // Transcode audio to opus
 			}
 		}
 	}

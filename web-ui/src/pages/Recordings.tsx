@@ -20,7 +20,9 @@ import {
   Dog,
   Package,
   Eye,
-  Radio
+  Radio,
+  List,
+  GripVertical
 } from 'lucide-react'
 import { cameraApi, eventApi, type Camera as CameraType, type Event } from '../lib/api'
 import { usePorts } from '../hooks/usePorts'
@@ -164,9 +166,13 @@ export function Recordings() {
   const [isMuted, setIsMuted] = useState(true)
   const [videoStartTime, setVideoStartTime] = useState<Date | null>(null)
   const [playbackSpeed, setPlaybackSpeed] = useState(1)
+  const [rightPanelTab, setRightPanelTab] = useState<'events' | 'timeline'>('timeline')
+  const [isDragging, setIsDragging] = useState(false)
+  const [dragTime, setDragTime] = useState<Date | null>(null)
 
   const videoRef = useRef<HTMLVideoElement>(null)
   const timelineRef = useRef<HTMLDivElement>(null)
+  const verticalTimelineRef = useRef<HTMLDivElement>(null)
 
   const { data: cameras } = useQuery({
     queryKey: ['cameras'],
@@ -238,7 +244,7 @@ export function Recordings() {
   }, [apiUrl, selectedCamera])
 
   // Seek to a specific time
-  const seekToTime = useCallback((time: Date) => {
+  const seekToTime = useCallback((time: Date, autoPlay = false) => {
     setViewMode('playback')
     setCurrentTime(time)
     setVideoStartTime(time)
@@ -246,11 +252,47 @@ export function Recordings() {
       const url = getStreamUrl(time)
       videoRef.current.src = url
       videoRef.current.load()
-      if (isPlaying) {
+      if (autoPlay || isPlaying) {
+        setIsPlaying(true)
         videoRef.current.play().catch(() => {})
       }
     }
   }, [getStreamUrl, isPlaying])
+
+  // Preview time during scrubbing (updates video without loading new source every time)
+  const previewTime = useCallback((time: Date) => {
+    setViewMode('playback')
+    setDragTime(time)
+    setCurrentTime(time)
+    // Load video at this position for preview
+    if (videoRef.current) {
+      const url = getStreamUrl(time)
+      if (videoRef.current.src !== url) {
+        videoRef.current.src = url
+        videoRef.current.load()
+      }
+    }
+  }, [getStreamUrl])
+
+  // Handle vertical timeline drag
+  const handleTimelineDrag = useCallback((clientY: number) => {
+    if (!verticalTimelineRef.current) return null
+
+    const rect = verticalTimelineRef.current.getBoundingClientRect()
+    const scrollTop = verticalTimelineRef.current.scrollTop
+    const relativeY = clientY - rect.top + scrollTop
+
+    // Each hour is 60px tall, timeline starts at midnight
+    const hourHeight = 60
+    const totalMinutes = (relativeY / hourHeight) * 60
+    const hours = Math.floor(totalMinutes / 60)
+    const minutes = Math.floor(totalMinutes % 60)
+
+    const time = new Date(selectedDate)
+    time.setHours(Math.min(23, Math.max(0, hours)), Math.min(59, Math.max(0, minutes)), 0, 0)
+
+    return time
+  }, [selectedDate])
 
   // Jump to event
   const jumpToEvent = useCallback((event: Event) => {
@@ -635,78 +677,308 @@ export function Recordings() {
           </div>
         </div>
 
-        {/* Right side - Events panel */}
+        {/* Right side - Events/Timeline panel with tabs */}
         <div className="w-80 border-l border-border flex flex-col shrink-0">
-          <div className="p-3 border-b border-border flex items-center justify-between">
-            <h2 className="font-semibold">Events</h2>
-            <span className="text-xs text-muted-foreground">
-              {events?.length || 0} events
-            </span>
+          {/* Tab headers */}
+          <div className="flex border-b border-border shrink-0">
+            <button
+              onClick={() => setRightPanelTab('timeline')}
+              className={`flex-1 px-4 py-3 text-sm font-medium transition-colors flex items-center justify-center gap-2 ${
+                rightPanelTab === 'timeline'
+                  ? 'text-foreground border-b-2 border-primary bg-muted/30'
+                  : 'text-muted-foreground hover:text-foreground hover:bg-muted/20'
+              }`}
+            >
+              <Clock size={16} />
+              Timeline
+            </button>
+            <button
+              onClick={() => setRightPanelTab('events')}
+              className={`flex-1 px-4 py-3 text-sm font-medium transition-colors flex items-center justify-center gap-2 ${
+                rightPanelTab === 'events'
+                  ? 'text-foreground border-b-2 border-primary bg-muted/30'
+                  : 'text-muted-foreground hover:text-foreground hover:bg-muted/20'
+              }`}
+            >
+              <List size={16} />
+              Events
+              {events && events.length > 0 && (
+                <span className="ml-1 px-1.5 py-0.5 text-xs bg-primary/20 text-primary rounded-full">
+                  {events.length}
+                </span>
+              )}
+            </button>
           </div>
 
-          <div className="flex-1 overflow-y-auto">
-            {!selectedCamera ? (
-              <div className="p-4 text-center text-muted-foreground">
-                <Camera size={32} className="mx-auto mb-2 opacity-50" />
-                <p className="text-sm">Select a camera</p>
-              </div>
-            ) : timelineLoading ? (
-              <div className="flex items-center justify-center p-8">
-                <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-primary" />
-              </div>
-            ) : !hasRecordings && (!events || events.length === 0) ? (
-              <div className="p-4 text-center text-muted-foreground">
-                <Clock size={32} className="mx-auto mb-2 opacity-50" />
-                <p className="text-sm">No recordings or events</p>
-                <p className="text-xs mt-1">for {new Date(selectedDate).toLocaleDateString()}</p>
-              </div>
-            ) : events && events.length === 0 ? (
-              <div className="p-4 text-center text-muted-foreground">
-                <AlertCircle size={32} className="mx-auto mb-2 opacity-50" />
-                <p className="text-sm">No events detected</p>
-                <p className="text-xs mt-1">Recordings available for playback</p>
+          {/* Tab content */}
+          <div className="flex-1 overflow-hidden">
+            {rightPanelTab === 'timeline' ? (
+              /* Timeline Tab */
+              <div className="h-full flex flex-col">
+                {!selectedCamera ? (
+                  <div className="flex-1 flex items-center justify-center text-muted-foreground">
+                    <div className="text-center">
+                      <Camera size={32} className="mx-auto mb-2 opacity-50" />
+                      <p className="text-sm">Select a camera</p>
+                    </div>
+                  </div>
+                ) : timelineLoading ? (
+                  <div className="flex-1 flex items-center justify-center">
+                    <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-primary" />
+                  </div>
+                ) : (
+                  /* Vertical scrollable timeline */
+                  <div
+                    ref={verticalTimelineRef}
+                    className="flex-1 overflow-y-auto relative select-none"
+                    style={{ cursor: isDragging ? 'grabbing' : 'grab' }}
+                    onMouseDown={(e) => {
+                      e.preventDefault()
+                      setIsDragging(true)
+                      setIsPlaying(false)
+                      const time = handleTimelineDrag(e.clientY)
+                      if (time) previewTime(time)
+                    }}
+                    onMouseMove={(e) => {
+                      if (!isDragging) return
+                      const time = handleTimelineDrag(e.clientY)
+                      if (time) previewTime(time)
+                    }}
+                    onMouseUp={() => {
+                      if (isDragging && dragTime) {
+                        setIsDragging(false)
+                        seekToTime(dragTime, true) // Auto-play on release
+                        setDragTime(null)
+                      }
+                    }}
+                    onMouseLeave={() => {
+                      if (isDragging && dragTime) {
+                        setIsDragging(false)
+                        seekToTime(dragTime, true)
+                        setDragTime(null)
+                      }
+                    }}
+                    onTouchStart={(e) => {
+                      setIsDragging(true)
+                      setIsPlaying(false)
+                      const time = handleTimelineDrag(e.touches[0].clientY)
+                      if (time) previewTime(time)
+                    }}
+                    onTouchMove={(e) => {
+                      if (!isDragging) return
+                      const time = handleTimelineDrag(e.touches[0].clientY)
+                      if (time) previewTime(time)
+                    }}
+                    onTouchEnd={() => {
+                      if (isDragging && dragTime) {
+                        setIsDragging(false)
+                        seekToTime(dragTime, true)
+                        setDragTime(null)
+                      }
+                    }}
+                  >
+                    {/* Timeline content - 24 hours */}
+                    <div className="relative" style={{ height: '1440px' }}> {/* 24 hours * 60px */}
+                      {/* Hour markers */}
+                      {Array.from({ length: 24 }).map((_, hour) => (
+                        <div
+                          key={hour}
+                          className="absolute left-0 right-0 border-t border-border/50"
+                          style={{ top: `${hour * 60}px` }}
+                        >
+                          <span className="absolute left-2 -top-2.5 text-xs text-muted-foreground bg-background px-1">
+                            {hour.toString().padStart(2, '0')}:00
+                          </span>
+                          {/* Half hour marker */}
+                          <div
+                            className="absolute left-8 right-0 border-t border-border/20"
+                            style={{ top: '30px' }}
+                          />
+                        </div>
+                      ))}
+
+                      {/* Recording segments */}
+                      {timeline?.segments?.map((segment, i) => {
+                        if (segment.type !== 'recording') return null
+
+                        const segStart = new Date(segment.start_time)
+                        const segEnd = new Date(segment.end_time)
+
+                        const dayStart = new Date(selectedDate)
+                        dayStart.setHours(0, 0, 0, 0)
+
+                        const startMinutes = (segStart.getTime() - dayStart.getTime()) / 60000
+                        const endMinutes = (segEnd.getTime() - dayStart.getTime()) / 60000
+                        const top = startMinutes
+                        const height = Math.max(2, endMinutes - startMinutes)
+
+                        return (
+                          <div
+                            key={i}
+                            className="absolute left-12 right-2 bg-primary/30 rounded-sm border-l-2 border-primary"
+                            style={{ top: `${top}px`, height: `${height}px` }}
+                          />
+                        )
+                      })}
+
+                      {/* Event markers on timeline */}
+                      {events?.map((event) => {
+                        const eventInfo = getEventInfo(event.event_type)
+                        const Icon = eventInfo.icon
+                        const eventTime = new Date(event.timestamp * 1000)
+
+                        const dayStart = new Date(selectedDate)
+                        dayStart.setHours(0, 0, 0, 0)
+
+                        const minutes = (eventTime.getTime() - dayStart.getTime()) / 60000
+                        if (minutes < 0 || minutes > 1440) return null
+
+                        return (
+                          <button
+                            key={event.id}
+                            className="absolute left-12 right-2 flex items-center gap-2 px-2 py-1 rounded hover:bg-accent/50 transition-colors group z-10"
+                            style={{ top: `${minutes - 10}px` }}
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              jumpToEvent(event)
+                            }}
+                            onMouseDown={(e) => e.stopPropagation()}
+                          >
+                            <div
+                              className="w-5 h-5 rounded flex items-center justify-center shrink-0"
+                              style={{ backgroundColor: `${eventInfo.color}30` }}
+                            >
+                              <Icon size={12} style={{ color: eventInfo.color }} />
+                            </div>
+                            <span className="text-xs truncate opacity-70 group-hover:opacity-100">
+                              {event.label || eventInfo.label}
+                            </span>
+                            <span className="text-[10px] text-muted-foreground ml-auto shrink-0">
+                              {formatTimeShort(eventTime)}
+                            </span>
+                          </button>
+                        )
+                      })}
+
+                      {/* Current time indicator */}
+                      {currentTime && !isDragging && (
+                        (() => {
+                          const dayStart = new Date(selectedDate)
+                          dayStart.setHours(0, 0, 0, 0)
+                          const minutes = (currentTime.getTime() - dayStart.getTime()) / 60000
+
+                          if (minutes < 0 || minutes > 1440) return null
+
+                          return (
+                            <div
+                              className="absolute left-0 right-0 flex items-center pointer-events-none z-20"
+                              style={{ top: `${minutes}px` }}
+                            >
+                              <div className="w-2 h-2 rounded-full bg-red-500 ml-1" />
+                              <div className="flex-1 h-0.5 bg-red-500" />
+                            </div>
+                          )
+                        })()
+                      )}
+
+                      {/* Drag indicator */}
+                      {isDragging && dragTime && (
+                        (() => {
+                          const dayStart = new Date(selectedDate)
+                          dayStart.setHours(0, 0, 0, 0)
+                          const minutes = (dragTime.getTime() - dayStart.getTime()) / 60000
+
+                          return (
+                            <div
+                              className="absolute left-0 right-0 flex items-center pointer-events-none z-30"
+                              style={{ top: `${minutes}px` }}
+                            >
+                              <div className="w-3 h-3 rounded-full bg-primary ml-0.5 shadow-lg" />
+                              <div className="flex-1 h-0.5 bg-primary" />
+                              <div className="absolute left-6 -top-2.5 px-2 py-0.5 bg-primary text-primary-foreground text-xs rounded shadow-lg">
+                                {formatTime(dragTime)}
+                              </div>
+                            </div>
+                          )
+                        })()
+                      )}
+
+                      {/* Scrub hint */}
+                      <div className="absolute top-2 right-2 flex items-center gap-1 text-xs text-muted-foreground bg-background/80 px-2 py-1 rounded">
+                        <GripVertical size={12} />
+                        Drag to scrub
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
             ) : (
-              <div className="divide-y divide-border">
-                {events?.map((event) => {
-                  const eventInfo = getEventInfo(event.event_type)
-                  const Icon = eventInfo.icon
-                  const eventTime = new Date(event.timestamp * 1000)
+              /* Events Tab */
+              <div className="h-full overflow-y-auto">
+                {!selectedCamera ? (
+                  <div className="p-4 text-center text-muted-foreground">
+                    <Camera size={32} className="mx-auto mb-2 opacity-50" />
+                    <p className="text-sm">Select a camera</p>
+                  </div>
+                ) : timelineLoading ? (
+                  <div className="flex items-center justify-center p-8">
+                    <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-primary" />
+                  </div>
+                ) : !hasRecordings && (!events || events.length === 0) ? (
+                  <div className="p-4 text-center text-muted-foreground">
+                    <Clock size={32} className="mx-auto mb-2 opacity-50" />
+                    <p className="text-sm">No recordings or events</p>
+                    <p className="text-xs mt-1">for {new Date(selectedDate).toLocaleDateString()}</p>
+                  </div>
+                ) : events && events.length === 0 ? (
+                  <div className="p-4 text-center text-muted-foreground">
+                    <AlertCircle size={32} className="mx-auto mb-2 opacity-50" />
+                    <p className="text-sm">No events detected</p>
+                    <p className="text-xs mt-1">Recordings available for playback</p>
+                  </div>
+                ) : (
+                  <div className="divide-y divide-border">
+                    {events?.map((event) => {
+                      const eventInfo = getEventInfo(event.event_type)
+                      const Icon = eventInfo.icon
+                      const eventTime = new Date(event.timestamp * 1000)
 
-                  return (
-                    <button
-                      key={event.id}
-                      onClick={() => jumpToEvent(event)}
-                      className="w-full p-3 hover:bg-accent text-left transition-colors flex items-start gap-3"
-                    >
-                      <div
-                        className="w-10 h-10 rounded-lg flex items-center justify-center shrink-0"
-                        style={{ backgroundColor: `${eventInfo.color}20` }}
-                      >
-                        <Icon size={20} style={{ color: eventInfo.color }} />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center justify-between gap-2">
-                          <span className="font-medium text-sm truncate">
-                            {event.label || eventInfo.label}
-                          </span>
-                          <span className="text-xs text-muted-foreground shrink-0">
-                            {formatTimeShort(eventTime)}
-                          </span>
-                        </div>
-                        <div className="text-xs text-muted-foreground mt-0.5">
-                          {event.confidence ? `${Math.round(event.confidence * 100)}% confidence` : event.event_type}
-                        </div>
-                      </div>
-                    </button>
-                  )
-                })}
+                      return (
+                        <button
+                          key={event.id}
+                          onClick={() => jumpToEvent(event)}
+                          className="w-full p-3 hover:bg-accent text-left transition-colors flex items-start gap-3"
+                        >
+                          <div
+                            className="w-10 h-10 rounded-lg flex items-center justify-center shrink-0"
+                            style={{ backgroundColor: `${eventInfo.color}20` }}
+                          >
+                            <Icon size={20} style={{ color: eventInfo.color }} />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="font-medium text-sm truncate">
+                                {event.label || eventInfo.label}
+                              </span>
+                              <span className="text-xs text-muted-foreground shrink-0">
+                                {formatTimeShort(eventTime)}
+                              </span>
+                            </div>
+                            <div className="text-xs text-muted-foreground mt-0.5">
+                              {event.confidence ? `${Math.round(event.confidence * 100)}% confidence` : event.event_type}
+                            </div>
+                          </div>
+                        </button>
+                      )
+                    })}
+                  </div>
+                )}
               </div>
             )}
           </div>
 
           {/* Quick actions */}
-          <div className="p-3 border-t border-border bg-muted/30">
+          <div className="p-3 border-t border-border bg-muted/30 shrink-0">
             <div className="flex gap-2">
               <button
                 className="flex-1 px-3 py-2 text-xs bg-background border border-border rounded-md hover:bg-accent transition-colors flex items-center justify-center gap-2"

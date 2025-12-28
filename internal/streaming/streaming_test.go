@@ -314,15 +314,20 @@ func TestConfigGenerator_Generate(t *testing.T) {
 		t.Errorf("Expected 3 streams, got %d", len(config.Streams))
 	}
 
-	// Check camera1 stream has credentials and audio transcoding
+	// Check camera1 stream has credentials and audio transcoding (Frigate pattern)
 	if streams, ok := config.Streams["camera1"]; ok {
-		if len(streams) != 1 {
-			t.Errorf("Expected 1 source for camera1 (ffmpeg with audio transcode), got %d", len(streams))
+		if len(streams) != 2 {
+			t.Errorf("Expected 2 sources for camera1 (raw + opus transcode), got %d", len(streams))
 		}
-		// Stream should be wrapped with ffmpeg for audio transcoding
-		expected := "ffmpeg:rtsp://admin:password@192.168.1.100/stream#video=copy#audio=copy#audio=opus"
-		if streams[0] != expected {
-			t.Errorf("Unexpected stream URL: got %s, want %s", streams[0], expected)
+		// First entry: raw stream with credentials
+		expectedRaw := "rtsp://admin:password@192.168.1.100/stream"
+		if streams[0] != expectedRaw {
+			t.Errorf("Unexpected raw stream URL: got %s, want %s", streams[0], expectedRaw)
+		}
+		// Second entry: ffmpeg reference for audio transcoding
+		expectedTranscode := "ffmpeg:camera1#audio=opus"
+		if streams[1] != expectedTranscode {
+			t.Errorf("Unexpected transcode URL: got %s, want %s", streams[1], expectedTranscode)
 		}
 	} else {
 		t.Error("camera1 stream not found")
@@ -895,10 +900,18 @@ func TestConfigGenerator_Generate_MultipleStreams(t *testing.T) {
 		t.Errorf("Expected 4 streams, got %d", len(config.Streams))
 	}
 
-	// Verify credentials are added (1 source with ffmpeg wrapper)
+	// Verify credentials are added (Frigate pattern: 2 entries per stream)
 	if streams, ok := config.Streams["cam3"]; ok {
-		if len(streams) != 1 || !strings.Contains(streams[0], "admin:pass@") {
-			t.Errorf("Credentials not properly added: %v", streams)
+		if len(streams) != 2 {
+			t.Errorf("Expected 2 entries for cam3, got %d", len(streams))
+		}
+		// First entry should have credentials in raw URL
+		if !strings.Contains(streams[0], "admin:pass@") {
+			t.Errorf("Credentials not properly added to raw URL: %v", streams[0])
+		}
+		// Second entry should be ffmpeg opus transcoding reference
+		if streams[1] != "ffmpeg:cam3#audio=opus" {
+			t.Errorf("Expected ffmpeg opus transcoding reference, got: %v", streams[1])
 		}
 	}
 }
