@@ -111,7 +111,7 @@ jobs:
                 CHANGED_PLUGINS="$CHANGED_PLUGINS updates"
                 ;;
               web-ui/*)
-                NEEDS_DOCKER=true  # Web UI changes need container rebuild
+                CHANGED_PLUGINS="$CHANGED_PLUGINS web-ui"  # Web UI is hot-updatable
                 ;;
             esac
           done <<< "$CHANGED_FILES"

@@ -19,6 +19,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -52,6 +53,60 @@ const (
 	defaultPluginsDir = "/plugins"
 )
 
+// StartupState tracks the initialization progress
+type StartupState struct {
+	Phase       string    `json:"phase"`
+	Message     string    `json:"message"`
+	Ready       bool      `json:"ready"`
+	StartedAt   time.Time `json:"started_at"`
+	ReadyAt     *time.Time `json:"ready_at,omitempty"`
+	Error       string    `json:"error,omitempty"`
+}
+
+var (
+	startupState = &StartupState{
+		Phase:     "initializing",
+		Message:   "Starting NVR...",
+		Ready:     false,
+		StartedAt: time.Now(),
+	}
+	startupMu sync.RWMutex
+)
+
+func updateStartupState(phase, message string) {
+	startupMu.Lock()
+	defer startupMu.Unlock()
+	startupState.Phase = phase
+	startupState.Message = message
+	slog.Info("Startup progress", "phase", phase, "message", message)
+}
+
+func setStartupReady() {
+	startupMu.Lock()
+	defer startupMu.Unlock()
+	now := time.Now()
+	startupState.Ready = true
+	startupState.Phase = "ready"
+	startupState.Message = "NVR is ready"
+	startupState.ReadyAt = &now
+	duration := now.Sub(startupState.StartedAt)
+	slog.Info("Startup complete", "duration", duration.Round(time.Millisecond))
+}
+
+func setStartupError(err error) {
+	startupMu.Lock()
+	defer startupMu.Unlock()
+	startupState.Phase = "error"
+	startupState.Message = "Startup failed"
+	startupState.Error = err.Error()
+}
+
+func getStartupState() StartupState {
+	startupMu.RLock()
+	defer startupMu.RUnlock()
+	return *startupState
+}
+
 func main() {
 	// Initialize structured logging with stream capture
 	logLevel := slog.LevelInfo
@@ -82,125 +137,229 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	// Get configuration paths - check multiple locations
+	// Get configuration paths
 	dataPath := getEnv("DATA_PATH", defaultDataPath)
 	pluginsDir := getEnv("PLUGINS_DIR", filepath.Join(dataPath, "plugins"))
 
-	// Find config file - check multiple locations
-	configPath := findConfigFile(dataPath)
-	slog.Info("Using configuration", "config_path", configPath, "data_path", dataPath)
-
-	// Ensure directories exist
+	// Ensure directories exist (fast operation)
 	_ = os.MkdirAll(dataPath, 0755)
 	_ = os.MkdirAll(pluginsDir, 0755)
 
-	// Open database
-	dbConfig := database.DefaultConfig(dataPath)
-	db, err := database.Open(dbConfig)
-	if err != nil {
-		slog.Error("Failed to open database", "error", err)
-		os.Exit(1)
-	}
-	defer func() { _ = db.Close() }()
+	// Find config file
+	configPath := findConfigFile(dataPath)
 
-	// Run migrations
-	migrator := database.NewMigrator(db)
-	if err := migrator.Run(ctx); err != nil {
-		slog.Error("Failed to run migrations", "error", err)
-		os.Exit(1)
-	}
+	// ==========================================================================
+	// Start HTTP server IMMEDIATELY so UI loads fast
+	// Backend initialization happens in background
+	// ==========================================================================
 
-	// Initialize embedded NATS event bus with allocated port
-	eventBusCfg := core.DefaultEventBusConfig()
-	eventBusCfg.Port = ports.NATS
-	eventBusCfg.PortManager = portManager
-	eventBus, err := core.NewEventBus(eventBusCfg, logger)
-	if err != nil {
-		slog.Error("Failed to create event bus", "error", err)
-		os.Exit(1)
-	}
-	defer eventBus.Stop()
-
-	// Start embedded detection server before plugins
-	// This provides the detection backend that the detection plugin connects to
-	embeddedDetection := detection.NewEmbeddedServer(detection.EmbeddedServerConfig{
-		Port:   ports.Detection,
-		Logger: logger,
-	})
-	if err := embeddedDetection.Start(ctx); err != nil {
-		slog.Error("Failed to start embedded detection server", "error", err)
-		os.Exit(1)
-	}
-	defer func() { _ = embeddedDetection.Stop(ctx) }()
-	slog.Info("Embedded detection server started", "port", ports.Detection)
-
-	// Create plugin loader
-	loader := core.NewPluginLoader(pluginsDir, eventBus, db.DB, logger)
-
-	// Register core builtin plugins (including spatial tracking)
-	registerCorePlugins(loader, dataPath)
-
-	// Configure plugins with resolved ports
-	configurePlugins(loader, dataPath, configPath, ports)
-
-	// Load any saved plugin configurations (e.g., Wyze credentials)
-	if err := loader.LoadPluginConfigs(); err != nil {
-		slog.Warn("Failed to load plugin configs", "error", err)
-	}
-
-	// Start plugin loader (starts all plugins in dependency order)
-	if err := loader.Start(ctx); err != nil {
-		slog.Error("Failed to start plugin loader", "error", err)
-		os.Exit(1)
-	}
-	defer func() { _ = loader.Stop() }()
-
-	// Create API gateway
-	gateway := core.NewAPIGateway(loader, eventBus, logger)
-
-	// Create plugin installer
-	installer := plugin.NewInstaller(pluginsDir, logger)
-	if err := installer.Start(ctx); err != nil {
-		slog.Warn("Failed to start plugin installer", "error", err)
-	}
-	defer installer.Stop()
-
-	// Setup HTTP router with spatial tracking routes
-	router := setupRouter(gateway, loader, eventBus, db, ports, installer)
-
-	// Server configuration - use resolved port
 	addr := fmt.Sprintf("%s:%d", defaultAddress, ports.API)
+
+	// Create minimal router that serves UI and startup status
+	earlyRouter := chi.NewRouter()
+	earlyRouter.Use(middleware.Recoverer)
+	earlyRouter.Use(cors.Handler(cors.Options{
+		AllowedOrigins:   []string{"*"},
+		AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
+		AllowedHeaders:   []string{"*"},
+		AllowCredentials: true,
+	}))
+
+	// Startup status endpoint - UI polls this
+	earlyRouter.Get("/api/v1/startup", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		state := getStartupState()
+		_ = json.NewEncoder(w).Encode(state)
+	})
+
+	// Health check always works
+	earlyRouter.Get("/health", func(w http.ResponseWriter, r *http.Request) {
+		state := getStartupState()
+		w.Header().Set("Content-Type", "application/json")
+		if state.Ready {
+			_, _ = fmt.Fprint(w, `{"status":"healthy","ready":true}`)
+		} else {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			_, _ = fmt.Fprintf(w, `{"status":"starting","ready":false,"phase":"%s"}`, state.Phase)
+		}
+	})
+
+	// Serve static frontend files immediately
+	webPath := os.Getenv("WEB_PATH")
+	if webPath == "" {
+		webPath = "/app/web"
+	}
+	if info, err := os.Stat(webPath); err == nil && info.IsDir() {
+		fs := http.FileServer(http.Dir(webPath))
+		earlyRouter.Get("/*", func(w http.ResponseWriter, req *http.Request) {
+			filePath := filepath.Join(webPath, req.URL.Path)
+			if _, err := os.Stat(filePath); err == nil {
+				fs.ServeHTTP(w, req)
+				return
+			}
+			http.ServeFile(w, req, filepath.Join(webPath, "index.html"))
+		})
+	}
 
 	server := &http.Server{
 		Addr:         addr,
-		Handler:      router,
+		Handler:      earlyRouter,
 		ReadTimeout:  15 * time.Second,
 		WriteTimeout: 15 * time.Second,
 		IdleTimeout:  60 * time.Second,
 	}
 
-	// Start server in goroutine
+	// Start server immediately
 	go func() {
-		slog.Info("Server starting", "address", addr)
+		slog.Info("HTTP server starting (UI available)", "address", addr)
 		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			slog.Error("Server error", "error", err)
 			cancel()
 		}
 	}()
 
-	// Graceful shutdown
+	// ==========================================================================
+	// Initialize backend services in background
+	// ==========================================================================
+
+	var (
+		db                *database.DB
+		eventBus          *core.EventBus
+		loader            *core.PluginLoader
+		gateway           *core.APIGateway
+		installer         *plugin.Installer
+		embeddedDetection *detection.EmbeddedServer
+	)
+
+	initDone := make(chan error, 1)
+
+	go func() {
+		var initErr error
+		defer func() {
+			if initErr != nil {
+				setStartupError(initErr)
+			}
+			initDone <- initErr
+		}()
+
+		// Open database
+		updateStartupState("database", "Opening database...")
+		dbConfig := database.DefaultConfig(dataPath)
+		db, initErr = database.Open(dbConfig)
+		if initErr != nil {
+			slog.Error("Failed to open database", "error", initErr)
+			return
+		}
+
+		// Run migrations
+		updateStartupState("migrations", "Running database migrations...")
+		migrator := database.NewMigrator(db)
+		if initErr = migrator.Run(ctx); initErr != nil {
+			slog.Error("Failed to run migrations", "error", initErr)
+			return
+		}
+
+		// Initialize NATS event bus
+		updateStartupState("eventbus", "Starting event bus...")
+		eventBusCfg := core.DefaultEventBusConfig()
+		eventBusCfg.Port = ports.NATS
+		eventBusCfg.PortManager = portManager
+		eventBus, initErr = core.NewEventBus(eventBusCfg, logger)
+		if initErr != nil {
+			slog.Error("Failed to create event bus", "error", initErr)
+			return
+		}
+
+		// Start detection server
+		updateStartupState("detection", "Starting detection server...")
+		embeddedDetection = detection.NewEmbeddedServer(detection.EmbeddedServerConfig{
+			Port:   ports.Detection,
+			Logger: logger,
+		})
+		if initErr = embeddedDetection.Start(ctx); initErr != nil {
+			slog.Error("Failed to start detection server", "error", initErr)
+			return
+		}
+
+		// Create and configure plugin loader
+		updateStartupState("plugins", "Loading plugins...")
+		loader = core.NewPluginLoader(pluginsDir, eventBus, db.DB, logger)
+		registerCorePlugins(loader, dataPath)
+		configurePlugins(loader, dataPath, configPath, ports)
+
+		if err := loader.LoadPluginConfigs(); err != nil {
+			slog.Warn("Failed to load plugin configs", "error", err)
+		}
+
+		// Start plugins
+		updateStartupState("plugins", "Starting plugins...")
+		if initErr = loader.Start(ctx); initErr != nil {
+			slog.Error("Failed to start plugin loader", "error", initErr)
+			return
+		}
+
+		// Create gateway and installer
+		updateStartupState("gateway", "Setting up API gateway...")
+		gateway = core.NewAPIGateway(loader, eventBus, logger)
+		installer = plugin.NewInstaller(pluginsDir, logger)
+		if err := installer.Start(ctx); err != nil {
+			slog.Warn("Failed to start plugin installer", "error", err)
+		}
+
+		// Setup full router with all API endpoints
+		updateStartupState("router", "Configuring routes...")
+		fullRouter := setupRouter(gateway, loader, eventBus, db, ports, installer)
+
+		// Hot-swap to full router
+		server.Handler = fullRouter
+
+		// Mark startup complete
+		setStartupReady()
+	}()
+
+	// Wait for either initialization to complete or context cancellation
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
-	<-sigChan
+
+	select {
+	case err := <-initDone:
+		if err != nil {
+			slog.Error("Initialization failed", "error", err)
+			// Keep server running so UI can show error
+			<-sigChan
+		} else {
+			// Wait for shutdown signal
+			<-sigChan
+		}
+	case <-sigChan:
+		slog.Info("Shutdown signal received during startup")
+	}
 
 	slog.Info("Shutting down server...")
 	cancel()
 
+	// Cleanup
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer shutdownCancel()
 
 	if err := server.Shutdown(shutdownCtx); err != nil {
 		slog.Error("Server shutdown error", "error", err)
+	}
+
+	if installer != nil {
+		installer.Stop()
+	}
+	if loader != nil {
+		_ = loader.Stop()
+	}
+	if embeddedDetection != nil {
+		_ = embeddedDetection.Stop(shutdownCtx)
+	}
+	if eventBus != nil {
+		eventBus.Stop()
+	}
+	if db != nil {
+		_ = db.Close()
 	}
 
 	slog.Info("Server stopped")
