@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, memo } from 'react'
 import { Camera, Loader2, AlertCircle, Volume2, VolumeX, Maximize, RefreshCw, Box, BoxSelect } from 'lucide-react'
+import Hls from 'hls.js'
 import DetectionOverlay from './DetectionOverlay'
 import useDetections from '../hooks/useDetections'
 import { getGo2RTCUrl, getGo2RTCWsUrl } from '../hooks/usePorts'
@@ -17,7 +18,15 @@ interface VideoPlayerProps {
   maxHeight?: string  // Max height constraint like "70vh" for tall videos
 }
 
-type StreamMode = 'mse' | 'mse-h264' | 'mjpeg'
+type StreamMode = 'mse' | 'mse-h264' | 'hls' | 'mjpeg'
+
+// Detect iOS/Safari which doesn't support MSE well
+function isIOSOrSafari(): boolean {
+  const ua = navigator.userAgent
+  const isIOS = /iPad|iPhone|iPod/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)
+  const isSafari = /^((?!chrome|android).)*safari/i.test(ua)
+  return isIOS || isSafari
+}
 
 // Check if browser supports H265/HEVC in MSE
 function supportsH265(): boolean {
@@ -125,9 +134,13 @@ export const VideoPlayer = memo(function VideoPlayer({
     return () => clearInterval(interval)
   }, [cameraId, showRecordingIndicator])
 
-  // Use cached working mode or start with H264 if H265 not supported (most browsers)
+  // Use cached working mode or start with appropriate mode for platform
   const getInitialMode = (): StreamMode => {
     if (workingModes[cameraId]) return workingModes[cameraId]
+    // iOS/Safari: prefer HLS as MSE support is poor
+    if (isIOSOrSafari()) {
+      return 'hls'
+    }
     // Most browsers don't support H265, so skip straight to H264 transcoding
     return supportsH265() ? 'mse' : 'mse-h264'
   }
@@ -275,6 +288,86 @@ export const VideoPlayer = memo(function VideoPlayer({
       clearTimeout(timeout)
       ws.close()
       URL.revokeObjectURL(video.src)
+    }
+  }, [cameraId, mode])
+
+  // HLS streaming - for iOS/Safari or as fallback
+  useEffect(() => {
+    if (mode !== 'hls' || !cameraId) return
+
+    const video = videoRef.current
+    if (!video) return
+
+    setIsLoading(true)
+    setError(null)
+    const streamName = cameraId.toLowerCase().replace(/\s+/g, '_')
+    let mounted = true
+    let hls: Hls | null = null
+
+    // go2rtc HLS endpoint
+    const hlsUrl = `${getGo2RTCUrl()}/api/stream.m3u8?src=${streamName}`
+    console.log('[VideoPlayer] Connecting HLS:', hlsUrl)
+
+    // Check if native HLS is supported (Safari/iOS)
+    if (video.canPlayType('application/vnd.apple.mpegurl')) {
+      console.log('[VideoPlayer] Using native HLS')
+      video.src = hlsUrl
+      video.addEventListener('loadedmetadata', () => {
+        if (mounted) {
+          setIsLoading(false)
+          workingModes[cameraId] = 'hls'
+          setHasAudioTrack(true) // Assume audio available
+        }
+        video.play().catch(() => {})
+      })
+      video.addEventListener('error', () => {
+        console.error('[VideoPlayer] Native HLS error')
+        if (mounted) setMode('mjpeg')
+      })
+    } else if (Hls.isSupported()) {
+      console.log('[VideoPlayer] Using HLS.js')
+      hls = new Hls({
+        enableWorker: true,
+        lowLatencyMode: true,
+        backBufferLength: 30,
+      })
+      hls.loadSource(hlsUrl)
+      hls.attachMedia(video)
+      hls.on(Hls.Events.MANIFEST_PARSED, () => {
+        if (mounted) {
+          setIsLoading(false)
+          workingModes[cameraId] = 'hls'
+          setHasAudioTrack(true)
+        }
+        video.play().catch(() => {})
+      })
+      hls.on(Hls.Events.ERROR, (_, data) => {
+        if (data.fatal) {
+          console.error('[VideoPlayer] HLS.js fatal error:', data.type)
+          if (mounted) setMode('mjpeg')
+        }
+      })
+    } else {
+      console.log('[VideoPlayer] HLS not supported, falling back to MJPEG')
+      if (mounted) setMode('mjpeg')
+      return
+    }
+
+    // Timeout for HLS
+    const timeout = setTimeout(() => {
+      if (mounted && video.readyState < 2) {
+        console.log('[VideoPlayer] HLS timeout')
+        setMode('mjpeg')
+      }
+    }, 15000)
+
+    return () => {
+      mounted = false
+      clearTimeout(timeout)
+      if (hls) {
+        hls.destroy()
+      }
+      video.src = ''
     }
   }, [cameraId, mode])
 
@@ -442,7 +535,7 @@ export const VideoPlayer = memo(function VideoPlayer({
         <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/50">
           <Loader2 className="h-8 w-8 animate-spin text-white mb-2" />
           <p className="text-white/70 text-xs">
-            {mode === 'mse' ? 'Connecting (H265)...' : mode === 'mse-h264' ? 'Transcoding to H264...' : 'Loading...'}
+            {mode === 'mse' ? 'Connecting (H265)...' : mode === 'mse-h264' ? 'Transcoding to H264...' : mode === 'hls' ? 'Connecting (HLS)...' : 'Loading...'}
           </p>
         </div>
       )}
@@ -474,7 +567,7 @@ export const VideoPlayer = memo(function VideoPlayer({
         <div className="absolute bottom-0 left-0 right-0 p-2 bg-gradient-to-t from-black/60 to-transparent opacity-0 hover:opacity-100 transition-opacity">
           <div className="flex items-center justify-between">
             <span className="text-white/50 text-xs uppercase">
-              {mode === 'mse' ? 'H265' : mode === 'mse-h264' ? 'H264' : 'MJPEG'}
+              {mode === 'mse' ? 'H265' : mode === 'mse-h264' ? 'H264' : mode === 'hls' ? 'HLS' : 'MJPEG'}
             </span>
             <div className="flex items-center gap-2">
               {showDetectionToggle && (

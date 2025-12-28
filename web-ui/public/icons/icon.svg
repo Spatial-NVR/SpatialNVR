@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <rect width="512" height="512" rx="96" fill="#09090b"/>
+  <g fill="none" stroke="#3b82f6" stroke-width="24" stroke-linecap="round" stroke-linejoin="round">
+    <!-- Camera body -->
+    <rect x="80" y="160" width="280" height="192" rx="16"/>
+    <!-- Lens circle -->
+    <circle cx="220" cy="256" r="60"/>
+    <!-- Recording indicator lens -->
+    <circle cx="220" cy="256" r="24" fill="#3b82f6"/>
+    <!-- Viewfinder/recorder part -->
+    <path d="M360 200 L432 160 L432 352 L360 312"/>
+  </g>
+  <!-- Recording dot -->
+  <circle cx="140" cy="200" r="12" fill="#ef4444"/>
+</svg>
