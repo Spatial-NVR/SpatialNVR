@@ -204,7 +204,8 @@ func (p *ExternalPlugin) Health() sdk.HealthStatus {
 	}
 
 	// Try to get health from plugin
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	// Use a longer timeout since health checks may involve checking bridge status, etc.
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
 	resp, err := p.Call(ctx, "health", nil)

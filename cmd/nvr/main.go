@@ -437,6 +437,7 @@ func setupRouter(gateway *core.APIGateway, loader *core.PluginLoader, eventBus *
 		r.Get("/system/events", handleListEvents(eventBus))
 		r.Get("/system/ports", handleGetPorts())
 		r.Get("/system/metrics", handleSystemMetrics())
+		r.Post("/system/restart", handleSystemRestart())
 
 		// Stats endpoint for dashboard
 		r.Get("/stats", handleGetStats(loader, db))
@@ -975,6 +976,53 @@ func handleSystemMetrics() http.HandlerFunc {
 	}
 }
 
+// handleSystemRestart triggers a hot restart of the NVR process
+// This works by sending SIGHUP to the parent process (docker-entrypoint.sh)
+// which will gracefully stop and restart the NVR
+func handleSystemRestart() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		slog.Info("Hot restart requested via API")
+
+		// Get our parent PID (should be the entrypoint script)
+		ppid := os.Getppid()
+		if ppid <= 1 {
+			// We're running directly (not under entrypoint supervisor)
+			// Just exit and let the container restart us
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{
+				"success": true,
+				"message": "Restart initiated (direct mode - container restart)",
+			})
+
+			// Exit after a brief delay to allow response to be sent
+			go func() {
+				time.Sleep(500 * time.Millisecond)
+				slog.Info("Exiting for restart")
+				os.Exit(0)
+			}()
+			return
+		}
+
+		// Send SIGHUP to parent to trigger hot restart
+		if err := syscall.Kill(ppid, syscall.SIGHUP); err != nil {
+			slog.Error("Failed to send SIGHUP to parent", "ppid", ppid, "error", err)
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusInternalServerError)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{
+				"success": false,
+				"error":   "Failed to trigger restart: " + err.Error(),
+			})
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": true,
+			"message": "Hot restart initiated - NVR will restart momentarily",
+		})
+	}
+}
+
 // handleGetStats returns dashboard statistics
 func handleGetStats(loader *core.PluginLoader, db *database.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -1090,10 +1138,10 @@ const (
 var (
 	cachedCatalog        map[string]interface{}
 	cachedCatalogTime    time.Time
-	catalogCacheTTL      = 20 * time.Minute
+	catalogCacheTTL      = 15 * time.Minute
 	cachedVersions       map[string]string // pluginID -> latest version
 	cachedVersionsTime   time.Time
-	versionsCacheTTL     = 20 * time.Minute
+	versionsCacheTTL     = 5 * time.Minute
 )
 
 // GitHubReleaseInfo represents minimal release info from GitHub API
@@ -1141,7 +1189,9 @@ func fetchLatestVersion(ctx context.Context, repoURL string) (string, error) {
 		return "", err
 	}
 
-	return release.TagName, nil
+	// Strip 'v' prefix if present - we'll add it back when displaying if needed
+	version := strings.TrimPrefix(release.TagName, "v")
+	return version, nil
 }
 
 // fetchAllLatestVersions fetches latest versions for all plugins in parallel

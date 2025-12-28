@@ -1,5 +1,5 @@
-#!/bin/sh
-# SpatialNVR Docker Entrypoint
+#!/bin/bash
+# SpatialNVR Docker Entrypoint with Hot-Restart Support
 #
 # This script checks for updated components in /data before running the
 # shipped versions in /app. This enables self-updating without container rebuilds.
@@ -11,6 +11,11 @@
 # Web UI priority:
 # 1. /data/web (user-installed update)
 # 2. /app/web (container-shipped version)
+#
+# Hot-Restart Support:
+# Send SIGHUP to the entrypoint (PID 1) to trigger a hot restart of NVR.
+# This allows updating the binary and restarting without container recreation.
+# Example: docker exec <container> kill -HUP 1
 #
 # PUID/PGID Support:
 # Set PUID and PGID environment variables to run the container as a specific user.
@@ -113,11 +118,112 @@ echo "[entrypoint] go2rtc Path: $GO2RTC_PATH"
 echo "[entrypoint] Data Path: ${DATA_PATH:-/data}"
 echo "[entrypoint] Config Path: ${CONFIG_PATH:-/config/config.yaml}"
 
-# Execute the NVR binary with any passed arguments
-# If running as root, drop privileges to nvr user
-if [ "$(id -u)" = "0" ]; then
-    echo "[entrypoint] Dropping privileges to nvr user (uid=$PUID, gid=$PGID)"
-    exec gosu nvr "$NVR_BIN" "$@"
-else
-    exec "$NVR_BIN" "$@"
-fi
+# ============================================================================
+# Hot-Restart Loop
+# This allows the NVR to be restarted without recreating the container.
+# Send SIGHUP to trigger a restart, SIGTERM/SIGINT to stop.
+# ============================================================================
+
+# Track restart state
+RESTART_REQUESTED=0
+NVR_PID=0
+
+# Signal handlers
+handle_sighup() {
+    echo "[entrypoint] SIGHUP received - hot restart requested"
+    RESTART_REQUESTED=1
+    if [ $NVR_PID -ne 0 ]; then
+        kill -TERM $NVR_PID 2>/dev/null || true
+    fi
+}
+
+handle_sigterm() {
+    echo "[entrypoint] SIGTERM received - shutting down"
+    RESTART_REQUESTED=0
+    if [ $NVR_PID -ne 0 ]; then
+        kill -TERM $NVR_PID 2>/dev/null || true
+    fi
+}
+
+handle_sigint() {
+    echo "[entrypoint] SIGINT received - shutting down"
+    RESTART_REQUESTED=0
+    if [ $NVR_PID -ne 0 ]; then
+        kill -TERM $NVR_PID 2>/dev/null || true
+    fi
+}
+
+# Setup signal handlers
+trap handle_sighup SIGHUP
+trap handle_sigterm SIGTERM
+trap handle_sigint SIGINT
+
+# Determine how to run (with or without privilege drop)
+run_nvr() {
+    # Refresh binary selection (in case an update was installed)
+    if [ -x "/data/bin/nvr" ]; then
+        NVR_BIN="/data/bin/nvr"
+        echo "[entrypoint] Using updated NVR binary from /data/bin/nvr"
+    else
+        NVR_BIN="/app/bin/nvr"
+        if [ ! -x "$NVR_BIN" ] && [ -x "/app/nvr" ]; then
+            NVR_BIN="/app/nvr"
+        fi
+        echo "[entrypoint] Using NVR binary from $NVR_BIN"
+    fi
+
+    # Refresh web path selection
+    if [ -d "/data/web" ] && [ -f "/data/web/index.html" ]; then
+        export WEB_PATH="/data/web"
+    else
+        export WEB_PATH="/app/web"
+    fi
+
+    # Refresh go2rtc selection
+    if [ -x "/data/bin/go2rtc" ]; then
+        export GO2RTC_PATH="/data/bin/go2rtc"
+    else
+        export GO2RTC_PATH="/app/bin/go2rtc"
+    fi
+
+    if [ "$(id -u)" = "0" ]; then
+        gosu nvr "$NVR_BIN" "$@" &
+    else
+        "$NVR_BIN" "$@" &
+    fi
+    NVR_PID=$!
+}
+
+# Main restart loop
+while true; do
+    RESTART_REQUESTED=0
+
+    echo "[entrypoint] Starting NVR process..."
+    run_nvr "$@"
+
+    # Wait for NVR to exit
+    wait $NVR_PID
+    EXIT_CODE=$?
+
+    echo "[entrypoint] NVR process exited with code $EXIT_CODE"
+
+    # Check if restart was requested
+    if [ $RESTART_REQUESTED -eq 1 ]; then
+        echo "[entrypoint] Hot restart in progress..."
+        sleep 1
+        continue
+    fi
+
+    # Check if we should auto-restart on crash
+    if [ $EXIT_CODE -ne 0 ]; then
+        echo "[entrypoint] NVR crashed, restarting in 5 seconds..."
+        sleep 5
+        continue
+    fi
+
+    # Clean exit - stop the loop
+    echo "[entrypoint] Clean shutdown"
+    break
+done
+
+exit $EXIT_CODE

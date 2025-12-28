@@ -82,6 +82,7 @@ type Updater struct {
 	// Callbacks
 	onUpdateAvailable func(component string, currentVersion, latestVersion string)
 	onUpdateComplete  func(component string, version string)
+	onRestartNeeded   func()
 
 	// HTTP client for GitHub API
 	client *http.Client
@@ -128,6 +129,11 @@ func (u *Updater) SetOnUpdateAvailable(fn func(component, currentVersion, latest
 // SetOnUpdateComplete sets the callback for when an update completes
 func (u *Updater) SetOnUpdateComplete(fn func(component, version string)) {
 	u.onUpdateComplete = fn
+}
+
+// SetOnRestartNeeded sets the callback for when a restart is needed after updates
+func (u *Updater) SetOnRestartNeeded(fn func()) {
+	u.onRestartNeeded = fn
 }
 
 // Start begins the update checking loop
@@ -316,7 +322,7 @@ func (u *Updater) Update(ctx context.Context, componentName string) error {
 	u.mu.Unlock()
 
 	u.setStatus(componentName, "complete", 100,
-		fmt.Sprintf("Updated to %s. Restart required.", component.LatestVersion))
+		fmt.Sprintf("Updated to %s. Restarting...", component.LatestVersion))
 
 	if u.onUpdateComplete != nil {
 		u.onUpdateComplete(componentName, component.LatestVersion)
@@ -324,6 +330,11 @@ func (u *Updater) Update(ctx context.Context, componentName string) error {
 
 	// Cleanup download
 	_ = os.Remove(downloadPath)
+
+	// Trigger restart if callback is set
+	if u.onRestartNeeded != nil {
+		u.onRestartNeeded()
+	}
 
 	return nil
 }

@@ -154,34 +154,35 @@ func (i *Installer) installFromAsset(ctx context.Context, owner, repo, tag strin
 	}
 	defer func() { _ = os.Remove(cachePath) }()
 
-	// Create plugin directory
-	pluginDir := filepath.Join(i.pluginsDir, repo)
-	if err := os.MkdirAll(pluginDir, 0755); err != nil {
-		return nil, fmt.Errorf("failed to create plugin directory: %w", err)
+	// Extract to a temporary directory first so we can read the manifest
+	tempDir := filepath.Join(i.cacheDir, fmt.Sprintf("temp-%s-%d", repo, time.Now().UnixNano()))
+	if err := os.MkdirAll(tempDir, 0755); err != nil {
+		return nil, fmt.Errorf("failed to create temp directory: %w", err)
 	}
+	defer func() { _ = os.RemoveAll(tempDir) }()
 
 	// Extract based on file type
 	if strings.HasSuffix(asset.Name, ".tar.gz") || strings.HasSuffix(asset.Name, ".tgz") {
-		if err := extractTarGz(cachePath, pluginDir); err != nil {
+		if err := extractTarGz(cachePath, tempDir); err != nil {
 			return nil, fmt.Errorf("failed to extract tarball: %w", err)
 		}
 	} else if strings.HasSuffix(asset.Name, ".zip") {
-		if err := extractZip(cachePath, pluginDir); err != nil {
+		if err := extractZip(cachePath, tempDir); err != nil {
 			return nil, fmt.Errorf("failed to extract zip: %w", err)
 		}
 	} else {
 		// Assume it's a binary, copy directly
-		destPath := filepath.Join(pluginDir, asset.Name)
+		destPath := filepath.Join(tempDir, asset.Name)
 		if err := copyFile(cachePath, destPath); err != nil {
 			return nil, fmt.Errorf("failed to copy binary: %w", err)
 		}
 		_ = os.Chmod(destPath, 0755)
 	}
 
-	// Read manifest
-	manifest, err := i.readManifest(pluginDir)
+	// Read manifest to get the plugin ID
+	manifest, err := i.readManifest(tempDir)
 	if err != nil {
-		// Try to generate a basic manifest
+		// Try to generate a basic manifest using repo name as fallback
 		manifest = &PluginManifest{
 			ID:      repo,
 			Name:    repo,
@@ -189,13 +190,27 @@ func (i *Installer) installFromAsset(ctx context.Context, owner, repo, tag strin
 			Runtime: PluginRuntime{Type: "binary", Binary: asset.Name},
 		}
 		// Write the generated manifest
-		_ = i.writeManifest(pluginDir, manifest)
+		_ = i.writeManifest(tempDir, manifest)
+	}
+
+	// Use manifest ID for the final plugin directory (not repo name)
+	pluginDir := filepath.Join(i.pluginsDir, manifest.ID)
+
+	// Remove existing plugin directory if it exists
+	_ = os.RemoveAll(pluginDir)
+
+	// Move temp directory to final location
+	if err := os.Rename(tempDir, pluginDir); err != nil {
+		// If rename fails (cross-device), copy instead
+		if err := copyDir(tempDir, pluginDir); err != nil {
+			return nil, fmt.Errorf("failed to move plugin to final location: %w", err)
+		}
 	}
 
 	// Track the repo for updates
 	i.trackRepo(owner, repo, tag, manifest.ID)
 
-	i.logger.Info("Plugin installed", "id", manifest.ID, "version", manifest.Version)
+	i.logger.Info("Plugin installed", "id", manifest.ID, "version", manifest.Version, "dir", pluginDir)
 	return manifest, nil
 }
 
@@ -203,46 +218,59 @@ func (i *Installer) installFromAsset(ctx context.Context, owner, repo, tag strin
 func (i *Installer) installFromSource(ctx context.Context, owner, repo, tag string) (*PluginManifest, error) {
 	i.logger.Info("Installing plugin from source", "owner", owner, "repo", repo, "tag", tag)
 
-	pluginDir := filepath.Join(i.pluginsDir, repo)
+	// Clone to a temp directory first so we can read manifest and get the real ID
+	tempDir := filepath.Join(i.cacheDir, fmt.Sprintf("src-%s-%d", repo, time.Now().UnixNano()))
 
 	// Clone the repository
 	cloneURL := fmt.Sprintf("https://github.com/%s/%s.git", owner, repo)
 
-	// Remove existing directory if present
-	_ = os.RemoveAll(pluginDir)
-
-	cmd := exec.CommandContext(ctx, "git", "clone", "--depth", "1", "--branch", tag, cloneURL, pluginDir)
+	cmd := exec.CommandContext(ctx, "git", "clone", "--depth", "1", "--branch", tag, cloneURL, tempDir)
 	cmd.Stdout = io.Discard
 	cmd.Stderr = io.Discard
 	if err := cmd.Run(); err != nil {
 		// Try without tag (use default branch)
-		cmd = exec.CommandContext(ctx, "git", "clone", "--depth", "1", cloneURL, pluginDir)
+		cmd = exec.CommandContext(ctx, "git", "clone", "--depth", "1", cloneURL, tempDir)
 		if err := cmd.Run(); err != nil {
 			return nil, fmt.Errorf("failed to clone repository: %w", err)
 		}
 	}
+	defer func() { _ = os.RemoveAll(tempDir) }()
 
 	// Check if it's a Go project and build it
-	if _, err := os.Stat(filepath.Join(pluginDir, "go.mod")); err == nil {
+	if _, err := os.Stat(filepath.Join(tempDir, "go.mod")); err == nil {
 		i.logger.Info("Building Go plugin")
 		cmd := exec.CommandContext(ctx, "go", "build", "-o", "plugin", ".")
-		cmd.Dir = pluginDir
+		cmd.Dir = tempDir
 		cmd.Env = append(os.Environ(), "CGO_ENABLED=0")
 		if output, err := cmd.CombinedOutput(); err != nil {
 			return nil, fmt.Errorf("failed to build plugin: %w\n%s", err, output)
 		}
 	}
 
-	// Read manifest
-	manifest, err := i.readManifest(pluginDir)
+	// Read manifest to get the real plugin ID
+	manifest, err := i.readManifest(tempDir)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read manifest: %w", err)
+	}
+
+	// Use manifest ID for the final plugin directory (not repo name)
+	pluginDir := filepath.Join(i.pluginsDir, manifest.ID)
+
+	// Remove existing plugin directory if it exists
+	_ = os.RemoveAll(pluginDir)
+
+	// Move temp directory to final location
+	if err := os.Rename(tempDir, pluginDir); err != nil {
+		// If rename fails (cross-device), copy instead
+		if err := copyDir(tempDir, pluginDir); err != nil {
+			return nil, fmt.Errorf("failed to move plugin to final location: %w", err)
+		}
 	}
 
 	// Track the repo
 	i.trackRepo(owner, repo, tag, manifest.ID)
 
-	i.logger.Info("Plugin installed from source", "id", manifest.ID, "version", manifest.Version)
+	i.logger.Info("Plugin installed from source", "id", manifest.ID, "version", manifest.Version, "dir", pluginDir)
 	return manifest, nil
 }
 
@@ -526,14 +554,51 @@ func (i *Installer) UninstallPlugin(pluginID string) error {
 		_ = i.saveTrackedRepos()
 	}
 
-	// Remove plugin directory
-	pluginDir := filepath.Join(i.pluginsDir, pluginID)
+	// Find the plugin directory by scanning for manifest with matching ID
+	// This handles both old-style (repo name) and new-style (manifest ID) directories
+	pluginDir := i.findPluginDirectory(pluginID)
+	if pluginDir == "" {
+		// Fallback to direct ID match
+		pluginDir = filepath.Join(i.pluginsDir, pluginID)
+	}
+
 	if err := os.RemoveAll(pluginDir); err != nil {
 		return fmt.Errorf("failed to remove plugin directory: %w", err)
 	}
 
-	i.logger.Info("Plugin uninstalled", "id", pluginID)
+	i.logger.Info("Plugin uninstalled", "id", pluginID, "dir", pluginDir)
 	return nil
+}
+
+// findPluginDirectory scans for a plugin directory with a manifest matching the given ID
+func (i *Installer) findPluginDirectory(pluginID string) string {
+	entries, err := os.ReadDir(i.pluginsDir)
+	if err != nil {
+		return ""
+	}
+
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+
+		manifestPath := filepath.Join(i.pluginsDir, entry.Name(), "manifest.yaml")
+		data, err := os.ReadFile(manifestPath)
+		if err != nil {
+			continue
+		}
+
+		var manifest PluginManifest
+		if err := yaml.Unmarshal(data, &manifest); err != nil {
+			continue
+		}
+
+		if manifest.ID == pluginID {
+			return filepath.Join(i.pluginsDir, entry.Name())
+		}
+	}
+
+	return ""
 }
 
 // parseGitHubURL extracts owner and repo from various GitHub URL formats
@@ -582,4 +647,43 @@ func copyFile(src, dest string) error {
 
 	_, err = io.Copy(out, in)
 	return err
+}
+
+// copyDir recursively copies a directory from src to dest
+func copyDir(src, dest string) error {
+	srcInfo, err := os.Stat(src)
+	if err != nil {
+		return err
+	}
+
+	if err := os.MkdirAll(dest, srcInfo.Mode()); err != nil {
+		return err
+	}
+
+	entries, err := os.ReadDir(src)
+	if err != nil {
+		return err
+	}
+
+	for _, entry := range entries {
+		srcPath := filepath.Join(src, entry.Name())
+		destPath := filepath.Join(dest, entry.Name())
+
+		if entry.IsDir() {
+			if err := copyDir(srcPath, destPath); err != nil {
+				return err
+			}
+		} else {
+			if err := copyFile(srcPath, destPath); err != nil {
+				return err
+			}
+			// Preserve executable permissions
+			info, err := entry.Info()
+			if err == nil {
+				_ = os.Chmod(destPath, info.Mode())
+			}
+		}
+	}
+
+	return nil
 }

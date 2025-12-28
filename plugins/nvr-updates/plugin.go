@@ -6,9 +6,11 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"os"
 	"runtime"
 	"strconv"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -145,6 +147,21 @@ func (p *Plugin) Start(ctx context.Context) error {
 			"component": component,
 			"version":   version,
 		})
+	})
+
+	p.updater.SetOnRestartNeeded(func() {
+		p.logger.Info("Update installed, triggering hot-restart")
+
+		// Publish event before restart
+		_ = p.PublishEvent("system.restarting", map[string]interface{}{
+			"reason": "update_installed",
+		})
+
+		// Give a moment for the event to be published and response to be sent
+		go func() {
+			time.Sleep(500 * time.Millisecond)
+			p.triggerRestart()
+		}()
 	})
 
 	// Start updater
@@ -332,6 +349,27 @@ func (p *Plugin) handleSetConfig(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(p.config)
+}
+
+// triggerRestart sends SIGHUP to the parent process (docker-entrypoint.sh) to trigger a hot-restart
+func (p *Plugin) triggerRestart() {
+	// Get parent PID (docker-entrypoint.sh)
+	ppid := os.Getppid()
+
+	if ppid <= 1 {
+		// Running directly (not under entrypoint), exit and let container restart policy handle it
+		p.logger.Info("No parent process to signal, exiting for restart")
+		os.Exit(0)
+		return
+	}
+
+	// Send SIGHUP to parent to trigger hot-restart
+	p.logger.Info("Sending SIGHUP to parent process", "ppid", ppid)
+	if err := syscall.Kill(ppid, syscall.SIGHUP); err != nil {
+		p.logger.Error("Failed to send SIGHUP to parent", "error", err)
+		// Fallback: exit and let container restart
+		os.Exit(0)
+	}
 }
 
 // Health returns the health status

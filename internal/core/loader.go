@@ -710,8 +710,26 @@ func (l *PluginLoader) DisablePlugin(ctx context.Context, pluginID string) error
 
 // ScanAndStart rescans the plugins directory for new plugins and starts the specified plugin.
 // This is useful after installing a new plugin to make it immediately available without restart.
+// If the plugin is already running (update case), it will be stopped and restarted (hot-reload).
 func (l *PluginLoader) ScanAndStart(ctx context.Context, pluginID string) error {
-	// Rescan external plugins to pick up newly installed ones
+	// Check if plugin is already running (update case)
+	l.pluginsMu.RLock()
+	existingPlugin, wasRunning := l.plugins[pluginID]
+	if wasRunning && existingPlugin.State == PluginStateRunning {
+		l.pluginsMu.RUnlock()
+		l.logger.Info("Hot-reload: stopping existing plugin for update", "id", pluginID)
+		if err := l.stopPlugin(pluginID); err != nil {
+			l.logger.Warn("Failed to stop plugin during hot-reload", "id", pluginID, "error", err)
+		}
+		// Unregister so it can be re-scanned with new binary
+		l.pluginsMu.Lock()
+		delete(l.plugins, pluginID)
+		l.pluginsMu.Unlock()
+	} else {
+		l.pluginsMu.RUnlock()
+	}
+
+	// Rescan external plugins to pick up newly installed/updated ones
 	if err := l.ScanExternalPlugins(); err != nil {
 		l.logger.Warn("Failed to scan external plugins", "error", err)
 	}
