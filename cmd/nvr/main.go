@@ -1379,10 +1379,10 @@ func compareVersions(current, latest string) bool {
 	for i := 0; i < 3; i++ {
 		var c, l int
 		if i < len(currentParts) {
-			fmt.Sscanf(currentParts[i], "%d", &c)
+			_, _ = fmt.Sscanf(currentParts[i], "%d", &c)
 		}
 		if i < len(latestParts) {
-			fmt.Sscanf(latestParts[i], "%d", &l)
+			_, _ = fmt.Sscanf(latestParts[i], "%d", &l)
 		}
 		if l > c {
 			return true
