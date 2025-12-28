@@ -399,19 +399,20 @@ func (p *CoreAPIPlugin) handleGetCameraConfig(w http.ResponseWriter, r *http.Req
 
 	// Create a sanitized response (hide password)
 	response := map[string]interface{}{
-		"id":           cfg.ID,
-		"name":         cfg.Name,
-		"enabled":      cfg.Enabled,
-		"manufacturer": cfg.Manufacturer,
-		"model":        cfg.Model,
-		"stream":       streamResponse,
-		"recording":    cfg.Recording,
-		"detection":    cfg.Detection,
-		"motion":       cfg.Motion,
-		"audio":        cfg.Audio,
-		"ptz":          cfg.PTZ,
-		"advanced":     cfg.Advanced,
-		"location":     cfg.Location,
+		"id":                   cfg.ID,
+		"name":                 cfg.Name,
+		"enabled":              cfg.Enabled,
+		"manufacturer":         cfg.Manufacturer,
+		"model":                cfg.Model,
+		"display_aspect_ratio": cfg.DisplayAspectRatio,
+		"stream":               streamResponse,
+		"recording":            cfg.Recording,
+		"detection":            cfg.Detection,
+		"motion":               cfg.Motion,
+		"audio":                cfg.Audio,
+		"ptz":                  cfg.PTZ,
+		"advanced":             cfg.Advanced,
+		"location":             cfg.Location,
 	}
 
 	p.respondJSON(w, response)

@@ -426,9 +426,9 @@ func GetGlobalDetector() *HWAccelDetector {
 	return globalDetector
 }
 
-// DetectHWAccel is a convenience function to detect hardware acceleration
+// DetectHWAccel returns hardware acceleration capabilities (uses cache after first detection)
 func DetectHWAccel(ctx context.Context) (*HWAccelCapabilities, error) {
-	return GetGlobalDetector().Detect(ctx)
+	return GetGlobalDetector().GetCapabilities(ctx)
 }
 
 // GetRecommendedHWAccel returns the recommended hardware acceleration type

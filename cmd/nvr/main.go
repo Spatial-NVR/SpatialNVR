@@ -572,15 +572,15 @@ func setupRouter(gateway *core.APIGateway, loader *core.PluginLoader, eventBus *
 		_, _ = fmt.Fprintf(w, `{"status":"%s","ready":true,"version":"0.2.1","plugins":%d,"mode":"plugin-based"}`, status, len(plugins))
 	})
 
-	// Startup status endpoint - persists after router swap for UI polling
-	r.Get("/api/v1/startup", func(w http.ResponseWriter, req *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		state := getStartupState()
-		_ = json.NewEncoder(w).Encode(state)
-	})
-
 	// API routes
 	r.Route("/api/v1", func(r chi.Router) {
+		// Startup status endpoint - must be registered before gateway mount
+		r.Get("/startup", func(w http.ResponseWriter, req *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			state := getStartupState()
+			_ = json.NewEncoder(w).Encode(state)
+		})
+
 		// Plugin management
 		r.Route("/plugins", func(r chi.Router) {
 			r.Get("/", handleListPlugins(loader))

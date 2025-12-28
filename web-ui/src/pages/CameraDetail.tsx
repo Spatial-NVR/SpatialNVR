@@ -149,6 +149,7 @@ export function CameraDetail() {
         },
         manufacturer: cameraConfig.manufacturer || '',
         model: cameraConfig.model || '',
+        display_aspect_ratio: cameraConfig.display_aspect_ratio || '16:9',
         recording: {
           enabled: cameraConfig.recording?.enabled ?? false,
           mode: cameraConfig.recording?.mode || 'motion',
