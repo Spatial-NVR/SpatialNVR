@@ -59,13 +59,22 @@ func (p *ConfigPlugin) Initialize(ctx context.Context, runtime *sdk.PluginRuntim
 	// Load configuration
 	cfg, err := config.Load(p.configPath)
 	if err != nil {
-		// Create minimal config if file not exists
+		// Create minimal config if file doesn't exist
 		cfg = &config.Config{
 			Version: "1.0.0",
 			Cameras: []config.CameraConfig{},
 		}
 		// IMPORTANT: Set the path so Save() knows where to write
 		cfg.SetPath(p.configPath)
+
+		// Save the initial config to disk so it persists
+		if saveErr := cfg.Save(); saveErr != nil {
+			// Log but don't fail - config will still work in memory
+			// and will be saved when user makes changes
+			runtime.Logger().Warn("Failed to save initial config file", "path", p.configPath, "error", saveErr)
+		} else {
+			runtime.Logger().Info("Created initial config file", "path", p.configPath)
+		}
 	}
 	p.config = cfg
 
