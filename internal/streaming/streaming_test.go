@@ -316,16 +316,13 @@ func TestConfigGenerator_Generate(t *testing.T) {
 
 	// Check camera1 stream has credentials and audio transcoding
 	if streams, ok := config.Streams["camera1"]; ok {
-		if len(streams) != 2 {
-			t.Errorf("Expected 2 sources for camera1 (main + opus transcode), got %d", len(streams))
+		if len(streams) != 1 {
+			t.Errorf("Expected 1 source for camera1 (ffmpeg with audio transcode), got %d", len(streams))
 		}
-		// URL should contain credentials
-		if streams[0] != "rtsp://admin:password@192.168.1.100/stream" {
-			t.Errorf("Unexpected stream URL: %s", streams[0])
-		}
-		// Second source should be opus transcode
-		if len(streams) > 1 && streams[1] != "ffmpeg:camera1#audio=opus" {
-			t.Errorf("Unexpected opus transcode source: %s", streams[1])
+		// Stream should be wrapped with ffmpeg for audio transcoding
+		expected := "ffmpeg:rtsp://admin:password@192.168.1.100/stream#video=copy#audio=opus"
+		if streams[0] != expected {
+			t.Errorf("Unexpected stream URL: got %s, want %s", streams[0], expected)
 		}
 	} else {
 		t.Error("camera1 stream not found")
@@ -898,9 +895,9 @@ func TestConfigGenerator_Generate_MultipleStreams(t *testing.T) {
 		t.Errorf("Expected 4 streams, got %d", len(config.Streams))
 	}
 
-	// Verify credentials are added (2 sources: main + opus transcode)
+	// Verify credentials are added (1 source with ffmpeg wrapper)
 	if streams, ok := config.Streams["cam3"]; ok {
-		if len(streams) != 2 || !strings.Contains(streams[0], "admin:pass@") {
+		if len(streams) != 1 || !strings.Contains(streams[0], "admin:pass@") {
 			t.Errorf("Credentials not properly added: %v", streams)
 		}
 	}

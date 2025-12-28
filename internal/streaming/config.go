@@ -108,23 +108,19 @@ func (g *ConfigGenerator) Generate(cameras []CameraStream) *Go2RTCConfig {
 		streamURL := g.buildStreamURL(cam.URL, cam.Username, cam.Password)
 		streamName := sanitizeStreamName(cam.ID)
 
-		// Add audio transcoding to opus directly in the ffmpeg source
-		// This copies video and adds opus audio transcoding for WebRTC
-		// Format: ffmpeg:source#video=copy#audio=copy#audio=opus
+		// Use ffmpeg for all streams to ensure proper audio transcoding to opus
+		// The #video=copy#audio=opus approach:
+		// - Copies video without re-encoding (fast, no quality loss)
+		// - Transcodes audio to opus (required for WebRTC compatibility)
+		// This is more reliable than the two-source approach
 		if strings.HasPrefix(streamURL, "ffmpeg:") {
 			// Already an ffmpeg source, add audio transcoding parameters
-			streamURL = streamURL + "#video=copy#audio=copy#audio=opus"
+			streamURL = streamURL + "#video=copy#audio=opus"
 			config.Streams[streamName] = []string{streamURL}
-		} else if strings.HasPrefix(streamURL, "rtsp://") || strings.HasPrefix(streamURL, "rtmp://") {
-			// For RTSP/RTMP, add the source and a separate opus transcode
-			config.Streams[streamName] = []string{
-				streamURL,
-				fmt.Sprintf("ffmpeg:%s#audio=opus", streamName),
-			}
 		} else {
-			// For other protocols (http-flv, etc.), wrap with ffmpeg and add audio
+			// Wrap all streams with ffmpeg for consistent audio transcoding
 			config.Streams[streamName] = []string{
-				fmt.Sprintf("ffmpeg:%s#video=copy#audio=copy#audio=opus", streamURL),
+				fmt.Sprintf("ffmpeg:%s#video=copy#audio=opus", streamURL),
 			}
 		}
 
@@ -134,16 +130,11 @@ func (g *ConfigGenerator) Generate(cameras []CameraStream) *Go2RTCConfig {
 			subStreamName := streamName + "_sub"
 
 			if strings.HasPrefix(subStreamURL, "ffmpeg:") {
-				subStreamURL = subStreamURL + "#video=copy#audio=copy#audio=opus"
+				subStreamURL = subStreamURL + "#video=copy#audio=opus"
 				config.Streams[subStreamName] = []string{subStreamURL}
-			} else if strings.HasPrefix(subStreamURL, "rtsp://") || strings.HasPrefix(subStreamURL, "rtmp://") {
-				config.Streams[subStreamName] = []string{
-					subStreamURL,
-					fmt.Sprintf("ffmpeg:%s#audio=opus", subStreamName),
-				}
 			} else {
 				config.Streams[subStreamName] = []string{
-					fmt.Sprintf("ffmpeg:%s#video=copy#audio=copy#audio=opus", subStreamURL),
+					fmt.Sprintf("ffmpeg:%s#video=copy#audio=opus", subStreamURL),
 				}
 			}
 		}

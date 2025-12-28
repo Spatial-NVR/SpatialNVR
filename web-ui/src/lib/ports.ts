@@ -31,17 +31,24 @@ let cachedPorts: PortConfig | null = null;
 let fetchPromise: Promise<PortConfig> | null = null;
 
 // Get the API base URL - this is the one port we must know initially
-// In production, this is served from the same origin
-// In development, it defaults to 8080
+// In production or behind reverse proxy, use same origin
+// In development (localhost with non-standard port), defaults to 8080
 function getApiBase(): string {
   if (import.meta.env.VITE_API_URL) {
     return import.meta.env.VITE_API_URL;
   }
-  // In production, use same origin; in development, use port 8080
-  if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
-    return 'http://localhost:8080';
+  // Behind reverse proxy (standard ports or external hostname), use origin
+  const port = window.location.port;
+  if (!port || port === '80' || port === '443') {
+    return window.location.origin;
   }
-  return window.location.origin;
+  // External hostname likely means reverse proxy
+  const host = window.location.hostname;
+  if (host !== 'localhost' && host !== '127.0.0.1') {
+    return window.location.origin;
+  }
+  // Local development - use explicit port
+  return 'http://localhost:8080';
 }
 
 /**
@@ -118,11 +125,35 @@ export function clearPortsCache(): void {
 }
 
 /**
- * Get the base hostname for service connections
- * Uses the same host the browser is connected to
+ * Check if we're running behind a reverse proxy (standard ports or different from default)
+ * Returns true if we should use the browser's origin instead of explicit port
  */
-function getServiceHost(): string {
-  return window.location.hostname || 'localhost';
+function isReverseProxy(): boolean {
+  const port = window.location.port;
+  // Standard ports (80/443) or no port means likely behind reverse proxy
+  if (!port || port === '80' || port === '443') {
+    return true;
+  }
+  // Not localhost/127.0.0.1 usually means reverse proxy
+  const host = window.location.hostname;
+  if (host !== 'localhost' && host !== '127.0.0.1') {
+    return true;
+  }
+  return false;
+}
+
+/**
+ * Get the base URL for API connections
+ * Respects reverse proxy configuration - uses origin when behind proxy
+ */
+function getBaseUrl(): string {
+  // Behind reverse proxy, use the browser's origin (includes correct protocol/host/port)
+  if (isReverseProxy()) {
+    return window.location.origin;
+  }
+  // Local development - use explicit port
+  const ports = getPorts();
+  return `http://${window.location.hostname}:${ports.api}`;
 }
 
 /**
@@ -130,30 +161,23 @@ function getServiceHost(): string {
  * This allows the UI to only need the API port exposed
  */
 export function getGo2RTCUrl(): string {
-  const ports = getPorts();
-  const host = getServiceHost();
-  const protocol = window.location.protocol === 'https:' ? 'https' : 'http';
   // Route through the backend proxy at /go2rtc/
-  return `${protocol}://${host}:${ports.api}/go2rtc`;
+  return `${getBaseUrl()}/go2rtc`;
 }
 
 /**
  * Get the go2rtc WebSocket URL (proxied through backend API)
  */
 export function getGo2RTCWsUrl(): string {
-  const ports = getPorts();
-  const host = getServiceHost();
-  const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
-  // Route through the backend proxy at /go2rtc/
-  return `${protocol}://${host}:${ports.api}/go2rtc`;
+  const base = getBaseUrl();
+  // Convert http/https to ws/wss
+  const wsUrl = base.replace(/^http/, 'ws');
+  return `${wsUrl}/go2rtc`;
 }
 
 /**
  * Get the API base URL
  */
 export function getApiUrl(): string {
-  const ports = getPorts();
-  const host = getServiceHost();
-  const protocol = window.location.protocol === 'https:' ? 'https' : 'http';
-  return `${protocol}://${host}:${ports.api}`;
+  return getBaseUrl();
 }
