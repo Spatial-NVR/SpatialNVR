@@ -109,10 +109,13 @@ func (g *ConfigGenerator) Generate(cameras []CameraStream) *Go2RTCConfig {
 		streamName := sanitizeStreamName(cam.ID)
 
 		// go2rtc stream configuration:
-		// Just use the raw stream URL - go2rtc handles audio transcoding via request params
-		// When client requests `audio=opus`, go2rtc will transcode on-the-fly
-		// Using ffmpeg:#audio=opus in stream definition can cause issues
-		config.Streams[streamName] = []string{streamURL}
+		// Add ffmpeg audio transcoding to opus for WebRTC compatibility
+		// Many cameras use AAC at non-standard sample rates (e.g., 16kHz) which
+		// aren't supported for WebRTC. This transcodes audio to Opus at 48kHz.
+		config.Streams[streamName] = []string{
+			streamURL,
+			fmt.Sprintf("ffmpeg:%s#audio=opus", streamName),
+		}
 
 		// Sub stream if available
 		if cam.SubURL != "" {
