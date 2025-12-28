@@ -90,6 +90,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     # Additional utilities
     bash \
     procps \
+    # passwd for usermod/groupmod (PUID/PGID support)
+    passwd \
+    # gosu for dropping privileges securely
+    gosu \
     && rm -rf /var/lib/apt/lists/* \
     # Configure pip
     && mkdir -p /etc/pip.conf.d \
@@ -146,8 +150,9 @@ RUN chmod +x /app/docker-entrypoint.sh
 # Set ownership
 RUN chown -R nvr:nvr /app
 
-# Switch to non-root user
-USER nvr
+# NOTE: We do NOT switch to nvr user here anymore.
+# The entrypoint script handles PUID/PGID and drops privileges.
+# This allows dynamic user ID mapping for systems like Unraid.
 
 # Environment variables
 ENV DEPLOYMENT_TYPE=standalone \

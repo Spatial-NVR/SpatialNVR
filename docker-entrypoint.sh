@@ -11,8 +11,34 @@
 # Web UI priority:
 # 1. /data/web (user-installed update)
 # 2. /app/web (container-shipped version)
+#
+# PUID/PGID Support:
+# Set PUID and PGID environment variables to run the container as a specific user.
+# This is useful for NAS systems like Unraid where volume permissions matter.
+# Example: -e PUID=99 -e PGID=100
 
 set -e
+
+# ============================================================================
+# PUID/PGID handling - modify nvr user to match host user
+# ============================================================================
+PUID=${PUID:-1000}
+PGID=${PGID:-1000}
+
+# Only modify if running as root and PUID/PGID differ from defaults
+if [ "$(id -u)" = "0" ]; then
+    echo "[entrypoint] Setting up user with PUID=$PUID and PGID=$PGID"
+
+    # Modify group ID if different
+    if [ "$(id -g nvr)" != "$PGID" ]; then
+        groupmod -o -g "$PGID" nvr 2>/dev/null || true
+    fi
+
+    # Modify user ID if different
+    if [ "$(id -u nvr)" != "$PUID" ]; then
+        usermod -o -u "$PUID" nvr 2>/dev/null || true
+    fi
+fi
 
 # Ensure required directories exist with correct permissions
 # This is needed when volumes are mounted on a fresh system
@@ -30,6 +56,23 @@ mkdir -p "$DATA_DIR" \
          /config \
          /tokens \
          /img 2>/dev/null || true
+
+# Set ownership of directories if running as root
+if [ "$(id -u)" = "0" ]; then
+    chown nvr:nvr "$DATA_DIR" \
+                  "$DATA_DIR/bin" \
+                  "$DATA_DIR/web" \
+                  "$DATA_DIR/plugins" \
+                  "$DATA_DIR/updates" \
+                  "$DATA_DIR/recordings" \
+                  "$DATA_DIR/thumbnails" \
+                  "$DATA_DIR/snapshots" \
+                  "$DATA_DIR/exports" \
+                  "$DATA_DIR/models" \
+                  /config \
+                  /tokens \
+                  /img 2>/dev/null || true
+fi
 
 # Determine which NVR binary to use
 if [ -x "/data/bin/nvr" ]; then
@@ -71,4 +114,10 @@ echo "[entrypoint] Data Path: ${DATA_PATH:-/data}"
 echo "[entrypoint] Config Path: ${CONFIG_PATH:-/config/config.yaml}"
 
 # Execute the NVR binary with any passed arguments
-exec "$NVR_BIN" "$@"
+# If running as root, drop privileges to nvr user
+if [ "$(id -u)" = "0" ]; then
+    echo "[entrypoint] Dropping privileges to nvr user (uid=$PUID, gid=$PGID)"
+    exec gosu nvr "$NVR_BIN" "$@"
+else
+    exec "$NVR_BIN" "$@"
+fi
