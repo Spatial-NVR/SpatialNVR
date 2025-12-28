@@ -1090,10 +1090,10 @@ const (
 var (
 	cachedCatalog        map[string]interface{}
 	cachedCatalogTime    time.Time
-	catalogCacheTTL      = 15 * time.Minute
+	catalogCacheTTL      = 20 * time.Minute
 	cachedVersions       map[string]string // pluginID -> latest version
 	cachedVersionsTime   time.Time
-	versionsCacheTTL     = 5 * time.Minute
+	versionsCacheTTL     = 20 * time.Minute
 )
 
 // GitHubReleaseInfo represents minimal release info from GitHub API
@@ -1419,20 +1419,27 @@ func handleReloadPluginCatalog() http.HandlerFunc {
 			return
 		}
 
-		// Update cache
+		// Update catalog cache
 		cachedCatalog = yamlCatalog
 		cachedCatalogTime = time.Now()
 
+		// Also fetch latest versions from GitHub
 		pluginCount := 0
 		if plugins, ok := yamlCatalog["plugins"].([]interface{}); ok {
 			pluginCount = len(plugins)
+			// Fetch versions in background but with a reasonable timeout
+			versionCtx, versionCancel := context.WithTimeout(context.Background(), 15*time.Second)
+			defer versionCancel()
+			cachedVersions = fetchAllLatestVersions(versionCtx, plugins)
+			cachedVersionsTime = time.Now()
 		}
 
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{
-			"message":      "Catalog refreshed",
-			"plugin_count": pluginCount,
-			"source":       "remote",
+			"message":        "Catalog refreshed",
+			"plugin_count":   pluginCount,
+			"versions_count": len(cachedVersions),
+			"source":         "remote",
 		})
 	}
 }
