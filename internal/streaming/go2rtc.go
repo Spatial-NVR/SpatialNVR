@@ -93,13 +93,15 @@ func (m *Go2RTCManager) Start(ctx context.Context) error {
 
 	m.running = true
 
-	// Wait for go2rtc to be ready
-	if err := m.waitForReady(ctx, 10*time.Second); err != nil {
-		_ = m.Stop()
-		return fmt.Errorf("go2rtc failed to start: %w", err)
-	}
-
-	m.logger.Info("go2rtc started successfully")
+	// Don't block on ready check - do it async and log when ready
+	// go2rtc typically starts in under 1 second, blocking for 10s hurts startup
+	go func() {
+		if err := m.waitForReady(context.Background(), 10*time.Second); err != nil {
+			m.logger.Error("go2rtc failed to become ready", "error", err)
+			return
+		}
+		m.logger.Info("go2rtc is ready")
+	}()
 
 	// Monitor process in background
 	go m.monitor()

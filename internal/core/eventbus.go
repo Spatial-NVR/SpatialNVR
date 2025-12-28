@@ -98,11 +98,11 @@ func NewEventBus(cfg EventBusConfig, logger *slog.Logger) (*EventBus, error) {
 	// Start the server
 	go ns.Start()
 
-	// Wait for server to be ready with shorter timeout since we pre-checked port availability
-	if !ns.ReadyForConnections(5 * time.Second) {
+	// Wait for server to be ready - NATS embedded server is typically ready in <100ms
+	if !ns.ReadyForConnections(2 * time.Second) {
 		ns.Shutdown()
 		pm.Release(actualPort)
-		return nil, fmt.Errorf("NATS server not ready after 5 seconds (port %d)", actualPort)
+		return nil, fmt.Errorf("NATS server not ready after 2 seconds (port %d)", actualPort)
 	}
 
 	// Connect to the embedded server

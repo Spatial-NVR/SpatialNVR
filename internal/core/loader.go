@@ -222,13 +222,51 @@ func (l *PluginLoader) Start(ctx context.Context) error {
 
 	l.logger.Info("Starting plugins", "order", order)
 
-	// Start plugins in order
-	for _, pluginID := range order {
-		if err := l.startPlugin(pluginID); err != nil {
-			if l.isCritical(pluginID) {
-				return fmt.Errorf("critical plugin failed to start: %s: %w", pluginID, err)
+	// Group plugins by dependency level for parallel start
+	// Plugins with no dependencies can start in parallel
+	// Plugins with dependencies wait for those to complete first
+	levels := l.groupByDependencyLevel(order)
+
+	for levelNum, levelPlugins := range levels {
+		if len(levelPlugins) == 1 {
+			// Single plugin, start directly
+			pluginID := levelPlugins[0]
+			if err := l.startPlugin(pluginID); err != nil {
+				if l.isCritical(pluginID) {
+					return fmt.Errorf("critical plugin failed to start: %s: %w", pluginID, err)
+				}
+				l.logger.Error("Plugin failed to start", "id", pluginID, "error", err)
 			}
-			l.logger.Error("Plugin failed to start", "id", pluginID, "error", err)
+		} else {
+			// Multiple plugins at this level, start in parallel
+			l.logger.Debug("Starting plugins in parallel", "level", levelNum, "plugins", levelPlugins)
+
+			var wg sync.WaitGroup
+			errChan := make(chan error, len(levelPlugins))
+
+			for _, pluginID := range levelPlugins {
+				wg.Add(1)
+				go func(id string) {
+					defer wg.Done()
+					if err := l.startPlugin(id); err != nil {
+						if l.isCritical(id) {
+							errChan <- fmt.Errorf("critical plugin failed to start: %s: %w", id, err)
+						} else {
+							l.logger.Error("Plugin failed to start", "id", id, "error", err)
+						}
+					}
+				}(pluginID)
+			}
+
+			wg.Wait()
+			close(errChan)
+
+			// Check for critical failures
+			for err := range errChan {
+				if err != nil {
+					return err
+				}
+			}
 		}
 	}
 
@@ -236,6 +274,63 @@ func (l *PluginLoader) Start(ctx context.Context) error {
 	go l.healthCheckLoop()
 
 	return nil
+}
+
+// groupByDependencyLevel groups plugins into levels where each level
+// contains plugins whose dependencies are all in previous levels
+func (l *PluginLoader) groupByDependencyLevel(order []string) [][]string {
+	l.pluginsMu.RLock()
+	defer l.pluginsMu.RUnlock()
+
+	var levels [][]string
+	started := make(map[string]bool)
+
+	remaining := make([]string, len(order))
+	copy(remaining, order)
+
+	for len(remaining) > 0 {
+		var currentLevel []string
+		var nextRemaining []string
+
+		for _, pluginID := range remaining {
+			lp, ok := l.plugins[pluginID]
+			if !ok {
+				continue
+			}
+
+			// Check if all dependencies have been started
+			allDepsStarted := true
+			for _, dep := range lp.Manifest.Dependencies {
+				if !started[dep] {
+					allDepsStarted = false
+					break
+				}
+			}
+
+			if allDepsStarted {
+				currentLevel = append(currentLevel, pluginID)
+			} else {
+				nextRemaining = append(nextRemaining, pluginID)
+			}
+		}
+
+		if len(currentLevel) == 0 && len(nextRemaining) > 0 {
+			// No progress made, break to avoid infinite loop
+			// Add remaining to current level
+			currentLevel = nextRemaining
+			nextRemaining = nil
+		}
+
+		// Mark all in current level as started
+		for _, id := range currentLevel {
+			started[id] = true
+		}
+
+		levels = append(levels, currentLevel)
+		remaining = nextRemaining
+	}
+
+	return levels
 }
 
 // Stop gracefully shuts down all plugins in reverse order
