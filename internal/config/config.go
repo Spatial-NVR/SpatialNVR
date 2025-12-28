@@ -551,6 +551,16 @@ func (c *Config) GetCamera(id string) *CameraConfig {
 	return nil
 }
 
+// GetCameras returns a copy of all cameras (thread-safe)
+func (c *Config) GetCameras() []CameraConfig {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	result := make([]CameraConfig, len(c.Cameras))
+	copy(result, c.Cameras)
+	return result
+}
+
 // UpsertCamera adds or updates a camera
 func (c *Config) UpsertCamera(cam CameraConfig) error {
 	c.mu.Lock()

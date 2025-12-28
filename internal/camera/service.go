@@ -581,10 +581,10 @@ func (s *Service) upsertCameraDB(ctx context.Context, cam *Camera) error {
 
 // updateGo2RTCConfig updates the go2rtc configuration
 func (s *Service) updateGo2RTCConfig() error {
-	s.mu.RLock()
 	var streams []streaming.CameraStream
 
-	for _, cam := range s.cfg.Cameras {
+	// Use thread-safe GetCameras() to avoid race with config updates
+	for _, cam := range s.cfg.GetCameras() {
 		if !cam.Enabled {
 			continue
 		}
@@ -597,7 +597,6 @@ func (s *Service) updateGo2RTCConfig() error {
 			SubURL:   cam.Stream.SubURL,
 		})
 	}
-	s.mu.RUnlock()
 
 	generator := streaming.NewConfigGenerator()
 	config := generator.Generate(streams)

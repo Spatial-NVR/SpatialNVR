@@ -568,12 +568,6 @@ func (m *Manager) getPluginConfigMap(id string) map[string]interface{} {
 	return cfg.Config
 }
 
-// isPluginEnabled checks if a plugin is enabled in config
-func (m *Manager) isPluginEnabled(id string) bool {
-	_, enabled := m.getPluginConfig(id)
-	return enabled
-}
-
 // ============================================================================
 // External Plugin Management
 // ============================================================================
@@ -616,11 +610,13 @@ func (m *Manager) ScanPlugins() error {
 		}
 
 		m.mu.Lock()
+		// Use getPluginConfigLocked to avoid deadlock (we already hold the lock)
+		_, enabled := m.getPluginConfigLocked(manifest.ID)
 		m.installed[manifest.ID] = &installedPlugin{
 			manifest: manifest,
 			dir:      pluginDir,
 			state:    PluginStateStopped,
-			enabled:  m.isPluginEnabled(manifest.ID),
+			enabled:  enabled,
 			cameras:  make(map[string]*PluginCamera),
 		}
 		m.mu.Unlock()
