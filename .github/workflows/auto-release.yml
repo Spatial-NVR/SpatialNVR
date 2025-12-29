@@ -20,7 +20,7 @@ permissions:
 
 jobs:
   analyze:
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     outputs:
       should_release: ${{ steps.analyze.outputs.should_release }}
       release_type: ${{ steps.analyze.outputs.release_type }}
@@ -146,7 +146,7 @@ jobs:
   full-release:
     needs: analyze
     if: needs.analyze.outputs.should_release == 'true' && needs.analyze.outputs.release_type == 'full'
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     steps:
       - uses: actions/checkout@v4
         with:
@@ -290,7 +290,7 @@ jobs:
   component-release:
     needs: analyze
     if: needs.analyze.outputs.should_release == 'true' && needs.analyze.outputs.release_type == 'components'
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     strategy:
       matrix:
         platform:
@@ -326,7 +326,7 @@ jobs:
 
   component-release-finalize:
     needs: [analyze, component-release]
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     steps:
       - uses: actions/checkout@v4
         with:

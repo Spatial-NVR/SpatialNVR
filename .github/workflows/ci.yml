@@ -12,7 +12,7 @@ permissions:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     steps:
       - uses: actions/checkout@v4
 
@@ -34,7 +34,7 @@ jobs:
           fail_ci_if_error: false
 
   lint:
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     steps:
       - uses: actions/checkout@v4
 
@@ -50,7 +50,7 @@ jobs:
           args: --timeout=5m
 
   build:
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     needs: [test, lint]
     steps:
       - uses: actions/checkout@v4
@@ -64,7 +64,7 @@ jobs:
         run: CGO_ENABLED=0 go build -v ./...
 
   docker:
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     needs: [build]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     steps:
