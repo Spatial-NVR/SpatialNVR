@@ -721,16 +721,22 @@ export interface WebSocketMessage {
 
 export class NVRWebSocket {
   private ws: WebSocket | null = null;
-  private url: string;
   private reconnectAttempts = 0;
   private maxReconnectAttempts = 5;
   private reconnectDelay = 1000;
   private listeners: Map<string, Set<(data: unknown) => void>> = new Map();
 
-  constructor() {
+  // Lazily compute the WebSocket URL to avoid issues with early module loading
+  private getWsUrl(): string {
     const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const apiHost = new URL(API_BASE).host;
-    this.url = `${wsProtocol}//${apiHost}/ws`;
+    try {
+      const apiHost = new URL(getApiBase()).host;
+      return `${wsProtocol}//${apiHost}/ws`;
+    } catch {
+      // Fallback to current origin if URL parsing fails
+      console.warn('[NVRWebSocket] Failed to parse API URL, using current host');
+      return `${wsProtocol}//${window.location.host}/ws`;
+    }
   }
 
   connect(): void {
@@ -738,7 +744,8 @@ export class NVRWebSocket {
       return;
     }
 
-    this.ws = new WebSocket(this.url);
+    const url = this.getWsUrl();
+    this.ws = new WebSocket(url);
 
     this.ws.onopen = () => {
       console.log('WebSocket connected');

@@ -3,6 +3,25 @@
 
 import { getGo2RTCWsUrl } from './ports'
 
+// Get the appropriate MediaSource constructor for the platform
+// iOS Safari uses ManagedMediaSource for better PWA support
+function getMediaSourceConstructor(): typeof MediaSource | null {
+  if ('ManagedMediaSource' in window) {
+    return (window as unknown as { ManagedMediaSource: typeof MediaSource }).ManagedMediaSource
+  }
+  if ('MediaSource' in window) {
+    return MediaSource
+  }
+  return null
+}
+
+// Check if a codec is supported by the current MediaSource implementation
+function isCodecSupported(codec: string): boolean {
+  const MSConstructor = getMediaSourceConstructor()
+  if (!MSConstructor) return false
+  return MSConstructor.isTypeSupported(codec)
+}
+
 interface StreamBuffer {
   ws: WebSocket | null
   mediaSource: MediaSource | null
@@ -125,12 +144,19 @@ class StreamManager {
       buffer.ws.close()
     }
 
+    // Check if MediaSource is available
+    const MSConstructor = getMediaSourceConstructor()
+    if (!MSConstructor) {
+      console.warn(`[StreamManager] MediaSource not available, skipping ${streamName}`)
+      return
+    }
+
     const ws = new WebSocket(`${getGo2RTCWsUrl()}/api/ws?src=${streamName}`)
     buffer.ws = ws
     ws.binaryType = 'arraybuffer'
 
-    // Create new MediaSource
-    const mediaSource = new MediaSource()
+    // Create new MediaSource using the appropriate constructor for the platform
+    const mediaSource = new MSConstructor()
     buffer.mediaSource = mediaSource
     buffer.objectUrl = URL.createObjectURL(mediaSource)
 
@@ -192,7 +218,7 @@ class StreamManager {
       return
     }
 
-    if (!MediaSource.isTypeSupported(codec)) {
+    if (!isCodecSupported(codec)) {
       console.error(`[StreamManager] Unsupported codec: ${codec}`)
       return
     }
