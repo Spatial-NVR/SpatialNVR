@@ -463,10 +463,10 @@ export function ReolinkSetup({ pluginId, onCameraAdded }: ReolinkSetupProps) {
                     {/* Stream Info */}
                     <div className="md:col-span-2 p-3 bg-gray-900 rounded-md font-mono text-xs">
                       <div className="flex items-center gap-2 text-muted-foreground mb-1">
-                        <Wifi className="w-3 h-3" /> Stream Protocol: <span className="text-green-400">HLS (HTTP-FLV)</span>
+                        <Wifi className="w-3 h-3" /> Stream Protocol: <span className="text-green-400">RTSP</span>
                       </div>
                       <div className="text-muted-foreground text-xs mt-1">
-                        Streams will use HLS for better compatibility with go2rtc/ffmpeg
+                        Streams use RTSP for better audio support with go2rtc
                       </div>
                     </div>
                   </div>
