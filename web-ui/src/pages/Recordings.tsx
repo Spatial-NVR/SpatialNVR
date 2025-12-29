@@ -169,6 +169,8 @@ export function Recordings() {
   const [rightPanelTab, setRightPanelTab] = useState<'events' | 'timeline'>('timeline')
   const [isDragging, setIsDragging] = useState(false)
   const [dragTime, setDragTime] = useState<Date | null>(null)
+  const [hoverTime, setHoverTime] = useState<Date | null>(null)
+  const [hoverX, setHoverX] = useState<number | null>(null)
 
   const videoRef = useRef<HTMLVideoElement>(null)
   const timelineRef = useRef<HTMLDivElement>(null)
@@ -340,6 +342,17 @@ export function Recordings() {
 
     return time
   }, [selectedDate])
+
+  // Handle horizontal timeline drag (for the scrubber below video)
+  const handleHorizontalTimelineDrag = useCallback((clientX: number) => {
+    if (!timelineRef.current) return null
+    const rect = timelineRef.current.getBoundingClientRect()
+    const relativeX = clientX - rect.left
+    const percent = Math.max(0, Math.min(1, relativeX / rect.width))
+    const { dayStart, dayEnd } = getDayBounds()
+    const duration = dayEnd.getTime() - dayStart.getTime()
+    return new Date(dayStart.getTime() + percent * duration)
+  }, [getDayBounds])
 
   // Jump to event
   const jumpToEvent = useCallback((event: Event) => {
@@ -618,85 +631,191 @@ export function Recordings() {
                 </div>
               </div>
 
-              {/* Timeline scrubber */}
+              {/* Enhanced Timeline Scrubber */}
               {timeline && (
-                <div
-                  ref={timelineRef}
-                  className="mt-3 h-8 bg-muted/50 rounded cursor-pointer overflow-hidden relative border border-border"
-                  onClick={(e) => {
-                    if (!timelineRef.current) return
-                    const rect = timelineRef.current.getBoundingClientRect()
-                    const clickX = e.clientX - rect.left
-                    const percent = clickX / rect.width
+                <div className="mt-3 relative select-none">
+                  {/* Hour labels row */}
+                  <div className="flex justify-between text-[10px] text-muted-foreground mb-1 px-0.5">
+                    <span>00:00</span>
+                    <span>06:00</span>
+                    <span>12:00</span>
+                    <span>18:00</span>
+                    <span>24:00</span>
+                  </div>
 
-                    const { dayStart, dayEnd } = getDayBounds()
-
-                    const duration = dayEnd.getTime() - dayStart.getTime()
-                    const clickTime = new Date(dayStart.getTime() + percent * duration)
-                    seekToTime(clickTime)
-                  }}
-                >
-                  {/* Recording segments - bright blue bars */}
-                  {timeline.segments?.map((segment, i) => {
-                    if (segment.type !== 'recording') return null
-
-                    const { dayStart, dayEnd } = getDayBounds()
-                    const dayDuration = dayEnd.getTime() - dayStart.getTime()
-
-                    const segStart = new Date(segment.start_time)
-                    const segEnd = new Date(segment.end_time)
-
-                    const left = ((segStart.getTime() - dayStart.getTime()) / dayDuration) * 100
-                    // Ensure minimum width of 0.5% so short segments are visible
-                    const width = Math.max(0.5, ((segEnd.getTime() - segStart.getTime()) / dayDuration) * 100)
-
-                    return (
+                  {/* Main timeline bar */}
+                  <div
+                    ref={timelineRef}
+                    className="h-12 bg-muted/30 rounded-lg overflow-hidden relative border border-border"
+                    style={{ cursor: isDragging ? 'grabbing' : 'grab' }}
+                    onMouseDown={(e) => {
+                      e.preventDefault()
+                      setIsDragging(true)
+                      setIsPlaying(false)
+                      const time = handleHorizontalTimelineDrag(e.clientX)
+                      if (time) previewTime(time)
+                    }}
+                    onMouseMove={(e) => {
+                      if (isDragging) {
+                        const time = handleHorizontalTimelineDrag(e.clientX)
+                        if (time) previewTime(time)
+                      } else {
+                        // Hover preview
+                        const time = handleHorizontalTimelineDrag(e.clientX)
+                        if (time) {
+                          setHoverTime(time)
+                          const rect = timelineRef.current?.getBoundingClientRect()
+                          if (rect) setHoverX(e.clientX - rect.left)
+                        }
+                      }
+                    }}
+                    onMouseUp={() => {
+                      if (isDragging && dragTime) {
+                        setIsDragging(false)
+                        seekToTime(dragTime, true)
+                        setDragTime(null)
+                      }
+                    }}
+                    onMouseLeave={() => {
+                      setHoverTime(null)
+                      setHoverX(null)
+                      if (isDragging && dragTime) {
+                        setIsDragging(false)
+                        seekToTime(dragTime, true)
+                        setDragTime(null)
+                      }
+                    }}
+                    onTouchStart={(e) => {
+                      setIsDragging(true)
+                      setIsPlaying(false)
+                      const time = handleHorizontalTimelineDrag(e.touches[0].clientX)
+                      if (time) previewTime(time)
+                    }}
+                    onTouchMove={(e) => {
+                      if (!isDragging) return
+                      const time = handleHorizontalTimelineDrag(e.touches[0].clientX)
+                      if (time) previewTime(time)
+                    }}
+                    onTouchEnd={() => {
+                      if (isDragging && dragTime) {
+                        setIsDragging(false)
+                        seekToTime(dragTime, true)
+                        setDragTime(null)
+                      }
+                    }}
+                  >
+                    {/* Hour grid lines */}
+                    {Array.from({ length: 25 }).map((_, i) => (
                       <div
                         key={i}
-                        className="absolute top-0.5 bottom-0.5 bg-blue-500 rounded shadow-sm"
-                        style={{ left: `${Math.max(0, left)}%`, width: `${Math.min(100 - left, width)}%` }}
-                        title={`Recording: ${segStart.toLocaleTimeString()} - ${segEnd.toLocaleTimeString()}`}
+                        className={`absolute top-0 h-full ${i % 6 === 0 ? 'border-l border-border/50' : 'border-l border-border/20'}`}
+                        style={{ left: `${(i / 24) * 100}%` }}
                       />
-                    )
-                  })}
+                    ))}
 
-                  {/* Current position indicator */}
-                  {currentTime && (
-                    (() => {
+                    {/* Recording segments */}
+                    {timeline.segments?.map((segment, i) => {
+                      if (segment.type !== 'recording') return null
+
                       const { dayStart, dayEnd } = getDayBounds()
                       const dayDuration = dayEnd.getTime() - dayStart.getTime()
-                      const position = ((currentTime.getTime() - dayStart.getTime()) / dayDuration) * 100
+
+                      const segStart = new Date(segment.start_time)
+                      const segEnd = new Date(segment.end_time)
+
+                      const left = ((segStart.getTime() - dayStart.getTime()) / dayDuration) * 100
+                      const width = Math.max(0.3, ((segEnd.getTime() - segStart.getTime()) / dayDuration) * 100)
 
                       return (
                         <div
-                          className="absolute top-0 h-full w-0.5 bg-white z-10"
-                          style={{ left: `${position}%` }}
+                          key={i}
+                          className={`absolute top-1 bottom-1 rounded ${segment.has_events ? 'bg-blue-500' : 'bg-blue-500/70'}`}
+                          style={{ left: `${Math.max(0, left)}%`, width: `${Math.min(100 - left, width)}%` }}
                         />
                       )
-                    })()
-                  )}
+                    })}
 
-                  {/* Hour markers */}
-                  {Array.from({ length: 24 }).map((_, i) => (
-                    <div
-                      key={i}
-                      className="absolute top-0 h-full border-l border-border/30"
-                      style={{ left: `${(i / 24) * 100}%` }}
-                    >
-                      {i % 6 === 0 && (
-                        <span className="absolute -top-4 text-[10px] text-muted-foreground -translate-x-1/2">
-                          {i.toString().padStart(2, '0')}:00
-                        </span>
-                      )}
-                    </div>
-                  ))}
+                    {/* Event markers */}
+                    {events?.map((event) => {
+                      const eventInfo = getEventInfo(event.event_type)
+                      const eventTime = new Date(event.timestamp * 1000)
+                      const { dayStart, dayEnd } = getDayBounds()
+                      const dayDuration = dayEnd.getTime() - dayStart.getTime()
+                      const position = ((eventTime.getTime() - dayStart.getTime()) / dayDuration) * 100
 
-                  {/* No recordings indicator */}
-                  {!timeline.segments?.some(s => s.type === 'recording') && (
-                    <div className="absolute inset-0 flex items-center justify-center">
-                      <span className="text-xs text-muted-foreground">No recordings for this day</span>
-                    </div>
-                  )}
+                      if (position < 0 || position > 100) return null
+
+                      return (
+                        <div
+                          key={event.id}
+                          className="absolute top-0 w-1 h-full opacity-80 hover:opacity-100 transition-opacity"
+                          style={{ left: `${position}%`, backgroundColor: eventInfo.color }}
+                          title={`${eventInfo.label} at ${formatTime(eventTime)}`}
+                        />
+                      )
+                    })}
+
+                    {/* Current position indicator */}
+                    {currentTime && !isDragging && (
+                      (() => {
+                        const { dayStart, dayEnd } = getDayBounds()
+                        const dayDuration = dayEnd.getTime() - dayStart.getTime()
+                        const position = ((currentTime.getTime() - dayStart.getTime()) / dayDuration) * 100
+
+                        return (
+                          <div
+                            className="absolute top-0 h-full w-0.5 bg-white shadow-lg z-20"
+                            style={{ left: `${position}%` }}
+                          >
+                            <div className="absolute -top-1 left-1/2 -translate-x-1/2 w-2 h-2 rounded-full bg-white" />
+                          </div>
+                        )
+                      })()
+                    )}
+
+                    {/* Drag indicator */}
+                    {isDragging && dragTime && (
+                      (() => {
+                        const { dayStart, dayEnd } = getDayBounds()
+                        const dayDuration = dayEnd.getTime() - dayStart.getTime()
+                        const position = ((dragTime.getTime() - dayStart.getTime()) / dayDuration) * 100
+
+                        return (
+                          <div
+                            className="absolute top-0 h-full w-0.5 bg-primary shadow-lg z-30"
+                            style={{ left: `${position}%` }}
+                          >
+                            <div className="absolute -top-1 left-1/2 -translate-x-1/2 w-3 h-3 rounded-full bg-primary shadow-lg" />
+                            <div className="absolute -bottom-6 left-1/2 -translate-x-1/2 px-2 py-0.5 bg-primary text-primary-foreground text-xs rounded shadow-lg whitespace-nowrap">
+                              {formatTime(dragTime)}
+                            </div>
+                          </div>
+                        )
+                      })()
+                    )}
+
+                    {/* Hover time indicator */}
+                    {hoverTime && hoverX !== null && !isDragging && (
+                      <div
+                        className="absolute -bottom-6 px-2 py-0.5 bg-muted text-foreground text-xs rounded shadow-lg whitespace-nowrap z-20 pointer-events-none"
+                        style={{ left: `${hoverX}px`, transform: 'translateX(-50%)' }}
+                      >
+                        {formatTime(hoverTime)}
+                      </div>
+                    )}
+
+                    {/* No recordings indicator */}
+                    {!timeline.segments?.some(s => s.type === 'recording') && (
+                      <div className="absolute inset-0 flex items-center justify-center">
+                        <span className="text-xs text-muted-foreground">No recordings for this day</span>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Scrub hint */}
+                  <div className="flex justify-center mt-1">
+                    <span className="text-[10px] text-muted-foreground">Drag to scrub through recordings</span>
+                  </div>
                 </div>
               )}
             </div>
