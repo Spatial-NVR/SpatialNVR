@@ -16,7 +16,7 @@
 
 - go2rtc RTSP: 8554
 - go2rtc WebRTC: 8555
-- wyze-bridge RTSP: 8560
+- wyze-bridge RTSP: 8564
 - wyze-bridge WebRTC: 8561
 - wyze-bridge HLS: 8562
-- wyze-bridge Web UI: 5001
+- wyze-bridge Web UI: 5002
