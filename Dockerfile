@@ -99,11 +99,13 @@ RUN groupadd -g 1000 nvr && \
 # Create directories
 # /app contains the shipped versions (read-only after build)
 # /data/bin and /data/web can contain updated versions (writable, checked first at runtime)
+# /tokens and /img are required by wyze-bridge (hardcoded paths in wyze-bridge config)
 RUN mkdir -p /app /app/bin /app/web \
     /config \
     /data /data/bin /data/web /data/plugins /data/updates \
     /data/recordings /data/thumbnails /data/snapshots /data/exports \
-    && chown -R nvr:nvr /app /config /data
+    /tokens /img \
+    && chown -R nvr:nvr /app /config /data /tokens /img
 
 WORKDIR /app
 
