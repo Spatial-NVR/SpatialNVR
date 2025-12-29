@@ -39,46 +39,43 @@ function supportsH265(): boolean {
   return codecs.some(codec => MediaSource.isTypeSupported(codec))
 }
 
+// Frigate's codec list - includes both video and audio codecs
+const MSE_CODECS = [
+  'avc1.640029',      // H.264 high 4.1 (Chromecast 1st and 2nd Gen)
+  'avc1.64002A',      // H.264 high 4.2 (Chromecast 3rd Gen)
+  'avc1.640033',      // H.264 high 5.1 (Chromecast with Google TV)
+  'hvc1.1.6.L153.B0', // H.265 main 5.1 (Chromecast Ultra)
+  'mp4a.40.2',        // AAC LC
+  'mp4a.40.5',        // AAC HE
+  'flac',             // FLAC (PCM compatible)
+  'opus',             // OPUS Chrome, Firefox
+]
+
+// Get MediaSource constructor - use ManagedMediaSource for Safari/iOS if available
+function getMediaSource(): typeof MediaSource | null {
+  // ManagedMediaSource is available in Safari/iOS 17.1+
+  if ('ManagedMediaSource' in window) {
+    console.log('[VideoPlayer] Using ManagedMediaSource (Safari/iOS)')
+    return (window as unknown as { ManagedMediaSource: typeof MediaSource }).ManagedMediaSource
+  }
+  if ('MediaSource' in window) {
+    return MediaSource
+  }
+  return null
+}
+
 // Get list of supported MSE codecs to send to go2rtc
 // go2rtc uses this to determine what codec string to send back
 function getSupportedCodecs(): string {
-  const videoCodecs = [
-    'avc1.640029',      // H.264 high 4.1
-    'avc1.64002A',      // H.264 high 4.2
-    'avc1.640033',      // H.264 high 5.1
-    'hvc1.1.6.L153.B0', // H.265 main 5.1
-  ]
+  const MS = getMediaSource()
+  if (!MS) return ''
 
-  // Audio codecs - opus is most universally supported for transcoded streams
-  const audioCodecs = [
-    'opus',             // OPUS - best browser support, go2rtc can transcode to this
-    'mp4a.40.2',        // AAC LC
-    'mp4a.40.5',        // AAC HE (SBR)
-    'flac',             // FLAC (for PCM audio)
-  ]
-
-  // Test video codecs with video/mp4
-  const supportedVideo = videoCodecs.filter(codec =>
-    MediaSource.isTypeSupported(`video/mp4; codecs="${codec}"`)
+  const supported = MSE_CODECS.filter(codec =>
+    MS.isTypeSupported(`video/mp4; codecs="${codec}"`)
   )
 
-  // Test audio codecs - try both audio/mp4 and combined with a video codec
-  const supportedAudio = audioCodecs.filter(codec => {
-    // Try audio-only container
-    if (MediaSource.isTypeSupported(`audio/mp4; codecs="${codec}"`)) {
-      return true
-    }
-    // Try combined with H.264 (most common)
-    if (supportedVideo.length > 0 && MediaSource.isTypeSupported(`video/mp4; codecs="${supportedVideo[0]},${codec}"`)) {
-      return true
-    }
-    return false
-  })
-
-  console.log('[VideoPlayer] Supported video codecs:', supportedVideo)
-  console.log('[VideoPlayer] Supported audio codecs:', supportedAudio)
-
-  return [...supportedVideo, ...supportedAudio].join(',')
+  console.log('[VideoPlayer] Supported MSE codecs:', supported)
+  return supported.join(',')
 }
 
 // Cache the working mode per camera to avoid repeated fallback cycles
@@ -147,6 +144,7 @@ export const VideoPlayer = memo(function VideoPlayer({
   const [mode, setMode] = useState<StreamMode>(getInitialMode)
 
   // WebRTC streaming - best audio support via native browser WebRTC
+  // Implementation based on Frigate's WebRTCPlayer approach
   useEffect(() => {
     if (mode !== 'webrtc' || !cameraId) return
 
@@ -162,36 +160,56 @@ export const VideoPlayer = memo(function VideoPlayer({
 
     const connect = async () => {
       try {
-        // Create peer connection
+        // Create peer connection with max-bundle policy (like Frigate)
+        // This multiplexes all media over a single transport for better reliability
         pc = new RTCPeerConnection({
+          bundlePolicy: 'max-bundle',
           iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
         })
 
-        // Handle incoming tracks
-        pc.ontrack = (event) => {
-          console.log('[VideoPlayer] WebRTC track received:', event.track.kind)
-          if (event.streams && event.streams[0]) {
-            video.srcObject = event.streams[0]
+        // Frigate's approach: Get tracks from transceivers immediately
+        // rather than waiting for ontrack events
+        const localTracks: MediaStreamTrack[] = []
+
+        // Add video and audio transceivers, get their receiver tracks
+        const videoTransceiver = pc.addTransceiver('video', { direction: 'recvonly' })
+        const audioTransceiver = pc.addTransceiver('audio', { direction: 'recvonly' })
+
+        localTracks.push(videoTransceiver.receiver.track)
+        localTracks.push(audioTransceiver.receiver.track)
+
+        // Create MediaStream from transceiver tracks and set it immediately
+        // This is key - Frigate sets srcObject BEFORE the connection completes
+        const stream = new MediaStream(localTracks)
+        video.srcObject = stream
+
+        console.log('[VideoPlayer] WebRTC stream created with tracks:',
+          stream.getVideoTracks().length, 'video,',
+          stream.getAudioTracks().length, 'audio')
+
+        // Mark audio as available since we added an audio transceiver
+        if (mounted) {
+          setHasAudioTrack(true)
+        }
+
+        // Handle connection state changes
+        pc.oniceconnectionstatechange = () => {
+          console.log('[VideoPlayer] WebRTC ICE state:', pc?.iceConnectionState)
+          if (pc?.iceConnectionState === 'connected') {
             if (mounted) {
               setIsLoading(false)
               workingModes[cameraId] = 'webrtc'
-              // Check if we have audio tracks
-              const audioTracks = event.streams[0].getAudioTracks()
-              console.log('[VideoPlayer] WebRTC audio tracks:', audioTracks.length)
-              if (audioTracks.length > 0) {
-                setHasAudioTrack(true)
-              }
             }
-            video.play().catch(() => {})
-          }
-        }
-
-        pc.oniceconnectionstatechange = () => {
-          console.log('[VideoPlayer] WebRTC ICE state:', pc?.iceConnectionState)
-          if (pc?.iceConnectionState === 'failed' || pc?.iceConnectionState === 'disconnected') {
+            video.play().catch((err) => {
+              // If autoplay fails due to policy, mute and retry
+              if (err.name === 'NotAllowedError') {
+                video.muted = true
+                video.play().catch(() => {})
+              }
+            })
+          } else if (pc?.iceConnectionState === 'failed' || pc?.iceConnectionState === 'disconnected') {
             console.log('[VideoPlayer] WebRTC failed, falling back to MSE')
             if (mounted) {
-              // Fall back based on platform
               if (isIOSOrSafari()) {
                 setMode('hls')
               } else {
@@ -201,43 +219,34 @@ export const VideoPlayer = memo(function VideoPlayer({
           }
         }
 
-        // Add transceivers for audio and video (receive only)
-        pc.addTransceiver('video', { direction: 'recvonly' })
-        pc.addTransceiver('audio', { direction: 'recvonly' })
-
-        // Create offer
-        const offer = await pc.createOffer()
-        await pc.setLocalDescription(offer)
-
-        // Wait for ICE gathering to complete (with timeout)
-        await new Promise<void>((resolve) => {
-          if (pc!.iceGatheringState === 'complete') {
-            resolve()
-            return
-          }
-          const checkState = () => {
-            if (pc?.iceGatheringState === 'complete') {
-              pc.removeEventListener('icegatheringstatechange', checkState)
-              resolve()
-            }
-          }
-          pc!.addEventListener('icegatheringstatechange', checkState)
-          // Timeout after 2 seconds
-          setTimeout(resolve, 2000)
-        })
+        // Also handle track events for additional logging
+        pc.ontrack = (event) => {
+          console.log('[VideoPlayer] WebRTC ontrack:', event.track.kind, 'enabled:', event.track.enabled)
+        }
 
         // Connect to go2rtc WebRTC endpoint via WebSocket
         const wsUrl = `${getGo2RTCWsUrl()}/api/ws?src=${streamName}`
         console.log('[VideoPlayer] WebRTC connecting to:', wsUrl)
         ws = new WebSocket(wsUrl)
 
-        ws.onopen = () => {
-          // Send offer to go2rtc
-          const localDesc = pc!.localDescription
-          if (localDesc) {
-            ws!.send(JSON.stringify({
-              type: 'webrtc/offer',
-              value: localDesc.sdp
+        ws.onopen = async () => {
+          // Create and send offer after WebSocket is open
+          const offer = await pc!.createOffer()
+          await pc!.setLocalDescription(offer)
+
+          console.log('[VideoPlayer] WebRTC sending offer')
+          ws!.send(JSON.stringify({
+            type: 'webrtc/offer',
+            value: pc!.localDescription?.sdp
+          }))
+        }
+
+        // Handle ICE candidates - send to server
+        pc.onicecandidate = (event) => {
+          if (event.candidate && ws?.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({
+              type: 'webrtc/candidate',
+              value: event.candidate.candidate
             }))
           }
         }
@@ -311,11 +320,23 @@ export const VideoPlayer = memo(function VideoPlayer({
   }, [cameraId, mode])
 
   // MSE streaming - tries native H265 first, then H264 transcoded
+  // Implementation based on Frigate's MSEPlayer approach
   useEffect(() => {
     if (!cameraId || (mode !== 'mse' && mode !== 'mse-h264')) return
 
     const video = videoRef.current
     if (!video) return
+
+    const MS = getMediaSource()
+    if (!MS) {
+      console.log('[VideoPlayer] MediaSource not supported, falling back')
+      if (isIOSOrSafari()) {
+        setMode('hls')
+      } else {
+        setMode('mjpeg')
+      }
+      return
+    }
 
     setIsLoading(true)
     setError(null)
@@ -323,20 +344,16 @@ export const VideoPlayer = memo(function VideoPlayer({
     let mounted = true
 
     // For mse-h264 mode, request transcoded stream
-    // Always include audio track for sound playback
-    // Force audio=opus to transcode camera audio which has excellent browser support
-    // Many cameras use AAC at low sample rates (16kHz) which browsers don't support in MSE
-    // Use dynamically discovered go2rtc port
     const wsBase = getGo2RTCWsUrl()
     const wsUrl = mode === 'mse-h264'
-      ? `${wsBase}/api/ws?src=${streamName}&video=h264&audio=opus`
-      : `${wsBase}/api/ws?src=${streamName}&audio=opus`
+      ? `${wsBase}/api/ws?src=${streamName}&video=h264`
+      : `${wsBase}/api/ws?src=${streamName}`
 
     console.log(`[VideoPlayer] Connecting MSE (${mode}):`, wsUrl)
     const ws = new WebSocket(wsUrl)
     ws.binaryType = 'arraybuffer'
 
-    const mediaSource = new MediaSource()
+    const mediaSource = new MS()
     video.src = URL.createObjectURL(mediaSource)
 
     let sourceBuffer: SourceBuffer | null = null
@@ -352,7 +369,13 @@ export const VideoPlayer = memo(function VideoPlayer({
           // Cache the working mode to avoid fallback cycle on remount
           workingModes[cameraId] = mode
           if (mounted) setIsLoading(false)
-          video.play().catch(() => {})
+          // Play with NotAllowedError handling (like Frigate)
+          video.play().catch((err) => {
+            if (err.name === 'NotAllowedError' && !video.muted) {
+              video.muted = true
+              video.play().catch(() => {})
+            }
+          })
         }
       } catch {
         // Buffer overflow - trim queue
@@ -362,7 +385,6 @@ export const VideoPlayer = memo(function VideoPlayer({
 
     ws.onopen = () => {
       // Send supported codecs to go2rtc - it will respond with the appropriate codec string
-      // This is how go2rtc negotiates which codecs to use for the stream
       const supportedCodecs = getSupportedCodecs()
       console.log('[VideoPlayer] Sending supported codecs:', supportedCodecs)
       ws.send(JSON.stringify({ type: 'mse', value: supportedCodecs }))
@@ -374,7 +396,7 @@ export const VideoPlayer = memo(function VideoPlayer({
         if (msg.type === 'mse') {
           const codec = msg.value
           console.log(`[VideoPlayer] MSE codec from server:`, codec)
-          console.log(`[VideoPlayer] Codec supported:`, MediaSource.isTypeSupported(codec))
+          console.log(`[VideoPlayer] Codec supported:`, MS.isTypeSupported(codec))
           const isH265 = codec.includes('hev1') || codec.includes('hvc1') || codec.includes('hevc')
           const hasAudio = codec.includes('mp4a') || codec.includes('opus') || codec.includes('flac')
           console.log(`[VideoPlayer] Is H265: ${isH265}, Has audio: ${hasAudio}, Browser supports H265: ${supportsH265()}`)
@@ -385,7 +407,7 @@ export const VideoPlayer = memo(function VideoPlayer({
           }
 
           const setup = () => {
-            if (!MediaSource.isTypeSupported(codec)) {
+            if (!MS.isTypeSupported(codec)) {
               console.warn('[VideoPlayer] Codec not supported:', codec)
 
               // If we're in native mode and H265 isn't supported, try H264 transcoding
@@ -395,9 +417,15 @@ export const VideoPlayer = memo(function VideoPlayer({
                 return
               }
 
-              // If H264 transcode also fails, fall back to MJPEG
-              console.log('[VideoPlayer] Falling back to MJPEG')
-              if (mounted) setMode('mjpeg')
+              // If H264 transcode also fails, fall back to HLS or MJPEG
+              console.log('[VideoPlayer] Falling back')
+              if (mounted) {
+                if (isIOSOrSafari()) {
+                  setMode('hls')
+                } else {
+                  setMode('mjpeg')
+                }
+              }
               return
             }
 
@@ -410,8 +438,12 @@ export const VideoPlayer = memo(function VideoPlayer({
               console.error('[VideoPlayer] SourceBuffer error:', e)
               if (mode === 'mse' && isH265) {
                 if (mounted) setMode('mse-h264')
-              } else {
-                if (mounted) setMode('mjpeg')
+              } else if (mounted) {
+                if (isIOSOrSafari()) {
+                  setMode('hls')
+                } else {
+                  setMode('mjpeg')
+                }
               }
             }
           }
@@ -429,8 +461,12 @@ export const VideoPlayer = memo(function VideoPlayer({
       console.error('[VideoPlayer] WebSocket error:', e)
       if (mode === 'mse') {
         if (mounted) setMode('mse-h264')
-      } else {
-        if (mounted) setMode('mjpeg')
+      } else if (mounted) {
+        if (isIOSOrSafari()) {
+          setMode('hls')
+        } else {
+          setMode('mjpeg')
+        }
       }
     }
 
@@ -441,6 +477,8 @@ export const VideoPlayer = memo(function VideoPlayer({
         console.log(`[VideoPlayer] ${mode} timeout after ${timeoutMs}ms`)
         if (mode === 'mse') {
           setMode('mse-h264')
+        } else if (isIOSOrSafari()) {
+          setMode('hls')
         } else {
           setMode('mjpeg')
         }
