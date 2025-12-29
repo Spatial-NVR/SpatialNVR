@@ -2,13 +2,13 @@
 # Multi-stage build for optimal image size
 #
 # Architecture Strategy:
-# - amd64 (latest): Default image, full plugin compatibility including Wyze
+# - amd64 (latest): Default image, full plugin compatibility
 # - arm64: Native ARM performance for Raspberry Pi, AWS Graviton, etc.
 #
 # Plugin Architecture:
-# - Wyze plugin uses embedded wyze-bridge (Python) running as subprocess
+# - Plugins are self-contained and manage their own dependencies
+# - Wyze plugin downloads/bundles wyze-bridge itself (like Scrypted)
 # - No Docker-in-Docker or privileged mode required
-# - TUTK library and MediaMTX are included for Wyze camera P2P streaming
 #
 # Self-Updating Architecture:
 # - /app/bin/nvr: Main NVR binary (updatable via /data/bin/nvr)
@@ -18,11 +18,6 @@
 #
 # The container ships with initial versions, but the system checks GitHub releases
 # and can update components without rebuilding the container.
-
-# =============================================================================
-# Stage 0: Extract wyze-bridge components (Python app + TUTK library)
-# =============================================================================
-FROM --platform=linux/amd64 mrlt8/wyze-bridge:latest AS wyze-bridge
 
 # =============================================================================
 # Stage 1: Build the Go backend (using Debian for glibc compatibility)
@@ -84,7 +79,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     git \
     # FFmpeg with all codecs for stream processing
     ffmpeg \
-    # Python 3 for wyze-bridge (Wyze plugin)
+    # Python 3 for plugins that need it (e.g., Wyze plugin downloads wyze-bridge)
     python3 \
     python3-pip \
     python3-venv \
@@ -104,13 +99,11 @@ RUN groupadd -g 1000 nvr && \
 # Create directories
 # /app contains the shipped versions (read-only after build)
 # /data/bin and /data/web can contain updated versions (writable, checked first at runtime)
-# /tokens and /img are required by wyze-bridge plugin
 RUN mkdir -p /app /app/bin /app/web \
     /config \
     /data /data/bin /data/web /data/plugins /data/updates \
     /data/recordings /data/thumbnails /data/snapshots /data/exports \
-    /tokens /img \
-    && chown -R nvr:nvr /app /config /data /tokens /img
+    && chown -R nvr:nvr /app /config /data
 
 WORKDIR /app
 
@@ -118,26 +111,6 @@ WORKDIR /app
 ARG GO2RTC_VERSION=1.9.13
 ARG TARGETARCH=amd64
 ADD --chmod=755 https://github.com/AlexxIT/go2rtc/releases/download/v${GO2RTC_VERSION}/go2rtc_linux_${TARGETARCH} /app/bin/go2rtc
-
-# Download MediaMTX for wyze-bridge plugin (required for Wyze camera support)
-ARG MTX_VERSION=1.9.1
-RUN MTX_ARCH=$(case ${TARGETARCH} in arm64) echo "arm64v8" ;; armv7) echo "armv7" ;; *) echo "amd64" ;; esac) && \
-    curl -SL https://github.com/bluenviron/mediamtx/releases/download/v${MTX_VERSION}/mediamtx_v${MTX_VERSION}_linux_${MTX_ARCH}.tar.gz \
-    | tar -xzf - -C /app mediamtx mediamtx.yml && \
-    chmod +x /app/mediamtx
-
-# Copy TUTK library from wyze-bridge for Wyze P2P connections (x86_64 only)
-# This is a proprietary library required for direct camera connections
-COPY --from=wyze-bridge /usr/local/lib/libIOTCAPIs_ALL.so /usr/local/lib/libIOTCAPIs_ALL.so
-RUN ldconfig
-
-# Copy wyze-bridge Python application and dependencies
-# The app directory contains the full wyze-bridge Python codebase
-COPY --from=wyze-bridge /app /app/wyze-bridge
-# Copy pre-installed Python packages from wyze-bridge
-COPY --from=wyze-bridge /usr/local/lib/python3.12/site-packages /usr/local/lib/python3/dist-packages/
-# Make the wyze-bridge start script executable
-RUN chmod +x /app/wyze-bridge/wyze-bridge 2>/dev/null || true
 
 # Copy the backend binary to /app/bin (new location for self-updating)
 COPY --from=builder /build/nvr /app/bin/nvr
