@@ -50,21 +50,40 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Install cross-compilation dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu
+
       - name: Build binaries
         run: |
           mkdir -p dist
           VERSION="${{ inputs.version }}"
 
-          for platform in "linux/amd64" "linux/arm64" "darwin/amd64" "darwin/arm64"; do
+          # Build linux/amd64 with CGO (native, for SQLite support)
+          echo "Building dist/spatialnvr-linux-amd64..."
+          CGO_ENABLED=1 GOOS=linux GOARCH=amd64 go build \
+            -ldflags="-s -w -X main.Version=$VERSION" \
+            -o "dist/spatialnvr-linux-amd64" ./cmd/nvr
+          chmod +x "dist/spatialnvr-linux-amd64"
+
+          # Build linux/arm64 with CGO (cross-compile)
+          echo "Building dist/spatialnvr-linux-arm64..."
+          CGO_ENABLED=1 GOOS=linux GOARCH=arm64 CC=aarch64-linux-gnu-gcc go build \
+            -ldflags="-s -w -X main.Version=$VERSION" \
+            -o "dist/spatialnvr-linux-arm64" ./cmd/nvr
+          chmod +x "dist/spatialnvr-linux-arm64"
+
+          # Darwin builds - CGO disabled (use Docker for production)
+          for platform in "darwin/amd64" "darwin/arm64"; do
             GOOS=$(echo $platform | cut -d/ -f1)
             GOARCH=$(echo $platform | cut -d/ -f2)
             OUTPUT="dist/spatialnvr-${GOOS}-${GOARCH}"
 
-            echo "Building $OUTPUT..."
+            echo "Building $OUTPUT (without CGO - use Docker for production)..."
             CGO_ENABLED=0 GOOS=$GOOS GOARCH=$GOARCH go build \
               -ldflags="-s -w -X main.Version=$VERSION" \
               -o "$OUTPUT" ./cmd/nvr
-
             chmod +x "$OUTPUT"
           done
 

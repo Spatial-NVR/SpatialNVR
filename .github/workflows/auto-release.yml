@@ -181,17 +181,35 @@ jobs:
           echo "tag=$TAG" >> $GITHUB_OUTPUT
           echo "version=$VERSION" >> $GITHUB_OUTPUT
 
+      - name: Install cross-compilation dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu
+
       - name: Build binaries
         run: |
           mkdir -p dist
           VERSION="${{ steps.tag.outputs.version }}"
 
-          for platform in "linux/amd64" "linux/arm64" "darwin/amd64" "darwin/arm64"; do
+          # Build linux/amd64 with CGO (native, for SQLite support)
+          echo "Building dist/spatialnvr-linux-amd64..."
+          CGO_ENABLED=1 GOOS=linux GOARCH=amd64 go build \
+            -ldflags="-s -w -X main.Version=$VERSION" \
+            -o "dist/spatialnvr-linux-amd64" ./cmd/nvr
+
+          # Build linux/arm64 with CGO (cross-compile)
+          echo "Building dist/spatialnvr-linux-arm64..."
+          CGO_ENABLED=1 GOOS=linux GOARCH=arm64 CC=aarch64-linux-gnu-gcc go build \
+            -ldflags="-s -w -X main.Version=$VERSION" \
+            -o "dist/spatialnvr-linux-arm64" ./cmd/nvr
+
+          # Darwin builds - CGO disabled (use Docker for production)
+          for platform in "darwin/amd64" "darwin/arm64"; do
             GOOS=$(echo $platform | cut -d/ -f1)
             GOARCH=$(echo $platform | cut -d/ -f2)
             OUTPUT="dist/spatialnvr-${GOOS}-${GOARCH}"
 
-            echo "Building $OUTPUT..."
+            echo "Building $OUTPUT (without CGO - use Docker for production)..."
             CGO_ENABLED=0 GOOS=$GOOS GOARCH=$GOARCH go build \
               -ldflags="-s -w -X main.Version=$VERSION" \
               -o "$OUTPUT" ./cmd/nvr
@@ -308,13 +326,29 @@ jobs:
         with:
           go-version: '1.24'
 
+      - name: Install cross-compilation dependencies
+        if: matrix.platform.goarch == 'arm64' && matrix.platform.goos == 'linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu
+
       - name: Build binary
-        env:
-          GOOS: ${{ matrix.platform.goos }}
-          GOARCH: ${{ matrix.platform.goarch }}
-          CGO_ENABLED: 0
         run: |
           VERSION="${{ needs.analyze.outputs.next_patch }}"
+          GOOS="${{ matrix.platform.goos }}"
+          GOARCH="${{ matrix.platform.goarch }}"
+
+          # Enable CGO for Linux builds (required for SQLite)
+          if [ "$GOOS" = "linux" ]; then
+            export CGO_ENABLED=1
+            if [ "$GOARCH" = "arm64" ]; then
+              export CC=aarch64-linux-gnu-gcc
+            fi
+          else
+            export CGO_ENABLED=0
+          fi
+
+          echo "Building with CGO_ENABLED=$CGO_ENABLED CC=$CC"
           go build -ldflags="-s -w -X main.Version=$VERSION" \
             -o spatialnvr-${{ matrix.platform.suffix }} ./cmd/nvr
 
