@@ -1317,7 +1317,7 @@ const (
 )
 
 // Current NVR version
-const nvrVersion = "0.0.3"
+const nvrVersion = "0.0.19"
 
 // Cached catalog
 var (
