@@ -191,10 +191,11 @@ export function Recordings() {
     queryKey: ['timeline', selectedCamera, selectedDate],
     queryFn: async (): Promise<TimelineData | null> => {
       if (!selectedCamera) return null
-      const start = new Date(selectedDate)
-      start.setHours(0, 0, 0, 0)
-      const end = new Date(selectedDate)
-      end.setHours(23, 59, 59, 999)
+      // Parse date parts to avoid timezone issues
+      // selectedDate is "YYYY-MM-DD", we want local midnight to local 23:59:59
+      const [year, month, day] = selectedDate.split('-').map(Number)
+      const start = new Date(year, month - 1, day, 0, 0, 0, 0)
+      const end = new Date(year, month - 1, day, 23, 59, 59, 999)
 
       const res = await fetch(
         `${apiUrl}/api/v1/recordings/timeline/${selectedCamera}?start=${start.toISOString()}&end=${end.toISOString()}`
@@ -215,10 +216,10 @@ export function Recordings() {
     queryKey: ['events', selectedCamera, selectedDate],
     queryFn: async (): Promise<Event[]> => {
       if (!selectedCamera) return []
-      const start = new Date(selectedDate)
-      start.setHours(0, 0, 0, 0)
-      const end = new Date(selectedDate)
-      end.setHours(23, 59, 59, 999)
+      // Parse date parts to avoid timezone issues
+      const [year, month, day] = selectedDate.split('-').map(Number)
+      const start = new Date(year, month - 1, day, 0, 0, 0, 0)
+      const end = new Date(year, month - 1, day, 23, 59, 59, 999)
 
       const result = await eventApi.list({
         camera_id: selectedCamera,
@@ -234,6 +235,14 @@ export function Recordings() {
     enabled: !!selectedCamera,
   })
 
+  // Helper to get day boundaries from selectedDate string (avoids timezone issues)
+  const getDayBounds = useCallback(() => {
+    const [year, month, day] = selectedDate.split('-').map(Number)
+    const dayStart = new Date(year, month - 1, day, 0, 0, 0, 0)
+    const dayEnd = new Date(year, month - 1, day, 23, 59, 59, 999)
+    return { dayStart, dayEnd }
+  }, [selectedDate])
+
   // Format time for display
   const formatTime = (date: Date) => {
     return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
@@ -248,12 +257,17 @@ export function Recordings() {
     return `${apiUrl}/api/v1/recordings/timeline/${selectedCamera}/stream?t=${timestamp.toISOString()}`
   }, [apiUrl, selectedCamera])
 
+  // Pending seek state - used when transitioning from live mode where video isn't mounted yet
+  const [pendingSeek, setPendingSeek] = useState<{ time: Date; autoPlay: boolean } | null>(null)
+
   // Seek to a specific time
   const seekToTime = useCallback((time: Date, autoPlay = false) => {
     setViewMode('playback')
     setCurrentTime(time)
     setVideoStartTime(time)
+
     if (videoRef.current) {
+      // Video element exists, load directly
       const url = getStreamUrl(time)
       videoRef.current.src = url
       videoRef.current.load()
@@ -261,23 +275,47 @@ export function Recordings() {
         setIsPlaying(true)
         videoRef.current.play().catch(() => {})
       }
+    } else {
+      // Video element doesn't exist yet (transitioning from live mode)
+      // Store the seek request to be processed after render
+      setPendingSeek({ time, autoPlay: autoPlay || isPlaying })
     }
   }, [getStreamUrl, isPlaying])
 
-  // Preview time during scrubbing (updates video without loading new source every time)
+  // Handle pending seek after video element mounts
+  // Uses a small delay to ensure React has rendered the video element
+  useEffect(() => {
+    if (!pendingSeek || viewMode !== 'playback') return
+
+    const loadVideo = () => {
+      if (!videoRef.current) {
+        // Video element not yet in DOM, try again shortly
+        setTimeout(loadVideo, 50)
+        return
+      }
+
+      const url = getStreamUrl(pendingSeek.time)
+      console.log('[Recordings] Loading video:', url)
+      videoRef.current.src = url
+      videoRef.current.load()
+      if (pendingSeek.autoPlay) {
+        setIsPlaying(true)
+        videoRef.current.play().catch(() => {})
+      }
+      setPendingSeek(null)
+    }
+
+    loadVideo()
+  }, [pendingSeek, viewMode, getStreamUrl])
+
+  // Preview time during scrubbing - only updates UI indicators, doesn't load video
+  // This avoids stuttering from constant video reloads during drag
   const previewTime = useCallback((time: Date) => {
     setViewMode('playback')
     setDragTime(time)
     setCurrentTime(time)
-    // Load video at this position for preview
-    if (videoRef.current) {
-      const url = getStreamUrl(time)
-      if (videoRef.current.src !== url) {
-        videoRef.current.src = url
-        videoRef.current.load()
-      }
-    }
-  }, [getStreamUrl])
+    // Don't set videoStartTime here - that's done on mouse up when we actually seek
+  }, [])
 
   // Handle vertical timeline drag
   const handleTimelineDrag = useCallback((clientY: number) => {
@@ -293,8 +331,12 @@ export function Recordings() {
     const hours = Math.floor(totalMinutes / 60)
     const minutes = Math.floor(totalMinutes % 60)
 
-    const time = new Date(selectedDate)
-    time.setHours(Math.min(23, Math.max(0, hours)), Math.min(59, Math.max(0, minutes)), 0, 0)
+    // Parse date parts to avoid timezone issues (same as getDayBounds)
+    const [year, month, day] = selectedDate.split('-').map(Number)
+    const time = new Date(year, month - 1, day,
+      Math.min(23, Math.max(0, hours)),
+      Math.min(59, Math.max(0, minutes)),
+      0, 0)
 
     return time
   }, [selectedDate])
@@ -587,10 +629,7 @@ export function Recordings() {
                     const clickX = e.clientX - rect.left
                     const percent = clickX / rect.width
 
-                    const dayStart = new Date(selectedDate)
-                    dayStart.setHours(0, 0, 0, 0)
-                    const dayEnd = new Date(selectedDate)
-                    dayEnd.setHours(23, 59, 59, 999)
+                    const { dayStart, dayEnd } = getDayBounds()
 
                     const duration = dayEnd.getTime() - dayStart.getTime()
                     const clickTime = new Date(dayStart.getTime() + percent * duration)
@@ -601,10 +640,7 @@ export function Recordings() {
                   {timeline.segments?.map((segment, i) => {
                     if (segment.type !== 'recording') return null
 
-                    const dayStart = new Date(selectedDate)
-                    dayStart.setHours(0, 0, 0, 0)
-                    const dayEnd = new Date(selectedDate)
-                    dayEnd.setHours(23, 59, 59, 999)
+                    const { dayStart, dayEnd } = getDayBounds()
                     const dayDuration = dayEnd.getTime() - dayStart.getTime()
 
                     const segStart = new Date(segment.start_time)
@@ -627,10 +663,7 @@ export function Recordings() {
                   {/* Current position indicator */}
                   {currentTime && (
                     (() => {
-                      const dayStart = new Date(selectedDate)
-                      dayStart.setHours(0, 0, 0, 0)
-                      const dayEnd = new Date(selectedDate)
-                      dayEnd.setHours(23, 59, 59, 999)
+                      const { dayStart, dayEnd } = getDayBounds()
                       const dayDuration = dayEnd.getTime() - dayStart.getTime()
                       const position = ((currentTime.getTime() - dayStart.getTime()) / dayDuration) * 100
 
@@ -819,8 +852,7 @@ export function Recordings() {
                         const segStart = new Date(segment.start_time)
                         const segEnd = new Date(segment.end_time)
 
-                        const dayStart = new Date(selectedDate)
-                        dayStart.setHours(0, 0, 0, 0)
+                        const { dayStart } = getDayBounds()
 
                         const startMinutes = (segStart.getTime() - dayStart.getTime()) / 60000
                         const endMinutes = (segEnd.getTime() - dayStart.getTime()) / 60000
@@ -852,8 +884,7 @@ export function Recordings() {
                         const Icon = eventInfo.icon
                         const eventTime = new Date(event.timestamp * 1000)
 
-                        const dayStart = new Date(selectedDate)
-                        dayStart.setHours(0, 0, 0, 0)
+                        const { dayStart } = getDayBounds()
 
                         const minutes = (eventTime.getTime() - dayStart.getTime()) / 60000
                         if (minutes < 0 || minutes > 1440) return null
@@ -888,8 +919,7 @@ export function Recordings() {
                       {/* Current time indicator */}
                       {currentTime && !isDragging && (
                         (() => {
-                          const dayStart = new Date(selectedDate)
-                          dayStart.setHours(0, 0, 0, 0)
+                          const { dayStart } = getDayBounds()
                           const minutes = (currentTime.getTime() - dayStart.getTime()) / 60000
 
                           if (minutes < 0 || minutes > 1440) return null
@@ -909,8 +939,7 @@ export function Recordings() {
                       {/* Drag indicator */}
                       {isDragging && dragTime && (
                         (() => {
-                          const dayStart = new Date(selectedDate)
-                          dayStart.setHours(0, 0, 0, 0)
+                          const { dayStart } = getDayBounds()
                           const minutes = (dragTime.getTime() - dayStart.getTime()) / 60000
 
                           return (

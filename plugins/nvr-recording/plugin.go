@@ -7,10 +7,12 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -640,30 +642,122 @@ func (p *RecordingPlugin) handleStreamFromTimestamp(w http.ResponseWriter, r *ht
 	}
 
 	cameraID := chi.URLParam(r, "cameraId")
-	timestampStr := r.URL.Query().Get("timestamp")
+	// Support both "t" (frontend uses this) and "timestamp" for backwards compat
+	timestampStr := r.URL.Query().Get("t")
+	if timestampStr == "" {
+		timestampStr = r.URL.Query().Get("timestamp")
+	}
 
 	var timestamp time.Time
 	if timestampStr != "" {
 		var err error
 		timestamp, err = time.Parse(time.RFC3339, timestampStr)
 		if err != nil {
-			p.respondError(w, http.StatusBadRequest, "Invalid timestamp format")
-			return
+			// Try Unix timestamp as fallback
+			if unix, err2 := strconv.ParseInt(timestampStr, 10, 64); err2 == nil {
+				timestamp = time.Unix(unix, 0)
+			} else {
+				p.respondError(w, http.StatusBadRequest, "Invalid timestamp format")
+				return
+			}
 		}
 	} else {
-		timestamp = time.Now().Add(-1 * time.Hour)
+		p.respondError(w, http.StatusBadRequest, "timestamp parameter 't' is required")
+		return
 	}
 
-	url, offset, err := svc.GetPlaybackInfo(r.Context(), cameraID, timestamp)
+	filePath, offset, err := svc.GetPlaybackInfo(r.Context(), cameraID, timestamp)
 	if err != nil {
 		p.respondError(w, http.StatusNotFound, "No recording found at timestamp")
 		return
 	}
 
-	p.respondJSON(w, map[string]interface{}{
-		"url":    url,
-		"offset": offset,
-	})
+	// Check if file exists
+	fileInfo, err := os.Stat(filePath)
+	if err != nil {
+		p.respondError(w, http.StatusNotFound, "Recording file not found")
+		return
+	}
+
+	// Open the file
+	file, err := os.Open(filePath)
+	if err != nil {
+		p.respondError(w, http.StatusInternalServerError, "Failed to open recording file")
+		return
+	}
+	defer file.Close()
+
+	// Set content type based on extension
+	contentType := "video/mp4"
+	ext := filepath.Ext(filePath)
+	switch ext {
+	case ".mkv":
+		contentType = "video/x-matroska"
+	case ".webm":
+		contentType = "video/webm"
+	case ".ts":
+		contentType = "video/mp2t"
+	}
+
+	// Add custom headers for timeline info
+	w.Header().Set("X-Segment-Offset", fmt.Sprintf("%.3f", offset))
+
+	// Handle range requests for seeking
+	fileSize := fileInfo.Size()
+	rangeHeader := r.Header.Get("Range")
+
+	if rangeHeader == "" {
+		// No range request, serve entire file
+		w.Header().Set("Content-Type", contentType)
+		w.Header().Set("Content-Length", strconv.FormatInt(fileSize, 10))
+		w.Header().Set("Accept-Ranges", "bytes")
+		w.WriteHeader(http.StatusOK)
+		io.Copy(w, file)
+		return
+	}
+
+	// Parse range header (format: "bytes=start-end")
+	rangeHeader = strings.TrimPrefix(rangeHeader, "bytes=")
+	parts := strings.Split(rangeHeader, "-")
+	if len(parts) != 2 {
+		p.respondError(w, http.StatusBadRequest, "Invalid range header")
+		return
+	}
+
+	var start, end int64
+	if parts[0] != "" {
+		start, _ = strconv.ParseInt(parts[0], 10, 64)
+	}
+
+	if parts[1] != "" {
+		end, _ = strconv.ParseInt(parts[1], 10, 64)
+	} else {
+		// If no end specified, serve to end of file (but limit chunk size)
+		end = start + 10*1024*1024 // 10MB chunks
+		if end >= fileSize {
+			end = fileSize - 1
+		}
+	}
+
+	// Validate range
+	if start >= fileSize || end >= fileSize || start > end {
+		w.Header().Set("Content-Range", fmt.Sprintf("bytes */%d", fileSize))
+		w.WriteHeader(http.StatusRequestedRangeNotSatisfiable)
+		return
+	}
+
+	// Seek to start position
+	file.Seek(start, 0)
+
+	// Set headers for partial content
+	contentLength := end - start + 1
+	w.Header().Set("Content-Type", contentType)
+	w.Header().Set("Content-Length", strconv.FormatInt(contentLength, 10))
+	w.Header().Set("Content-Range", fmt.Sprintf("bytes %d-%d/%d", start, end, fileSize))
+	w.Header().Set("Accept-Ranges", "bytes")
+	w.WriteHeader(http.StatusPartialContent)
+
+	io.CopyN(w, file, contentLength)
 }
 
 func (p *RecordingPlugin) handleStartRecording(w http.ResponseWriter, r *http.Request) {

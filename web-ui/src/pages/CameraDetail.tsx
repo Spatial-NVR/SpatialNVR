@@ -1,8 +1,8 @@
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { ArrowLeft, Settings, Trash2, RefreshCw, X, Save, Copy, Check, Volume2, VolumeX, HardDrive, Mic, MicOff, Circle, Square, Loader2, AlertCircle, List, Clock, Bell } from 'lucide-react'
+import { ArrowLeft, Settings, Trash2, RefreshCw, X, Save, Copy, Check, HardDrive, Volume2, VolumeX, Circle, Square, Loader2, AlertCircle, List, Clock, Bell } from 'lucide-react'
 import { Link } from 'react-router-dom'
-import { cameraApi, CameraConfig, storageApi, audioApi, AudioSessionResponse, recordingApi, eventApi, timelineApi } from '../lib/api'
+import { cameraApi, CameraConfig, storageApi, recordingApi, eventApi, timelineApi } from '../lib/api'
 import { VideoPlayer } from '../components/VideoPlayer'
 import { MotionZoneEditor } from '../components/MotionZoneEditor'
 import { useState, useEffect } from 'react'
@@ -33,8 +33,6 @@ export function CameraDetail() {
   const [isRefreshing, setIsRefreshing] = useState(false)
   const [copiedUrl, setCopiedUrl] = useState<string | null>(null)
   const [audioEnabled, setAudioEnabled] = useState(false)
-  const [talkSession, setTalkSession] = useState<AudioSessionResponse | null>(null)
-  const [isTalking, setIsTalking] = useState(false)
   const [eventsViewMode, setEventsViewMode] = useState<EventsViewMode>('list')
   const [timelinePosition, setTimelinePosition] = useState(Date.now() / 1000)
 
@@ -212,50 +210,6 @@ export function CameraDetail() {
     setTimeout(() => setCopiedUrl(null), 2000)
   }
 
-  const handleTalkToggle = async () => {
-    if (talkSession) {
-      // Stop talking
-      try {
-        await audioApi.stopSession(talkSession.session.id)
-      } catch (error) {
-        console.error('Failed to stop audio session:', error)
-      }
-      // Stop the microphone stream
-      const micStream = (window as unknown as { _micStream?: MediaStream })._micStream
-      if (micStream) {
-        micStream.getTracks().forEach(track => track.stop())
-        delete (window as unknown as { _micStream?: MediaStream })._micStream
-      }
-      setTalkSession(null)
-      setIsTalking(false)
-    } else {
-      // Start talking - first request microphone permission
-      setIsTalking(true)
-      try {
-        // Request microphone access from browser
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
-
-        // Start the audio session with the backend
-        const session = await audioApi.startSession(id!)
-        setTalkSession(session)
-
-        // TODO: Send audio stream to backend via WebSocket
-        // For now, just keep the stream active to show permission was granted
-        console.log('Microphone access granted, audio session started:', session)
-
-        // Store the stream so we can stop it later
-        ;(window as unknown as { _micStream?: MediaStream })._micStream = stream
-      } catch (error) {
-        console.error('Failed to start audio session:', error)
-        // Check if it was a permission error
-        if (error instanceof DOMException && error.name === 'NotAllowedError') {
-          alert('Microphone access was denied. Please allow microphone access in your browser settings.')
-        }
-        setIsTalking(false)
-      }
-    }
-  }
-
   if (isLoading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -348,14 +302,15 @@ export function CameraDetail() {
         <VideoPlayer
           cameraId={id!}
           className="w-full mx-auto"
-          muted={!audioEnabled}
           showDetectionToggle={true}
           initialDetectionOverlay={formData.detection?.show_overlay ?? false}
           aspectRatio={formData.display_aspect_ratio?.replace(':', '/') || '16/9'}
           maxHeight={formData.display_aspect_ratio === '3:4' ? '70vh' : undefined}
+          audioEnabled={audioEnabled}
+          onAudioChange={setAudioEnabled}
         />
-        {/* Audio controls overlay */}
-        <div className="absolute top-3 left-3 flex gap-2">
+        {/* Audio control - top left, synced with player */}
+        <div className="absolute top-3 left-3">
           <button
             onClick={() => setAudioEnabled(!audioEnabled)}
             className={`p-2 rounded-lg transition-colors ${
@@ -366,22 +321,6 @@ export function CameraDetail() {
             title={audioEnabled ? 'Mute audio' : 'Enable audio'}
           >
             {audioEnabled ? <Volume2 size={20} /> : <VolumeX size={20} />}
-          </button>
-
-          {/* Two-way audio (Talk) button */}
-          <button
-            onClick={handleTalkToggle}
-            disabled={isTalking && !talkSession}
-            className={`p-2 rounded-lg transition-colors ${
-              talkSession
-                ? 'bg-green-500/80 hover:bg-green-500 text-white animate-pulse'
-                : isTalking
-                  ? 'bg-yellow-500/80 text-white'
-                  : 'bg-black/50 hover:bg-black/70 text-white/80'
-            }`}
-            title={talkSession ? 'Stop talking' : 'Talk through camera'}
-          >
-            {talkSession ? <Mic size={20} /> : <MicOff size={20} />}
           </button>
         </div>
       </div>

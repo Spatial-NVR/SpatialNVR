@@ -107,17 +107,50 @@ func (g *ConfigGenerator) Generate(cameras []CameraStream) *Go2RTCConfig {
 	for _, cam := range cameras {
 		streamURL := g.buildStreamURL(cam.URL, cam.Username, cam.Password)
 		streamName := sanitizeStreamName(cam.ID)
+		rawStreamName := streamName + "_raw"
 
-		// go2rtc stream configuration:
-		// Add ffmpeg audio transcoding to opus for WebRTC compatibility
-		// Many cameras use AAC at non-standard sample rates (e.g., 16kHz) which
-		// aren't supported for WebRTC. This transcodes audio to Opus at 48kHz.
+		// go2rtc stream configuration for audio transcoding:
+		//
+		// Problem: Many cameras output AAC at non-standard sample rates (e.g., 16kHz).
+		// Browsers expect 44.1kHz or 48kHz for proper audio playback.
+		//
+		// Solution: Create two streams:
+		// 1. Raw stream (_raw suffix): Direct RTSP connection to camera
+		// 2. Main stream: Uses ffmpeg to transcode audio from raw stream
+		//
+		// The ffmpeg source copies video and transcodes audio to standard 48kHz.
+		// This ensures ALL consumers (MSE, WebRTC, HLS) get properly encoded audio.
+		//
+		// For WebRTC specifically, go2rtc will further transcode to Opus as needed.
+
+		// Raw stream - direct RTSP from camera (used as input for transcoding)
+		config.Streams[rawStreamName] = []string{streamURL}
+
+		// Main stream with multiple audio codec options:
+		//
+		// 1. exec:ffmpeg - Primary source with 48kHz AAC audio for MSE
+		//    MSE requires AAC at standard sample rates (44.1kHz or 48kHz)
+		//
+		// 2. ffmpeg:...#audio=opus - Opus audio source for WebRTC
+		//    WebRTC REQUIRES Opus codec for audio (doesn't support AAC)
+		//    go2rtc will use this source when a WebRTC consumer connects
+		//
+		// FFmpeg args for primary source:
+		// -hide_banner -v error: reduce noise
+		// -fflags nobuffer -flags low_delay: minimize latency
+		// -rtsp_transport tcp: use TCP for reliable delivery
+		// -i rtsp://...: read from internal RTSP server (raw stream)
+		// -c:v copy: pass video through unchanged
+		// -c:a aac -ar 48000: transcode audio to 48kHz AAC
+		// -f rtsp {output}: output back to go2rtc via RTSP
 		config.Streams[streamName] = []string{
-			streamURL,
+			// Primary source: 48kHz AAC for MSE consumers
+			fmt.Sprintf("exec:ffmpeg -hide_banner -v error -fflags nobuffer -flags low_delay -rtsp_transport tcp -i rtsp://localhost:%d/%s -c:v copy -c:a aac -ar 48000 -f rtsp {output}", g.rtspPort, rawStreamName),
+			// Opus audio source for WebRTC consumers
 			fmt.Sprintf("ffmpeg:%s#audio=opus", streamName),
 		}
 
-		// Sub stream if available
+		// Sub stream if available (raw, no transcoding needed for lower quality)
 		if cam.SubURL != "" {
 			subStreamURL := g.buildStreamURL(cam.SubURL, cam.Username, cam.Password)
 			subStreamName := streamName + "_sub"
