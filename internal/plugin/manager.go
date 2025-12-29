@@ -1085,8 +1085,12 @@ func (m *Manager) GetCatalogWithStatus() []CatalogPluginStatus {
 		}
 		m.mu.RUnlock()
 
-		// Check tracked repo for version info
-		if repo, ok := repoVersions[cp.ID]; ok {
+		// Check tracked repo for version info (only for non-builtin plugins)
+		// Builtin plugins should use their embedded version, not tracked repo versions
+		m.mu.RLock()
+		_, isBuiltin := m.builtinPlugins[cp.ID]
+		m.mu.RUnlock()
+		if repo, ok := repoVersions[cp.ID]; ok && !isBuiltin {
 			status.InstalledVersion = repo.InstalledTag
 			status.LatestVersion = repo.LatestTag
 			status.UpdateAvailable = repo.UpdateAvailable
