@@ -712,7 +712,7 @@ func (p *RecordingPlugin) handleStreamFromTimestamp(w http.ResponseWriter, r *ht
 		w.Header().Set("Content-Length", strconv.FormatInt(fileSize, 10))
 		w.Header().Set("Accept-Ranges", "bytes")
 		w.WriteHeader(http.StatusOK)
-		io.Copy(w, file)
+		_, _ = io.Copy(w, file)
 		return
 	}
 
@@ -747,7 +747,7 @@ func (p *RecordingPlugin) handleStreamFromTimestamp(w http.ResponseWriter, r *ht
 	}
 
 	// Seek to start position
-	file.Seek(start, 0)
+	_, _ = file.Seek(start, 0)
 
 	// Set headers for partial content
 	contentLength := end - start + 1
@@ -757,7 +757,7 @@ func (p *RecordingPlugin) handleStreamFromTimestamp(w http.ResponseWriter, r *ht
 	w.Header().Set("Accept-Ranges", "bytes")
 	w.WriteHeader(http.StatusPartialContent)
 
-	io.CopyN(w, file, contentLength)
+	_, _ = io.CopyN(w, file, contentLength)
 }
 
 func (p *RecordingPlugin) handleStartRecording(w http.ResponseWriter, r *http.Request) {
