@@ -75,6 +75,22 @@ if [ "$(id -u)" = "0" ]; then
         chown nvr:nvr /config/config.yaml 2>/dev/null || true
         chmod 600 /config/config.yaml 2>/dev/null || true
     fi
+
+    # Docker socket access for plugins that spawn sibling containers (e.g., Wyze)
+    if [ -S "/var/run/docker.sock" ]; then
+        # Get the GID of the docker socket
+        DOCKER_GID=$(stat -c '%g' /var/run/docker.sock 2>/dev/null || stat -f '%g' /var/run/docker.sock 2>/dev/null)
+        if [ -n "$DOCKER_GID" ]; then
+            echo "[entrypoint] Configuring Docker socket access (GID: $DOCKER_GID)"
+            # Create docker group with the socket's GID if it doesn't exist
+            if ! getent group "$DOCKER_GID" > /dev/null 2>&1; then
+                groupadd -g "$DOCKER_GID" docker 2>/dev/null || true
+            fi
+            # Add nvr user to the docker group
+            DOCKER_GROUP=$(getent group "$DOCKER_GID" | cut -d: -f1)
+            usermod -aG "$DOCKER_GROUP" nvr 2>/dev/null || true
+        fi
+    fi
 fi
 
 # Determine which NVR binary to use

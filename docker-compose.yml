@@ -12,6 +12,8 @@ services:
     volumes:
       - ./config:/config
       - ./data:/data
+      # Docker socket for plugins that spawn sibling containers (e.g., Wyze)
+      - /var/run/docker.sock:/var/run/docker.sock
     ports:
       - "8080:8080"         # Web UI and API (go2rtc proxied through /go2rtc/)
       # RTSP port for external clients (e.g., other NVR software)
