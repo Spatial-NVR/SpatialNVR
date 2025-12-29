@@ -685,7 +685,7 @@ func (p *RecordingPlugin) handleStreamFromTimestamp(w http.ResponseWriter, r *ht
 		p.respondError(w, http.StatusInternalServerError, "Failed to open recording file")
 		return
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	// Set content type based on extension
 	contentType := "video/mp4"
