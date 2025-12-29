@@ -5,9 +5,10 @@
 # - amd64 (latest): Default image, full plugin compatibility including Wyze
 # - arm64: Native ARM performance for Raspberry Pi, AWS Graviton, etc.
 #
-# The Wyze plugin requires the TUTK library which only provides Linux x86_64 binaries.
-# Users who need Wyze support must use the amd64 image (works on Apple Silicon via Rosetta 2).
-# Users on ARM devices who don't need Wyze can use the arm64 image for better performance.
+# Plugin Architecture:
+# - Plugins run as separate Docker containers managed by the NVR
+# - The NVR container includes Docker CLI to manage plugin containers
+# - Host Docker socket must be mounted: -v /var/run/docker.sock:/var/run/docker.sock
 #
 # Self-Updating Architecture:
 # - /app/bin/nvr: Main NVR binary (updatable via /data/bin/nvr)
@@ -83,10 +84,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     git \
     # FFmpeg with all codecs for stream processing
     ffmpeg \
-    # Python for wyze-bridge and other plugin dependencies
-    python3 \
-    python3-pip \
-    python3-venv \
+    # Docker CLI for managing plugin containers
+    docker.io \
     # Additional utilities
     bash \
     procps \
@@ -94,11 +93,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     passwd \
     # gosu for dropping privileges securely
     gosu \
-    && rm -rf /var/lib/apt/lists/* \
-    # Configure pip
-    && mkdir -p /etc/pip.conf.d \
-    && echo "[global]" > /etc/pip.conf \
-    && echo "break-system-packages = true" >> /etc/pip.conf
+    && rm -rf /var/lib/apt/lists/*
 
 # Create non-root user
 RUN groupadd -g 1000 nvr && \
