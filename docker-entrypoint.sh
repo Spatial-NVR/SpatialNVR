@@ -76,65 +76,6 @@ if [ "$(id -u)" = "0" ]; then
         chmod 600 /config/config.yaml 2>/dev/null || true
     fi
 
-    # Add nvr user to docker group for DinD access
-    usermod -aG docker nvr 2>/dev/null || true
-fi
-
-# ============================================================================
-# Docker-in-Docker Setup
-# Start the Docker daemon inside the container for plugins that need Docker
-# ============================================================================
-DOCKERD_PID=0
-
-start_dockerd() {
-    # Check if Docker socket already exists (host socket mounted)
-    if [ -S "/var/run/docker.sock" ]; then
-        echo "[entrypoint] Docker socket detected, using host Docker"
-        return 0
-    fi
-
-    # Check if we can run dockerd (need --privileged)
-    if [ ! -w /var/lib/docker ]; then
-        echo "[entrypoint] WARNING: Cannot start Docker daemon - container may not be privileged"
-        echo "[entrypoint] For Wyze plugin support, run with --privileged flag"
-        return 1
-    fi
-
-    echo "[entrypoint] Starting Docker daemon (Docker-in-Docker)..."
-
-    # Start dockerd in background
-    dockerd --host=unix:///var/run/docker.sock \
-            --storage-driver=overlay2 \
-            --log-level=warn \
-            > /var/log/dockerd.log 2>&1 &
-    DOCKERD_PID=$!
-
-    # Wait for Docker to be ready
-    echo "[entrypoint] Waiting for Docker daemon to be ready..."
-    for i in $(seq 1 30); do
-        if docker info > /dev/null 2>&1; then
-            echo "[entrypoint] Docker daemon is ready"
-            return 0
-        fi
-        sleep 1
-    done
-
-    echo "[entrypoint] WARNING: Docker daemon failed to start within 30 seconds"
-    echo "[entrypoint] Check /var/log/dockerd.log for details"
-    return 1
-}
-
-stop_dockerd() {
-    if [ $DOCKERD_PID -ne 0 ]; then
-        echo "[entrypoint] Stopping Docker daemon..."
-        kill $DOCKERD_PID 2>/dev/null || true
-        wait $DOCKERD_PID 2>/dev/null || true
-    fi
-}
-
-# Start Docker daemon if running as root
-if [ "$(id -u)" = "0" ]; then
-    start_dockerd
 fi
 
 # Determine which NVR binary to use
@@ -201,7 +142,6 @@ handle_sigterm() {
     if [ $NVR_PID -ne 0 ]; then
         kill -TERM $NVR_PID 2>/dev/null || true
     fi
-    stop_dockerd
 }
 
 handle_sigint() {
@@ -210,7 +150,6 @@ handle_sigint() {
     if [ $NVR_PID -ne 0 ]; then
         kill -TERM $NVR_PID 2>/dev/null || true
     fi
-    stop_dockerd
 }
 
 # Setup signal handlers
@@ -285,8 +224,5 @@ while true; do
     echo "[entrypoint] Clean shutdown"
     break
 done
-
-# Clean up Docker daemon
-stop_dockerd
 
 exit $EXIT_CODE

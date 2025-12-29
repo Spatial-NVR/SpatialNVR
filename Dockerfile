@@ -6,9 +6,9 @@
 # - arm64: Native ARM performance for Raspberry Pi, AWS Graviton, etc.
 #
 # Plugin Architecture:
-# - Plugins that need Docker (e.g., Wyze) run containers via Docker-in-Docker
-# - The container runs its own Docker daemon (dockerd) internally
-# - Requires --privileged flag to run Docker-in-Docker
+# - Wyze plugin uses embedded wyze-bridge (Python) running as subprocess
+# - No Docker-in-Docker or privileged mode required
+# - TUTK library and MediaMTX are included for Wyze camera P2P streaming
 #
 # Self-Updating Architecture:
 # - /app/bin/nvr: Main NVR binary (updatable via /data/bin/nvr)
@@ -20,9 +20,9 @@
 # and can update components without rebuilding the container.
 
 # =============================================================================
-# Stage 0: Extract TUTK library from docker-wyze-bridge (x86_64 only)
+# Stage 0: Extract wyze-bridge components (Python app + TUTK library)
 # =============================================================================
-FROM --platform=linux/amd64 mrlt8/wyze-bridge:latest AS wyze-libs
+FROM --platform=linux/amd64 mrlt8/wyze-bridge:latest AS wyze-bridge
 
 # =============================================================================
 # Stage 1: Build the Go backend (using Debian for glibc compatibility)
@@ -76,7 +76,7 @@ LABEL org.opencontainers.image.title="NVR System"
 LABEL org.opencontainers.image.description="Network Video Recorder with AI detection"
 LABEL org.opencontainers.image.source="https://github.com/nvr-system/nvr"
 
-# Install runtime dependencies including Docker for DinD
+# Install runtime dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     tzdata \
@@ -84,10 +84,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     git \
     # FFmpeg with all codecs for stream processing
     ffmpeg \
-    # Docker daemon and CLI for Docker-in-Docker plugin support
-    docker.io \
-    containerd \
-    iptables \
+    # Python 3 for wyze-bridge (Wyze plugin)
+    python3 \
+    python3-pip \
+    python3-venv \
     # Additional utilities
     bash \
     procps \
@@ -96,9 +96,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     # gosu for dropping privileges securely
     gosu \
     && rm -rf /var/lib/apt/lists/*
-
-# Create Docker data directory for DinD
-RUN mkdir -p /var/lib/docker
 
 # Create non-root user
 RUN groupadd -g 1000 nvr && \
@@ -131,8 +128,16 @@ RUN MTX_ARCH=$(case ${TARGETARCH} in arm64) echo "arm64v8" ;; armv7) echo "armv7
 
 # Copy TUTK library from wyze-bridge for Wyze P2P connections (x86_64 only)
 # This is a proprietary library required for direct camera connections
-COPY --from=wyze-libs /usr/local/lib/libIOTCAPIs_ALL.so /usr/local/lib/libIOTCAPIs_ALL.so
+COPY --from=wyze-bridge /usr/local/lib/libIOTCAPIs_ALL.so /usr/local/lib/libIOTCAPIs_ALL.so
 RUN ldconfig
+
+# Copy wyze-bridge Python application and dependencies
+# The app directory contains the full wyze-bridge Python codebase
+COPY --from=wyze-bridge /app /app/wyze-bridge
+# Copy pre-installed Python packages from wyze-bridge
+COPY --from=wyze-bridge /usr/local/lib/python3.12/site-packages /usr/local/lib/python3/dist-packages/
+# Make the wyze-bridge start script executable
+RUN chmod +x /app/wyze-bridge/wyze-bridge 2>/dev/null || true
 
 # Copy the backend binary to /app/bin (new location for self-updating)
 COPY --from=builder /build/nvr /app/bin/nvr
