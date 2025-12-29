@@ -6,9 +6,9 @@
 # - arm64: Native ARM performance for Raspberry Pi, AWS Graviton, etc.
 #
 # Plugin Architecture:
-# - Plugins run as separate Docker containers managed by the NVR
-# - The NVR container includes Docker CLI to manage plugin containers
-# - Host Docker socket must be mounted: -v /var/run/docker.sock:/var/run/docker.sock
+# - Plugins that need Docker (e.g., Wyze) run containers via Docker-in-Docker
+# - The container runs its own Docker daemon (dockerd) internally
+# - Requires --privileged flag to run Docker-in-Docker
 #
 # Self-Updating Architecture:
 # - /app/bin/nvr: Main NVR binary (updatable via /data/bin/nvr)
@@ -76,7 +76,7 @@ LABEL org.opencontainers.image.title="NVR System"
 LABEL org.opencontainers.image.description="Network Video Recorder with AI detection"
 LABEL org.opencontainers.image.source="https://github.com/nvr-system/nvr"
 
-# Install runtime dependencies
+# Install runtime dependencies including Docker for DinD
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     tzdata \
@@ -84,8 +84,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     git \
     # FFmpeg with all codecs for stream processing
     ffmpeg \
-    # Docker CLI for managing plugin containers
+    # Docker daemon and CLI for Docker-in-Docker plugin support
     docker.io \
+    containerd \
+    iptables \
     # Additional utilities
     bash \
     procps \
@@ -94,6 +96,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     # gosu for dropping privileges securely
     gosu \
     && rm -rf /var/lib/apt/lists/*
+
+# Create Docker data directory for DinD
+RUN mkdir -p /var/lib/docker
 
 # Create non-root user
 RUN groupadd -g 1000 nvr && \
