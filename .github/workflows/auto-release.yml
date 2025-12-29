@@ -335,8 +335,8 @@ jobs:
       - name: Build binary
         run: |
           VERSION="${{ needs.analyze.outputs.next_patch }}"
-          GOOS="${{ matrix.platform.goos }}"
-          GOARCH="${{ matrix.platform.goarch }}"
+          export GOOS="${{ matrix.platform.goos }}"
+          export GOARCH="${{ matrix.platform.goarch }}"
 
           # Enable CGO for Linux builds (required for SQLite)
           if [ "$GOOS" = "linux" ]; then
@@ -348,7 +348,7 @@ jobs:
             export CGO_ENABLED=0
           fi
 
-          echo "Building with CGO_ENABLED=$CGO_ENABLED CC=$CC"
+          echo "Building with CGO_ENABLED=$CGO_ENABLED CC=$CC GOOS=$GOOS GOARCH=$GOARCH"
           go build -ldflags="-s -w -X main.Version=$VERSION" \
             -o spatialnvr-${{ matrix.platform.suffix }} ./cmd/nvr
 
