@@ -85,7 +85,7 @@ function LivePlayer({
         if (response.ok) {
           const json = await response.json()
           const status = json.data || json
-          setIsRecording(status.state === 'running' || status.state === 'starting')
+          setIsRecording(status?.state === 'running' || status?.state === 'starting')
         }
       } catch {
         // Ignore errors
