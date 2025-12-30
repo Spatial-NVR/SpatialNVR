@@ -478,22 +478,25 @@ func (s *Service) UpdateWithFields(ctx context.Context, id string, camCfg config
 // Delete deletes a camera from all storage locations
 // It attempts to remove from all sources even if some fail
 func (s *Service) Delete(ctx context.Context, id string) error {
-	var errors []string
+	var deletedFromAny bool
 
 	// Remove from config (may fail if camera was only in DB)
 	if err := s.cfg.RemoveCamera(id); err != nil {
 		s.logger.Warn("Failed to remove camera from config", "id", id, "error", err)
-		errors = append(errors, fmt.Sprintf("config: %v", err))
+	} else {
+		deletedFromAny = true
 	}
 
 	// Remove from database
 	result, err := s.db.ExecContext(ctx, "DELETE FROM cameras WHERE id = ?", id)
 	if err != nil {
 		s.logger.Error("Failed to remove camera from database", "id", id, "error", err)
-		errors = append(errors, fmt.Sprintf("database: %v", err))
 	} else {
 		rows, _ := result.RowsAffected()
 		s.logger.Info("Deleted camera from database", "id", id, "rows_affected", rows)
+		if rows > 0 {
+			deletedFromAny = true
+		}
 	}
 
 	// Remove from memory
@@ -504,6 +507,7 @@ func (s *Service) Delete(ctx context.Context, id string) error {
 
 	if existed {
 		s.logger.Info("Removed camera from memory", "id", id)
+		deletedFromAny = true
 	}
 
 	// Update go2rtc config
@@ -511,10 +515,9 @@ func (s *Service) Delete(ctx context.Context, id string) error {
 		s.logger.Error("Failed to update go2rtc config", "error", err)
 	}
 
-	// Return error only if we couldn't delete from ANY source
-	if len(errors) > 0 && !existed {
-		// Camera wasn't in memory either - truly not found
-		return fmt.Errorf("camera not found in any storage: %s", id)
+	// Return error only if camera wasn't found in any storage
+	if !deletedFromAny {
+		return fmt.Errorf("camera not found: %s", id)
 	}
 
 	return nil

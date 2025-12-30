@@ -215,15 +215,16 @@ export function WyzeSetup({ pluginId, onCameraAdded }: WyzeSetupProps) {
         }
 
         // Register camera with NVR camera service (for go2rtc)
+        // Backend expects nested stream object with url/sub_url fields
         const cameraConfig = {
           name: pluginCamera.name || cameraNames[mac],
-          stream_url: pluginCamera.main_stream,
-          sub_stream_url: pluginCamera.sub_stream,
+          stream: {
+            url: pluginCamera.main_stream || '',
+            sub_url: pluginCamera.sub_stream || ''
+          },
           manufacturer: 'Wyze',
           model: pluginCamera.model,
-          enabled: true,
-          plugin_id: pluginId,
-          plugin_camera_id: mac
+          enabled: true
         }
 
         try {
