@@ -113,6 +113,17 @@ func getStartupState() StartupState {
 }
 
 func main() {
+	// Handle version flag first (before any initialization)
+	if len(os.Args) > 1 {
+		arg := os.Args[1]
+		if arg == "-v" || arg == "--version" || arg == "version" {
+			fmt.Printf("spatialnvr %s\n", Version)
+			fmt.Printf("  go version: %s\n", runtime.Version())
+			fmt.Printf("  platform:   %s/%s\n", runtime.GOOS, runtime.GOARCH)
+			os.Exit(0)
+		}
+	}
+
 	// Initialize structured logging with stream capture
 	logLevel := slog.LevelInfo
 	if os.Getenv("LOG_LEVEL") == "debug" {
