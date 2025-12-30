@@ -63,6 +63,10 @@ type PluginRuntime struct {
 
 	// Args are additional arguments to pass to the runtime
 	Args []string `json:"args,omitempty" yaml:"args,omitempty"`
+
+	// Env specifies environment variables to set when running the plugin
+	// Format: KEY=value
+	Env []string `json:"env,omitempty" yaml:"env,omitempty"`
 }
 
 // GetEntryPoint returns the entry point script, checking both EntryPoint and Script fields

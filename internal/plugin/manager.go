@@ -730,6 +730,11 @@ func (m *Manager) startExternalPlugin(p *installedPlugin) error {
 		fmt.Sprintf("NVR_PLUGIN_DIR=%s", p.dir),
 		fmt.Sprintf("NVR_DATA_DIR=%s", pluginDataDir),
 	)
+	// Add plugin-specific environment variables from manifest
+	if len(p.manifest.Runtime.Env) > 0 {
+		cmd.Env = append(cmd.Env, p.manifest.Runtime.Env...)
+		m.logger.Debug("Added plugin env vars", "id", p.manifest.ID, "count", len(p.manifest.Runtime.Env))
+	}
 	cmd.Dir = p.dir
 
 	stdin, err := cmd.StdinPipe()
