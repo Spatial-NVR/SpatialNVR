@@ -550,7 +550,7 @@ func (l *PluginLoader) ScanExternalPlugins() error {
 			}
 		}
 
-		l.logger.Debug("Found manifest", "dir", entry.Name(), "id", manifest.ID, "runtime_type", manifest.Runtime.Type, "runtime_script", manifest.Runtime.Script, "runtime_setup", manifest.Runtime.Setup)
+		l.logger.Info("Found plugin manifest", "dir", entry.Name(), "id", manifest.ID, "runtime_type", manifest.Runtime.Type, "runtime_script", manifest.Runtime.Script, "runtime_setup", manifest.Runtime.Setup)
 
 		l.pluginsMu.Lock()
 		if _, exists := l.plugins[manifest.ID]; exists {
@@ -563,6 +563,7 @@ func (l *PluginLoader) ScanExternalPlugins() error {
 		var extPlugin *ExternalPlugin
 
 		// Handle different runtime types
+		l.logger.Info("Processing plugin runtime", "id", manifest.ID, "runtime_type", fmt.Sprintf("%q", manifest.Runtime.Type))
 		switch manifest.Runtime.Type {
 		case "python":
 			// For Python plugins, run setup script if exists, then use python interpreter
