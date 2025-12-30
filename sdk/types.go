@@ -40,8 +40,11 @@ type PluginManifest struct {
 
 // RuntimeConfig specifies how to run the plugin
 type RuntimeConfig struct {
-	Type       string   `json:"type" yaml:"type"`             // "go", "python", "node", "binary"
-	EntryPoint string   `json:"entry_point" yaml:"entry_point"` // Main file or binary
+	Type       string   `json:"type" yaml:"type"`                         // "go", "python", "node", "binary"
+	EntryPoint string   `json:"entry_point" yaml:"entry_point"`           // Main file or binary (legacy)
+	Script     string   `json:"script,omitempty" yaml:"script,omitempty"` // Python/Node script file
+	Binary     string   `json:"binary,omitempty" yaml:"binary,omitempty"` // Binary file name
+	Setup      string   `json:"setup,omitempty" yaml:"setup,omitempty"`   // Setup script (e.g., setup.sh)
 	Args       []string `json:"args,omitempty" yaml:"args,omitempty"`
 }
 

@@ -20,7 +20,8 @@ import (
 type ExternalPlugin struct {
 	manifest   sdk.PluginManifest
 	binaryPath string
-	pluginDir  string // Directory where the plugin is installed
+	args       []string // Additional arguments (e.g., script path for Python)
+	pluginDir  string   // Directory where the plugin is installed
 	config     map[string]interface{}
 	runtime    *sdk.PluginRuntime // Plugin runtime for logging
 
@@ -74,6 +75,19 @@ func NewExternalPlugin(manifest sdk.PluginManifest, binaryPath string, pluginDir
 	}
 }
 
+// NewExternalPluginWithArgs creates a wrapper for an external plugin with additional arguments
+// This is used for Python/Node plugins where we need to pass the script path
+func NewExternalPluginWithArgs(manifest sdk.PluginManifest, binaryPath string, args []string, pluginDir string) *ExternalPlugin {
+	return &ExternalPlugin{
+		manifest:   manifest,
+		binaryPath: binaryPath,
+		args:       args,
+		pluginDir:  pluginDir,
+		pending:    make(map[uint64]chan *JSONRPCResponse),
+		stopCh:     make(chan struct{}),
+	}
+}
+
 // Manifest returns the plugin's manifest
 func (p *ExternalPlugin) Manifest() sdk.PluginManifest {
 	return p.manifest
@@ -92,7 +106,11 @@ func (p *ExternalPlugin) Initialize(ctx context.Context, runtime *sdk.PluginRunt
 
 	// Start the process - use background context so process survives after init
 	// The ctx is only for the initialization call timeout, not the process lifecycle
-	p.cmd = exec.Command(p.binaryPath)
+	if len(p.args) > 0 {
+		p.cmd = exec.Command(p.binaryPath, p.args...)
+	} else {
+		p.cmd = exec.Command(p.binaryPath)
+	}
 
 	// Set working directory to plugin directory so it can find its resources
 	if p.pluginDir != "" {
