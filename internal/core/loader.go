@@ -511,6 +511,8 @@ func (l *PluginLoader) ScanExternalPlugins() error {
 		return err
 	}
 
+	l.logger.Debug("Scanning plugins directory", "dir", l.pluginsDir, "entries", len(entries))
+
 	for _, entry := range entries {
 		if !entry.IsDir() {
 			continue
@@ -519,9 +521,11 @@ func (l *PluginLoader) ScanExternalPlugins() error {
 		pluginDir := filepath.Join(l.pluginsDir, entry.Name())
 		manifestPath := filepath.Join(pluginDir, "manifest.yaml")
 
+		l.logger.Debug("Checking plugin directory", "dir", entry.Name(), "manifestPath", manifestPath)
+
 		data, err := os.ReadFile(manifestPath)
 		if err != nil {
-			l.logger.Debug("Skipping directory (no manifest)", "dir", entry.Name())
+			l.logger.Debug("Skipping directory (no manifest)", "dir", entry.Name(), "error", err)
 			continue
 		}
 
@@ -531,91 +535,97 @@ func (l *PluginLoader) ScanExternalPlugins() error {
 			continue
 		}
 
+		l.logger.Debug("Found manifest", "dir", entry.Name(), "id", manifest.ID, "runtime", manifest.Runtime.Type)
+
 		l.pluginsMu.Lock()
-		if _, exists := l.plugins[manifest.ID]; !exists {
-			var binaryPath string
-			var extPlugin *ExternalPlugin
+		if _, exists := l.plugins[manifest.ID]; exists {
+			l.logger.Debug("Plugin already registered, skipping", "id", manifest.ID)
+			l.pluginsMu.Unlock()
+			continue
+		}
 
-			// Handle different runtime types
-			switch manifest.Runtime.Type {
-			case "python":
-				// For Python plugins, run setup script if exists, then use python interpreter
-				scriptPath := manifest.Runtime.Script
-				if scriptPath == "" {
-					scriptPath = manifest.Runtime.EntryPoint
-				}
-				if scriptPath == "" {
-					l.logger.Warn("Python plugin missing script path", "id", manifest.ID)
-					l.pluginsMu.Unlock()
-					continue
-				}
+		var binaryPath string
+		var extPlugin *ExternalPlugin
 
-				// Run setup script if it exists (creates venv, installs deps)
-				if manifest.Runtime.Setup != "" {
-					setupPath := filepath.Join(pluginDir, manifest.Runtime.Setup)
-					if _, err := os.Stat(setupPath); err == nil {
-						l.logger.Info("Running plugin setup script", "id", manifest.ID, "setup", setupPath)
-						setupCmd := exec.Command("/bin/sh", setupPath)
-						setupCmd.Dir = pluginDir
-						if output, err := setupCmd.CombinedOutput(); err != nil {
-							l.logger.Warn("Plugin setup script failed", "id", manifest.ID, "error", err, "output", string(output))
-							// Continue anyway - setup might have partially succeeded
-						}
+		// Handle different runtime types
+		switch manifest.Runtime.Type {
+		case "python":
+			// For Python plugins, run setup script if exists, then use python interpreter
+			scriptPath := manifest.Runtime.Script
+			if scriptPath == "" {
+				scriptPath = manifest.Runtime.EntryPoint
+			}
+			if scriptPath == "" {
+				l.logger.Warn("Python plugin missing script path", "id", manifest.ID)
+				l.pluginsMu.Unlock()
+				continue
+			}
+
+			// Run setup script if it exists (creates venv, installs deps)
+			if manifest.Runtime.Setup != "" {
+				setupPath := filepath.Join(pluginDir, manifest.Runtime.Setup)
+				if _, err := os.Stat(setupPath); err == nil {
+					l.logger.Info("Running plugin setup script", "id", manifest.ID, "setup", setupPath)
+					setupCmd := exec.Command("/bin/sh", setupPath)
+					setupCmd.Dir = pluginDir
+					if output, err := setupCmd.CombinedOutput(); err != nil {
+						l.logger.Warn("Plugin setup script failed", "id", manifest.ID, "error", err, "output", string(output))
+						// Continue anyway - setup might have partially succeeded
 					}
 				}
-
-				// Check for venv python, fallback to system python
-				venvPython := filepath.Join(pluginDir, "venv", "bin", "python")
-				pythonPath := "python3"
-				if _, err := os.Stat(venvPython); err == nil {
-					pythonPath = venvPython
-				}
-
-				// For Python, the "binary" is actually the python interpreter + script
-				fullScriptPath := filepath.Join(pluginDir, scriptPath)
-				binaryPath = pythonPath // Store python path for reference
-				extPlugin = NewExternalPluginWithArgs(manifest, pythonPath, []string{fullScriptPath}, pluginDir)
-
-				l.logger.Info("Registered Python plugin", "id", manifest.ID, "version", manifest.Version, "python", pythonPath, "script", scriptPath)
-
-			case "node":
-				// For Node.js plugins
-				scriptPath := manifest.Runtime.Script
-				if scriptPath == "" {
-					scriptPath = manifest.Runtime.EntryPoint
-				}
-				if scriptPath == "" {
-					l.logger.Warn("Node plugin missing script path", "id", manifest.ID)
-					l.pluginsMu.Unlock()
-					continue
-				}
-
-				fullScriptPath := filepath.Join(pluginDir, scriptPath)
-				binaryPath = "node"
-				extPlugin = NewExternalPluginWithArgs(manifest, "node", []string{fullScriptPath}, pluginDir)
-
-				l.logger.Info("Registered Node.js plugin", "id", manifest.ID, "version", manifest.Version, "script", scriptPath)
-
-			default:
-				// Binary plugins (go, binary, or unspecified)
-				binaryPath = l.findPluginBinary(pluginDir, manifest.ID)
-				if binaryPath == "" {
-					l.logger.Warn("Plugin binary not found", "id", manifest.ID, "dir", pluginDir)
-					l.pluginsMu.Unlock()
-					continue
-				}
-				extPlugin = NewExternalPlugin(manifest, binaryPath, pluginDir)
-				l.logger.Info("Registered external plugin", "id", manifest.ID, "version", manifest.Version, "binary", binaryPath)
 			}
 
-			// Register the plugin
-			l.plugins[manifest.ID] = &LoadedPlugin{
-				Manifest:   manifest,
-				Plugin:     extPlugin,
-				State:      PluginStateStopped,
-				IsBuiltin:  false,
-				BinaryPath: binaryPath,
+			// Check for venv python, fallback to system python
+			venvPython := filepath.Join(pluginDir, "venv", "bin", "python")
+			pythonPath := "python3"
+			if _, err := os.Stat(venvPython); err == nil {
+				pythonPath = venvPython
 			}
+
+			// For Python, the "binary" is actually the python interpreter + script
+			fullScriptPath := filepath.Join(pluginDir, scriptPath)
+			binaryPath = pythonPath // Store python path for reference
+			extPlugin = NewExternalPluginWithArgs(manifest, pythonPath, []string{fullScriptPath}, pluginDir)
+
+			l.logger.Info("Registered Python plugin", "id", manifest.ID, "version", manifest.Version, "python", pythonPath, "script", scriptPath)
+
+		case "node":
+			// For Node.js plugins
+			scriptPath := manifest.Runtime.Script
+			if scriptPath == "" {
+				scriptPath = manifest.Runtime.EntryPoint
+			}
+			if scriptPath == "" {
+				l.logger.Warn("Node plugin missing script path", "id", manifest.ID)
+				l.pluginsMu.Unlock()
+				continue
+			}
+
+			fullScriptPath := filepath.Join(pluginDir, scriptPath)
+			binaryPath = "node"
+			extPlugin = NewExternalPluginWithArgs(manifest, "node", []string{fullScriptPath}, pluginDir)
+
+			l.logger.Info("Registered Node.js plugin", "id", manifest.ID, "version", manifest.Version, "script", scriptPath)
+
+		default:
+			// Binary plugins (go, binary, or unspecified)
+			binaryPath = l.findPluginBinary(pluginDir, manifest.ID)
+			if binaryPath == "" {
+				l.logger.Warn("Plugin binary not found", "id", manifest.ID, "dir", pluginDir)
+				l.pluginsMu.Unlock()
+				continue
+			}
+			extPlugin = NewExternalPlugin(manifest, binaryPath, pluginDir)
+			l.logger.Info("Registered external plugin", "id", manifest.ID, "version", manifest.Version, "binary", binaryPath)
+		}
+
+		// Register the plugin
+		l.plugins[manifest.ID] = &LoadedPlugin{
+			Manifest:   manifest,
+			Plugin:     extPlugin,
+			State:      PluginStateStopped,
+			IsBuiltin:  false,
+			BinaryPath: binaryPath,
 		}
 		l.pluginsMu.Unlock()
 	}
