@@ -1522,8 +1522,9 @@ func handleGetPluginCatalog(loader *core.PluginLoader) http.HandlerFunc {
 		cacheHit := false
 
 		// Check cache for base catalog
+		// IMPORTANT: Deep copy the cache to avoid mutating the cached data when merging install status
 		if cachedCatalog != nil && time.Since(cachedCatalogTime) < catalogCacheTTL {
-			catalog = cachedCatalog
+			catalog = deepCopyCatalog(cachedCatalog)
 			cacheHit = true
 		} else {
 			// Fetch from remote
@@ -1659,6 +1660,20 @@ func handleGetPluginCatalog(loader *core.PluginLoader) http.HandlerFunc {
 		}
 		_ = json.NewEncoder(w).Encode(catalog)
 	}
+}
+
+// deepCopyCatalog creates a deep copy of the catalog to avoid mutating the cache
+func deepCopyCatalog(src map[string]interface{}) map[string]interface{} {
+	// Use JSON marshaling for a simple deep copy
+	data, err := json.Marshal(src)
+	if err != nil {
+		return src // Fallback to original if marshal fails
+	}
+	var dst map[string]interface{}
+	if err := json.Unmarshal(data, &dst); err != nil {
+		return src // Fallback to original if unmarshal fails
+	}
+	return dst
 }
 
 // getDefaultCatalog returns a fallback catalog

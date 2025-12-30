@@ -501,6 +501,32 @@ func (l *PluginLoader) stopPlugin(pluginID string) error {
 	return nil
 }
 
+// UnloadPlugin stops a plugin and removes it from the loader's internal state
+// This should be called when a plugin is uninstalled to ensure it's no longer tracked
+func (l *PluginLoader) UnloadPlugin(pluginID string) error {
+	l.logger.Info("Unloading plugin", "id", pluginID)
+
+	// First stop the plugin if it's running
+	if err := l.stopPlugin(pluginID); err != nil {
+		l.logger.Debug("Plugin stop returned error during unload", "id", pluginID, "error", err)
+	}
+
+	// Remove from plugins map
+	l.pluginsMu.Lock()
+	if _, exists := l.plugins[pluginID]; exists {
+		delete(l.plugins, pluginID)
+		l.logger.Info("Plugin unloaded and removed from loader", "id", pluginID)
+	} else {
+		l.logger.Debug("Plugin was not tracked in loader", "id", pluginID)
+	}
+	l.pluginsMu.Unlock()
+
+	// Publish event
+	_ = l.eventBus.PublishPluginStopped(pluginID)
+
+	return nil
+}
+
 // ScanExternalPlugins scans the plugins directory for external plugins
 func (l *PluginLoader) ScanExternalPlugins() error {
 	entries, err := os.ReadDir(l.pluginsDir)
