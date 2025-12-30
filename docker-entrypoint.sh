@@ -79,15 +79,38 @@ if [ "$(id -u)" = "0" ]; then
 fi
 
 # Determine which NVR binary to use
-if [ -x "/data/bin/nvr" ]; then
+# Compare versions to ensure we use the newest binary
+SHIPPED_BIN="/app/bin/nvr"
+if [ ! -x "$SHIPPED_BIN" ] && [ -x "/app/nvr" ]; then
+    SHIPPED_BIN="/app/nvr"
+fi
+
+if [ -x "/data/bin/nvr" ] && [ -x "$SHIPPED_BIN" ]; then
+    # Get version from each binary (format: "version":"X.X.X" in health output or --version)
+    DATA_VERSION=$(/data/bin/nvr --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1 || echo "0.0.0")
+    SHIPPED_VERSION=$($SHIPPED_BIN --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1 || echo "0.0.0")
+
+    echo "[entrypoint] Data binary version: $DATA_VERSION, Shipped binary version: $SHIPPED_VERSION"
+
+    # Compare versions (simple string comparison works for semver with same digit counts)
+    # Use sort -V for proper version comparison
+    NEWER_VERSION=$(printf '%s\n%s\n' "$DATA_VERSION" "$SHIPPED_VERSION" | sort -V | tail -1)
+
+    if [ "$DATA_VERSION" = "$NEWER_VERSION" ] && [ "$DATA_VERSION" != "$SHIPPED_VERSION" ]; then
+        NVR_BIN="/data/bin/nvr"
+        echo "[entrypoint] Using updated NVR binary from /data/bin/nvr (newer: $DATA_VERSION > $SHIPPED_VERSION)"
+    else
+        # Shipped is newer or same - remove old data binary to prevent future issues
+        echo "[entrypoint] Shipped binary is newer or same ($SHIPPED_VERSION >= $DATA_VERSION), removing old data binary"
+        rm -f /data/bin/nvr 2>/dev/null || true
+        NVR_BIN="$SHIPPED_BIN"
+        echo "[entrypoint] Using shipped NVR binary from $NVR_BIN"
+    fi
+elif [ -x "/data/bin/nvr" ]; then
     NVR_BIN="/data/bin/nvr"
     echo "[entrypoint] Using updated NVR binary from /data/bin/nvr"
 else
-    NVR_BIN="/app/bin/nvr"
-    # Fall back to legacy location if new location doesn't exist
-    if [ ! -x "$NVR_BIN" ] && [ -x "/app/nvr" ]; then
-        NVR_BIN="/app/nvr"
-    fi
+    NVR_BIN="$SHIPPED_BIN"
     echo "[entrypoint] Using shipped NVR binary from $NVR_BIN"
 fi
 
@@ -199,14 +222,30 @@ trap handle_sigint SIGINT
 # Determine how to run (with or without privilege drop)
 run_nvr() {
     # Refresh binary selection (in case an update was installed)
-    if [ -x "/data/bin/nvr" ]; then
+    SHIPPED_BIN="/app/bin/nvr"
+    if [ ! -x "$SHIPPED_BIN" ] && [ -x "/app/nvr" ]; then
+        SHIPPED_BIN="/app/nvr"
+    fi
+
+    if [ -x "/data/bin/nvr" ] && [ -x "$SHIPPED_BIN" ]; then
+        # Compare versions to use the newest
+        DATA_VERSION=$(/data/bin/nvr --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1 || echo "0.0.0")
+        SHIPPED_VERSION=$($SHIPPED_BIN --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1 || echo "0.0.0")
+        NEWER_VERSION=$(printf '%s\n%s\n' "$DATA_VERSION" "$SHIPPED_VERSION" | sort -V | tail -1)
+
+        if [ "$DATA_VERSION" = "$NEWER_VERSION" ] && [ "$DATA_VERSION" != "$SHIPPED_VERSION" ]; then
+            NVR_BIN="/data/bin/nvr"
+            echo "[entrypoint] Using updated NVR binary from /data/bin/nvr"
+        else
+            rm -f /data/bin/nvr 2>/dev/null || true
+            NVR_BIN="$SHIPPED_BIN"
+            echo "[entrypoint] Using NVR binary from $NVR_BIN"
+        fi
+    elif [ -x "/data/bin/nvr" ]; then
         NVR_BIN="/data/bin/nvr"
         echo "[entrypoint] Using updated NVR binary from /data/bin/nvr"
     else
-        NVR_BIN="/app/bin/nvr"
-        if [ ! -x "$NVR_BIN" ] && [ -x "/app/nvr" ]; then
-            NVR_BIN="/app/nvr"
-        fi
+        NVR_BIN="$SHIPPED_BIN"
         echo "[entrypoint] Using NVR binary from $NVR_BIN"
     fi
 
