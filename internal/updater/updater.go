@@ -366,7 +366,7 @@ func (u *Updater) Update(ctx context.Context, componentName string) error {
 		u.setStatus(componentName, "error", 0, fmt.Sprintf("Failed to create staging dir: %v", err))
 		return err
 	}
-	defer os.RemoveAll(stagingDir) // Cleanup staging on exit
+	defer func() { _ = os.RemoveAll(stagingDir) }() // Cleanup staging on exit
 
 	downloadPath := filepath.Join(stagingDir, asset.Name)
 	if err := u.downloadAsset(ctx, asset.BrowserDownloadURL, downloadPath, componentName); err != nil {
@@ -841,7 +841,7 @@ func (u *Updater) calculateSHA256(filePath string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	hash := sha256.New()
 	if _, err := io.Copy(hash, file); err != nil {
@@ -867,7 +867,7 @@ func (u *Updater) fetchChecksum(ctx context.Context, checksumURL, assetName stri
 	if err != nil {
 		return "", err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != 200 {
 		return "", fmt.Errorf("checksum fetch failed with status %d", resp.StatusCode)
@@ -1180,7 +1180,7 @@ func (u *Updater) HealthCheck(ctx context.Context) error {
 				u.logger.Debug("Health check failed, retrying", "error", err)
 				continue
 			}
-			resp.Body.Close()
+			_ = resp.Body.Close()
 
 			if resp.StatusCode == 200 {
 				u.logger.Info("Health check passed")
