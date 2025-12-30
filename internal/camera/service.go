@@ -701,8 +701,9 @@ func (s *Service) startCameraStream(ctx context.Context, cameraID string) error 
 
 // streamKeepAlive periodically touches streams to keep them active
 func (s *Service) streamKeepAlive(ctx context.Context) {
-	// Keep-alive every 60 seconds to prevent stream timeout
-	ticker := time.NewTicker(60 * time.Second)
+	// Keep-alive every 30 seconds to prevent stream timeout
+	// (some cameras timeout after 30-60s of inactivity)
+	ticker := time.NewTicker(30 * time.Second)
 	defer ticker.Stop()
 
 	for {

@@ -34,6 +34,11 @@ type Go2RTCManager struct {
 	mu         sync.RWMutex
 	running    bool
 	logger     *slog.Logger
+
+	// Circuit breaker for restarts
+	restartCount    int       // Number of restarts in current window
+	lastRestartTime time.Time // Time of last restart
+	circuitOpen     bool      // True if circuit breaker is open (no more restarts)
 }
 
 // NewGo2RTCManager creates a new go2rtc manager
@@ -304,12 +309,65 @@ func (m *Go2RTCManager) monitor() {
 	m.mu.Lock()
 	wasRunning := m.running
 	m.running = false
+
+	// Circuit breaker constants
+	const (
+		maxRestarts     = 5               // Max restarts before circuit opens
+		resetWindow     = 5 * time.Minute // Window to reset restart count
+		circuitCooldown = 2 * time.Minute // Time before circuit closes again
+	)
+
+	// Check if we should reset the restart count (long enough since last restart)
+	if time.Since(m.lastRestartTime) > resetWindow {
+		m.restartCount = 0
+		m.circuitOpen = false
+	}
+
+	// Check circuit breaker
+	if m.circuitOpen {
+		// Check if cooldown has passed
+		if time.Since(m.lastRestartTime) > circuitCooldown {
+			m.logger.Info("Circuit breaker cooldown passed, allowing restart attempt")
+			m.circuitOpen = false
+			m.restartCount = 0
+		} else {
+			m.mu.Unlock()
+			m.logger.Warn("Circuit breaker open, not restarting go2rtc",
+				"cooldown_remaining", circuitCooldown-time.Since(m.lastRestartTime))
+			return
+		}
+	}
+
 	m.mu.Unlock()
 
 	if wasRunning {
 		m.logger.Error("go2rtc exited unexpectedly", "error", err)
-		// Auto-restart after a delay
-		time.Sleep(2 * time.Second)
+
+		m.mu.Lock()
+		m.restartCount++
+		m.lastRestartTime = time.Now()
+
+		if m.restartCount >= maxRestarts {
+			m.circuitOpen = true
+			m.mu.Unlock()
+			m.logger.Error("Circuit breaker opened - too many go2rtc restarts",
+				"restarts", m.restartCount,
+				"cooldown", circuitCooldown)
+			return
+		}
+
+		// Exponential backoff: 2s, 4s, 8s, 16s, 32s
+		backoff := time.Duration(1<<m.restartCount) * time.Second
+		if backoff > 32*time.Second {
+			backoff = 32 * time.Second
+		}
+		m.mu.Unlock()
+
+		m.logger.Info("Restarting go2rtc with backoff",
+			"attempt", m.restartCount,
+			"backoff", backoff)
+
+		time.Sleep(backoff)
 		if err := m.Start(context.Background()); err != nil {
 			m.logger.Error("Failed to restart go2rtc", "error", err)
 		}

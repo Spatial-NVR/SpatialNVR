@@ -32,6 +32,8 @@ interface StreamBuffer {
   codec: string | null
   lastActivity: number
   subscribers: Set<(url: string) => void>
+  reconnectCount: number // Track consecutive reconnection attempts
+  lastConnectTime: number // When was the last successful connection
 }
 
 class StreamManager {
@@ -131,7 +133,9 @@ class StreamManager {
       isReady: false,
       codec: null,
       lastActivity: Date.now(),
-      subscribers: new Set()
+      subscribers: new Set(),
+      reconnectCount: 0,
+      lastConnectTime: 0
     }
 
     this.streams.set(streamName, buffer)
@@ -162,6 +166,9 @@ class StreamManager {
 
     ws.onopen = () => {
       console.log(`[StreamManager] Connected to ${streamName}`)
+      // Reset reconnect count on successful connection
+      buffer.reconnectCount = 0
+      buffer.lastConnectTime = Date.now()
       // Request MSE stream
       ws.send(JSON.stringify({ type: 'mse' }))
     }
@@ -201,13 +208,28 @@ class StreamManager {
       console.log(`[StreamManager] Disconnected from ${streamName}`)
       buffer.isReady = false
 
-      // Auto-reconnect after 2 seconds
+      // Exponential backoff: 2s, 4s, 8s, 16s, max 30s
+      // Reset count if we were connected for more than 60 seconds (stable connection)
+      const wasStableConnection = buffer.lastConnectTime > 0 &&
+        (Date.now() - buffer.lastConnectTime) > 60000
+
+      if (wasStableConnection) {
+        buffer.reconnectCount = 0
+      }
+
+      buffer.reconnectCount++
+      const baseDelay = 2000
+      const maxDelay = 30000
+      const delay = Math.min(baseDelay * Math.pow(2, buffer.reconnectCount - 1), maxDelay)
+
+      console.log(`[StreamManager] Will reconnect to ${streamName} in ${delay}ms (attempt ${buffer.reconnectCount})`)
+
       const timer = setTimeout(() => {
         if (this.streams.has(streamName)) {
-          console.log(`[StreamManager] Reconnecting to ${streamName}`)
+          console.log(`[StreamManager] Reconnecting to ${streamName} (attempt ${buffer.reconnectCount})`)
           this.connectStream(streamName, buffer)
         }
-      }, 2000)
+      }, delay)
 
       this.reconnectTimers.set(streamName, timer)
     }

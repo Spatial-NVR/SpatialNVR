@@ -257,6 +257,19 @@ func (i *Installer) installFromSource(ctx context.Context, owner, repo, tag stri
 	submoduleCmd.Stderr = io.Discard
 	_ = submoduleCmd.Run() // Ignore errors - submodules may not exist
 
+	// Handle special case: wyze-bridge submodule contains wyzecam at wyze-bridge/app/wyzecam/
+	// Copy it to the root so Python can import it
+	wyzecamSrc := filepath.Join(tempDir, "wyze-bridge", "app", "wyzecam")
+	wyzecamDst := filepath.Join(tempDir, "wyzecam")
+	if _, err := os.Stat(wyzecamSrc); err == nil {
+		if _, err := os.Stat(wyzecamDst); os.IsNotExist(err) {
+			i.logger.Info("Extracting wyzecam library from submodule")
+			if err := copyDir(wyzecamSrc, wyzecamDst); err != nil {
+				i.logger.Warn("Failed to copy wyzecam library", "error", err)
+			}
+		}
+	}
+
 	// Read manifest first to determine runtime type
 	manifest, err := i.readManifest(tempDir)
 	if err != nil {
