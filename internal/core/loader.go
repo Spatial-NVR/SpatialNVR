@@ -566,7 +566,7 @@ func (l *PluginLoader) ScanExternalPlugins() error {
 				setupPath := filepath.Join(pluginDir, manifest.Runtime.Setup)
 				if _, err := os.Stat(setupPath); err == nil {
 					l.logger.Info("Running plugin setup script", "id", manifest.ID, "setup", setupPath)
-					setupCmd := exec.Command("/bin/sh", setupPath)
+					setupCmd := exec.Command("/bin/bash", setupPath)
 					setupCmd.Dir = pluginDir
 					if output, err := setupCmd.CombinedOutput(); err != nil {
 						l.logger.Warn("Plugin setup script failed", "id", manifest.ID, "error", err, "output", string(output))

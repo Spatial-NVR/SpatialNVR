@@ -1,0 +1,27 @@
+# Data directory (contains recordings, databases, etc.)
+data/
+
+# Node modules (will be installed in build)
+web-ui/node_modules/
+
+# Build artifacts
+web-ui/dist/
+
+# Git
+.git/
+
+# IDE
+.idea/
+.vscode/
+
+# Test files
+*_test.go
+**/*_test.go
+
+# Local configuration
+*.local
+.env.local
+
+# Playwright test artifacts
+web-ui/playwright-report/
+web-ui/test-results/
