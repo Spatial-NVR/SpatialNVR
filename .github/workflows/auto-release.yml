@@ -220,32 +220,20 @@ jobs:
 
           ls -la dist/
 
-      - name: Build and push Docker (amd64)
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Build and push Docker (multi-arch)
         uses: docker/build-push-action@v6
         with:
           context: .
-          platforms: linux/amd64
+          platforms: linux/amd64,linux/arm64
           push: true
           build-args: |
             VERSION=${{ steps.tag.outputs.version }}
           tags: |
             ghcr.io/spatial-nvr/spatialnvr:${{ steps.tag.outputs.version }}
-            ghcr.io/spatial-nvr/spatialnvr:${{ steps.tag.outputs.version }}-amd64
             ghcr.io/spatial-nvr/spatialnvr:latest
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
-      - name: Build and push Docker (arm64)
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          platforms: linux/arm64
-          push: true
-          build-args: |
-            VERSION=${{ steps.tag.outputs.version }}
-          tags: |
-            ghcr.io/spatial-nvr/spatialnvr:${{ steps.tag.outputs.version }}-arm64
-            ghcr.io/spatial-nvr/spatialnvr:arm64
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -256,9 +244,11 @@ jobs:
           cat > CHANGELOG.md << EOF
           ## SpatialNVR v${{ steps.tag.outputs.version }}
 
-          ### Docker Images
-          - \`ghcr.io/spatial-nvr/spatialnvr:${{ steps.tag.outputs.version }}\` (amd64)
-          - \`ghcr.io/spatial-nvr/spatialnvr:${{ steps.tag.outputs.version }}-arm64\` (arm64)
+          ### Docker Image (Multi-Architecture)
+          \`\`\`bash
+          docker pull ghcr.io/spatial-nvr/spatialnvr:${{ steps.tag.outputs.version }}
+          \`\`\`
+          Supports: linux/amd64, linux/arm64
 
           ### Binaries
           Download the appropriate binary for your platform.
@@ -289,10 +279,7 @@ jobs:
             "latest": {
               "version": "$VERSION",
               "date": "$DATE",
-              "docker": {
-                "amd64": "ghcr.io/spatial-nvr/spatialnvr:$VERSION",
-                "arm64": "ghcr.io/spatial-nvr/spatialnvr:$VERSION-arm64"
-              },
+              "docker": "ghcr.io/spatial-nvr/spatialnvr:$VERSION",
               "binaries": {
                 "linux-amd64": "https://github.com/Spatial-NVR/SpatialNVR/releases/download/v$VERSION/spatialnvr-linux-amd64",
                 "linux-arm64": "https://github.com/Spatial-NVR/SpatialNVR/releases/download/v$VERSION/spatialnvr-linux-arm64",
