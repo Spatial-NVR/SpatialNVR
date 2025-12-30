@@ -288,6 +288,7 @@ export function Plugins() {
     onSuccess: (result) => {
       addToast('success', `Plugin ${result.id} uninstalled`)
       queryClient.invalidateQueries({ queryKey: ['plugin-catalog'] })
+      queryClient.invalidateQueries({ queryKey: ['plugins'] })
     },
     onError: (error: Error) => {
       addToast('error', `Uninstall failed: ${error.message}`)

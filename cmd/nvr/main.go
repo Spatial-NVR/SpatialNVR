@@ -235,9 +235,9 @@ func main() {
 	server := &http.Server{
 		Addr:         addr,
 		Handler:      earlyRouter,
-		ReadTimeout:  15 * time.Second,
-		WriteTimeout: 15 * time.Second,
-		IdleTimeout:  60 * time.Second,
+		ReadTimeout:  30 * time.Second,
+		WriteTimeout: 5 * time.Minute, // Plugin installs can take a while
+		IdleTimeout:  120 * time.Second,
 	}
 
 	// Start server immediately
@@ -2193,10 +2193,17 @@ func handleUninstallPlugin(installer *plugin.Installer, loader *core.PluginLoade
 		id := chi.URLParam(r, "id")
 		slog.Info("Uninstalling plugin", "id", id)
 
+		// Log all currently loaded plugins for debugging
+		plugins := loader.ListPlugins()
+		pluginIDs := make([]string, 0, len(plugins))
+		for _, p := range plugins {
+			pluginIDs = append(pluginIDs, p.Manifest.ID)
+		}
+		slog.Info("Currently loaded plugins", "ids", pluginIDs)
+
 		// Try to find the actual plugin ID by checking the loader
 		// The ID might be "wyze-plugin" (directory name) but loader has "wyze" (manifest ID)
 		actualID := id
-		plugins := loader.ListPlugins()
 		for _, p := range plugins {
 			// Check if the provided ID matches either the manifest ID or could be derived from it
 			if p.Manifest.ID == id {
@@ -2211,10 +2218,22 @@ func handleUninstallPlugin(installer *plugin.Installer, loader *core.PluginLoade
 			}
 		}
 
+		slog.Info("Unregistering plugin from loader", "requestedID", id, "actualID", actualID)
+
 		// Force unregister the plugin (this will stop it if running and remove from loader)
 		if err := loader.ForceUnregisterPlugin(actualID); err != nil {
 			slog.Warn("Could not force unregister plugin during uninstall", "id", actualID, "error", err)
+		} else {
+			slog.Info("Plugin unregistered from loader", "id", actualID)
 		}
+
+		// Verify it was removed
+		pluginsAfter := loader.ListPlugins()
+		pluginIDsAfter := make([]string, 0, len(pluginsAfter))
+		for _, p := range pluginsAfter {
+			pluginIDsAfter = append(pluginIDsAfter, p.Manifest.ID)
+		}
+		slog.Info("Plugins after unregister", "ids", pluginIDsAfter)
 
 		// Remove plugin files - try both the original ID and resolved ID
 		var uninstallErr error
@@ -2235,7 +2254,9 @@ func handleUninstallPlugin(installer *plugin.Installer, loader *core.PluginLoade
 			return
 		}
 
-		// Invalidate caches so next catalog request shows correct state
+		// Invalidate ALL caches so next catalog request shows correct state
+		cachedCatalog = nil
+		cachedCatalogTime = time.Time{}
 		cachedVersions = nil
 		cachedVersionsTime = time.Time{}
 
