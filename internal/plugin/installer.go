@@ -360,11 +360,12 @@ func (i *Installer) getLatestRelease(ctx context.Context, owner, repo string) (*
 }
 
 // findPlatformAsset finds the appropriate binary asset for the current platform
+// For cross-platform plugins (Python, Node.js), it will also match generic archives
 func (i *Installer) findPlatformAsset(assets []GitHubAsset) *GitHubAsset {
 	os := runtime.GOOS
 	arch := runtime.GOARCH
 
-	// Common naming patterns
+	// Common naming patterns for platform-specific binaries
 	patterns := []string{
 		fmt.Sprintf("%s_%s", os, arch),
 		fmt.Sprintf("%s-%s", os, arch),
@@ -379,12 +380,23 @@ func (i *Installer) findPlatformAsset(assets []GitHubAsset) *GitHubAsset {
 		)
 	}
 
+	// First, try to find platform-specific assets
 	for _, asset := range assets {
 		name := strings.ToLower(asset.Name)
 		for _, pattern := range patterns {
 			if strings.Contains(name, pattern) {
 				return &asset
 			}
+		}
+	}
+
+	// If no platform-specific asset found, look for generic archives
+	// These are likely cross-platform plugins (Python, Node.js, etc.)
+	for _, asset := range assets {
+		name := strings.ToLower(asset.Name)
+		if strings.HasSuffix(name, ".tar.gz") || strings.HasSuffix(name, ".tgz") || strings.HasSuffix(name, ".zip") {
+			i.logger.Debug("Using generic archive asset for cross-platform plugin", "name", asset.Name)
+			return &asset
 		}
 	}
 

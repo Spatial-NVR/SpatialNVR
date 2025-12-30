@@ -2169,6 +2169,10 @@ func handleUninstallPlugin(installer *plugin.Installer, loader *core.PluginLoade
 			return
 		}
 
+		// Invalidate caches so next catalog request shows correct state
+		cachedVersions = nil
+		cachedVersionsTime = time.Time{}
+
 		slog.Info("Plugin uninstalled successfully", "id", actualID)
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{
