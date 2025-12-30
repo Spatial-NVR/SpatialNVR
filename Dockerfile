@@ -1,5 +1,6 @@
 # SpatialNVR - Standalone Dockerfile
 # Multi-stage build for optimal image size
+# Build: v0.0.31 - Fixed version injection
 #
 # Architecture Strategy:
 # - amd64 (latest): Default image, full plugin compatibility
