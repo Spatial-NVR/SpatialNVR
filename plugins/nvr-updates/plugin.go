@@ -240,8 +240,10 @@ func (p *Plugin) Routes() http.Handler {
 	r.Get("/", p.handleGetUpdates)
 	r.Post("/check", p.handleCheckUpdates)
 	r.Post("/{component}", p.handleUpdate)
+	r.Post("/{component}/rollback", p.handleRollback)
 	r.Post("/all", p.handleUpdateAll)
 	r.Get("/status", p.handleGetStatus)
+	r.Get("/backups", p.handleGetBackups)
 	r.Get("/config", p.handleGetConfig)
 	r.Put("/config", p.handleSetConfig)
 	return r
@@ -343,6 +345,50 @@ func (p *Plugin) handleGetStatus(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(status)
 }
 
+// handleRollback rolls back a specific component to its previous version
+func (p *Plugin) handleRollback(w http.ResponseWriter, r *http.Request) {
+	if p.updater == nil {
+		http.Error(w, "Updater not initialized", http.StatusServiceUnavailable)
+		return
+	}
+
+	component := chi.URLParam(r, "component")
+	ctx := r.Context()
+
+	if err := p.updater.Rollback(ctx, component); err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+		return
+	}
+
+	// Return success and trigger restart
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+		"success":   true,
+		"component": component,
+		"message":   "Rollback complete. Restarting...",
+	})
+
+	// Trigger restart after rollback
+	go func() {
+		time.Sleep(500 * time.Millisecond)
+		p.triggerRestart()
+	}()
+}
+
+// handleGetBackups returns available backups for rollback
+func (p *Plugin) handleGetBackups(w http.ResponseWriter, r *http.Request) {
+	if p.updater == nil {
+		http.Error(w, "Updater not initialized", http.StatusServiceUnavailable)
+		return
+	}
+
+	backups := p.updater.GetBackups()
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(backups)
+}
+
 // handleGetConfig returns the plugin configuration
 func (p *Plugin) handleGetConfig(w http.ResponseWriter, r *http.Request) {
 	p.mu.RLock()
@@ -369,23 +415,37 @@ func (p *Plugin) handleSetConfig(w http.ResponseWriter, r *http.Request) {
 }
 
 // triggerRestart sends SIGHUP to the parent process (docker-entrypoint.sh) to trigger a hot-restart
+// IMPORTANT: This does NOT stop the container - only restarts the NVR process within it
 func (p *Plugin) triggerRestart() {
 	// Get parent PID (docker-entrypoint.sh)
 	ppid := os.Getppid()
 
 	if ppid <= 1 {
-		// Running directly (not under entrypoint), exit and let container restart policy handle it
-		p.logger.Info("No parent process to signal, exiting for restart")
-		os.Exit(0)
+		// Running directly (not under entrypoint) or as PID 1
+		// In this case, send SIGTERM to ourselves to trigger a graceful shutdown
+		// The container's restart policy or orchestrator will handle the restart
+		p.logger.Warn("No parent entrypoint found, sending SIGTERM to self for graceful shutdown")
+		// Don't use os.Exit - let the signal handler do graceful cleanup
+		if err := syscall.Kill(os.Getpid(), syscall.SIGTERM); err != nil {
+			p.logger.Error("Failed to send SIGTERM to self", "error", err)
+		}
 		return
 	}
 
-	// Send SIGHUP to parent to trigger hot-restart
-	p.logger.Info("Sending SIGHUP to parent process", "ppid", ppid)
+	// Send SIGHUP to parent (entrypoint) to trigger hot-restart
+	// The entrypoint will:
+	// 1. Send SIGTERM to us for graceful shutdown
+	// 2. Wait for us to exit
+	// 3. Start a fresh NVR process with the updated binary
+	// This keeps the container running and healthy
+	p.logger.Info("Sending SIGHUP to parent process for hot-restart", "ppid", ppid)
 	if err := syscall.Kill(ppid, syscall.SIGHUP); err != nil {
 		p.logger.Error("Failed to send SIGHUP to parent", "error", err)
-		// Fallback: exit and let container restart
-		os.Exit(0)
+		// Fallback: send SIGTERM to ourselves for graceful shutdown
+		// The entrypoint restart loop will restart us
+		if err := syscall.Kill(os.Getpid(), syscall.SIGTERM); err != nil {
+			p.logger.Error("Failed to send SIGTERM to self", "error", err)
+		}
 	}
 }
 

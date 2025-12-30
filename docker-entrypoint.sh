@@ -127,29 +127,68 @@ echo "[entrypoint] Config Path: ${CONFIG_PATH:-/config/config.yaml}"
 RESTART_REQUESTED=0
 NVR_PID=0
 
+# Graceful shutdown timeout (seconds) - configurable via environment
+SHUTDOWN_TIMEOUT=${SHUTDOWN_TIMEOUT:-30}
+
+# Graceful shutdown function with timeout
+# Ensures the NVR process has time to cleanup before being killed
+graceful_shutdown() {
+    local signal=$1
+    local pid=$2
+
+    if [ $pid -eq 0 ]; then
+        return 0
+    fi
+
+    # Check if process is still running
+    if ! kill -0 $pid 2>/dev/null; then
+        echo "[entrypoint] NVR process already exited"
+        return 0
+    fi
+
+    echo "[entrypoint] Sending TERM signal to NVR (PID $pid)..."
+    kill -TERM $pid 2>/dev/null || true
+
+    # Wait for graceful shutdown with timeout
+    local elapsed=0
+    while [ $elapsed -lt $SHUTDOWN_TIMEOUT ]; do
+        if ! kill -0 $pid 2>/dev/null; then
+            echo "[entrypoint] NVR shut down gracefully after ${elapsed}s"
+            return 0
+        fi
+        sleep 1
+        elapsed=$((elapsed + 1))
+
+        # Show progress every 5 seconds
+        if [ $((elapsed % 5)) -eq 0 ]; then
+            echo "[entrypoint] Waiting for graceful shutdown... ${elapsed}/${SHUTDOWN_TIMEOUT}s"
+        fi
+    done
+
+    # Force kill if still running
+    echo "[entrypoint] NVR did not shutdown gracefully after ${SHUTDOWN_TIMEOUT}s, sending KILL..."
+    kill -KILL $pid 2>/dev/null || true
+    sleep 1
+    return 0
+}
+
 # Signal handlers
 handle_sighup() {
     echo "[entrypoint] SIGHUP received - hot restart requested"
     RESTART_REQUESTED=1
-    if [ $NVR_PID -ne 0 ]; then
-        kill -TERM $NVR_PID 2>/dev/null || true
-    fi
+    graceful_shutdown "SIGHUP" $NVR_PID
 }
 
 handle_sigterm() {
     echo "[entrypoint] SIGTERM received - shutting down"
     RESTART_REQUESTED=0
-    if [ $NVR_PID -ne 0 ]; then
-        kill -TERM $NVR_PID 2>/dev/null || true
-    fi
+    graceful_shutdown "SIGTERM" $NVR_PID
 }
 
 handle_sigint() {
     echo "[entrypoint] SIGINT received - shutting down"
     RESTART_REQUESTED=0
-    if [ $NVR_PID -ne 0 ]; then
-        kill -TERM $NVR_PID 2>/dev/null || true
-    fi
+    graceful_shutdown "SIGINT" $NVR_PID
 }
 
 # Setup signal handlers
@@ -193,12 +232,63 @@ run_nvr() {
     NVR_PID=$!
 }
 
+# Health check function - verifies NVR is responding after start
+# This prevents the container from being considered healthy when NVR is stuck
+HEALTH_CHECK_URL=${HEALTH_CHECK_URL:-"http://localhost:8080/health"}
+HEALTH_CHECK_TIMEOUT=${HEALTH_CHECK_TIMEOUT:-60}
+
+wait_for_healthy() {
+    echo "[entrypoint] Waiting for NVR to become healthy..."
+    local elapsed=0
+
+    while [ $elapsed -lt $HEALTH_CHECK_TIMEOUT ]; do
+        # Check if process is still running
+        if ! kill -0 $NVR_PID 2>/dev/null; then
+            echo "[entrypoint] NVR process died during startup"
+            return 1
+        fi
+
+        # Try health check
+        if curl -sf --connect-timeout 2 "$HEALTH_CHECK_URL" >/dev/null 2>&1; then
+            echo "[entrypoint] NVR is healthy after ${elapsed}s"
+            return 0
+        fi
+
+        sleep 2
+        elapsed=$((elapsed + 2))
+
+        # Show progress every 10 seconds
+        if [ $((elapsed % 10)) -eq 0 ]; then
+            echo "[entrypoint] Waiting for health check... ${elapsed}/${HEALTH_CHECK_TIMEOUT}s"
+        fi
+    done
+
+    echo "[entrypoint] Health check timed out after ${HEALTH_CHECK_TIMEOUT}s"
+    return 1
+}
+
 # Main restart loop
 while true; do
     RESTART_REQUESTED=0
 
     echo "[entrypoint] Starting NVR process..."
     run_nvr "$@"
+
+    # Give the process a moment to start
+    sleep 2
+
+    # Wait for health check on hot restarts (after updates)
+    if [ -f "/data/updates/.health_check_pending" ]; then
+        rm -f "/data/updates/.health_check_pending"
+        if ! wait_for_healthy; then
+            echo "[entrypoint] Post-update health check failed!"
+            # Check if there's a rollback marker
+            if [ -f "/data/updates/.rollback_on_failure" ]; then
+                echo "[entrypoint] Rollback marker found, but rollback must be done manually via API"
+                rm -f "/data/updates/.rollback_on_failure"
+            fi
+        fi
+    fi
 
     # Wait for NVR to exit
     wait $NVR_PID
@@ -209,13 +299,15 @@ while true; do
     # Check if restart was requested
     if [ $RESTART_REQUESTED -eq 1 ]; then
         echo "[entrypoint] Hot restart in progress..."
+        # Create health check pending marker for next start
+        touch "/data/updates/.health_check_pending" 2>/dev/null || true
         sleep 1
         continue
     fi
 
     # Check if we should auto-restart on crash
     if [ $EXIT_CODE -ne 0 ]; then
-        echo "[entrypoint] NVR crashed, restarting in 5 seconds..."
+        echo "[entrypoint] NVR crashed (exit code $EXIT_CODE), restarting in 5 seconds..."
         sleep 5
         continue
     fi

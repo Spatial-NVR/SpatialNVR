@@ -669,11 +669,51 @@ func (m *Manager) startExternalPlugin(p *installedPlugin) error {
 		}
 		cmd = exec.CommandContext(m.ctx, binaryPath, p.manifest.Runtime.Args...)
 	case "python":
-		entryPoint := filepath.Join(p.dir, p.manifest.Runtime.EntryPoint)
+		// Check if setup script needs to be run first
+		if p.manifest.Runtime.Setup != "" {
+			setupPath := filepath.Join(p.dir, p.manifest.Runtime.Setup)
+			if _, err := os.Stat(setupPath); err == nil {
+				// Check if setup has already been run (look for venv or setup marker)
+				venvPath := filepath.Join(p.dir, "venv")
+				setupMarker := filepath.Join(p.dir, ".setup_complete")
+				if _, err := os.Stat(venvPath); os.IsNotExist(err) {
+					if _, err := os.Stat(setupMarker); os.IsNotExist(err) {
+						m.logger.Info("Running setup script for Python plugin", "plugin", p.manifest.ID)
+						setupCmd := exec.CommandContext(m.ctx, "bash", setupPath)
+						setupCmd.Dir = p.dir
+						setupCmd.Env = append(os.Environ(),
+							fmt.Sprintf("NVR_PLUGIN_ID=%s", p.manifest.ID),
+							fmt.Sprintf("NVR_PLUGIN_DIR=%s", p.dir),
+						)
+						if output, err := setupCmd.CombinedOutput(); err != nil {
+							m.logger.Error("Setup script failed", "plugin", p.manifest.ID, "error", err, "output", string(output))
+							p.state = PluginStateError
+							p.lastError = fmt.Sprintf("setup failed: %v", err)
+							return fmt.Errorf("setup script failed: %w\n%s", err, output)
+						}
+						// Create marker so we don't run setup again
+						_ = os.WriteFile(setupMarker, []byte(time.Now().Format(time.RFC3339)), 0644)
+						m.logger.Info("Setup script completed", "plugin", p.manifest.ID)
+					}
+				}
+			}
+		}
+
+		// Use GetEntryPoint() to support both entry_point and script fields
+		entryPoint := filepath.Join(p.dir, p.manifest.Runtime.GetEntryPoint())
+
+		// Check if venv exists and use its Python
+		venvPython := filepath.Join(p.dir, "venv", "bin", "python3")
+		pythonPath := "python3"
+		if _, err := os.Stat(venvPython); err == nil {
+			pythonPath = venvPython
+			m.logger.Debug("Using virtual environment Python", "path", venvPython)
+		}
+
 		args := append([]string{entryPoint}, p.manifest.Runtime.Args...)
-		cmd = exec.CommandContext(m.ctx, "python3", args...)
+		cmd = exec.CommandContext(m.ctx, pythonPath, args...)
 	case "node":
-		entryPoint := filepath.Join(p.dir, p.manifest.Runtime.EntryPoint)
+		entryPoint := filepath.Join(p.dir, p.manifest.Runtime.GetEntryPoint())
 		args := append([]string{entryPoint}, p.manifest.Runtime.Args...)
 		cmd = exec.CommandContext(m.ctx, "node", args...)
 	default:

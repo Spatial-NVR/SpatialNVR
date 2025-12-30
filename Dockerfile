@@ -155,7 +155,10 @@ ENV DEPLOYMENT_TYPE=standalone \
 EXPOSE 8080 1984 8554 8555/tcp 8555/udp
 
 # Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
+# - start-period: 60s gives time for initial startup and plugin loading
+# - retries: 5 with 30s interval = 150s tolerance for hot-restarts during updates
+# - This ensures container stays "healthy" during normal update cycles
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=5 \
     CMD curl -f http://localhost:8080/health || exit 1
 
 # Use entrypoint script to check for updates before starting

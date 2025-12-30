@@ -55,8 +55,22 @@ type PluginRuntime struct {
 	// EntryPoint is the main script for interpreted languages
 	EntryPoint string `json:"entry_point,omitempty" yaml:"entry_point,omitempty"`
 
+	// Script is an alias for EntryPoint (used by some plugin manifests)
+	Script string `json:"script,omitempty" yaml:"script,omitempty"`
+
+	// Setup is a setup script to run before the plugin (e.g., install dependencies)
+	Setup string `json:"setup,omitempty" yaml:"setup,omitempty"`
+
 	// Args are additional arguments to pass to the runtime
 	Args []string `json:"args,omitempty" yaml:"args,omitempty"`
+}
+
+// GetEntryPoint returns the entry point script, checking both EntryPoint and Script fields
+func (r PluginRuntime) GetEntryPoint() string {
+	if r.EntryPoint != "" {
+		return r.EntryPoint
+	}
+	return r.Script
 }
 
 // PluginDependency describes an external dependency

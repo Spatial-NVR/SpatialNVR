@@ -250,21 +250,49 @@ func (i *Installer) installFromSource(ctx context.Context, owner, repo, tag stri
 	}
 	defer func() { _ = os.RemoveAll(tempDir) }()
 
-	// Check if it's a Go project and build it
-	if _, err := os.Stat(filepath.Join(tempDir, "go.mod")); err == nil {
-		i.logger.Info("Building Go plugin")
-		cmd := exec.CommandContext(ctx, "go", "build", "-o", "plugin", ".")
-		cmd.Dir = tempDir
-		cmd.Env = append(os.Environ(), "CGO_ENABLED=0")
-		if output, err := cmd.CombinedOutput(); err != nil {
-			return nil, fmt.Errorf("failed to build plugin: %w\n%s", err, output)
-		}
-	}
-
-	// Read manifest to get the real plugin ID
+	// Read manifest first to determine runtime type
 	manifest, err := i.readManifest(tempDir)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read manifest: %w", err)
+	}
+
+	// Handle different runtime types
+	switch manifest.Runtime.Type {
+	case "python":
+		i.logger.Info("Installing Python plugin (no build required)", "id", manifest.ID)
+		// Python plugins don't need compilation
+		// Setup script (if any) will be run by the manager when the plugin starts
+
+	case "node":
+		i.logger.Info("Installing Node.js plugin", "id", manifest.ID)
+		// Check for package.json and run npm install
+		if _, err := os.Stat(filepath.Join(tempDir, "package.json")); err == nil {
+			i.logger.Info("Running npm install for Node.js plugin")
+			npmCmd := exec.CommandContext(ctx, "npm", "install", "--production")
+			npmCmd.Dir = tempDir
+			if output, err := npmCmd.CombinedOutput(); err != nil {
+				i.logger.Warn("npm install failed", "error", err, "output", string(output))
+				// Continue anyway - maybe dependencies aren't required
+			}
+		}
+
+	case "binary", "":
+		// Check if it's a Go project and build it
+		if _, err := os.Stat(filepath.Join(tempDir, "go.mod")); err == nil {
+			i.logger.Info("Building Go plugin")
+			buildCmd := exec.CommandContext(ctx, "go", "build", "-o", "plugin", ".")
+			buildCmd.Dir = tempDir
+			buildCmd.Env = append(os.Environ(), "CGO_ENABLED=0")
+			if output, err := buildCmd.CombinedOutput(); err != nil {
+				return nil, fmt.Errorf("failed to build plugin: %w\n%s", err, output)
+			}
+		} else {
+			// No go.mod and not a specific runtime type - check if there's a pre-built binary
+			i.logger.Debug("No go.mod found and no specific runtime, assuming pre-built plugin")
+		}
+
+	default:
+		i.logger.Warn("Unknown runtime type, proceeding without build", "type", manifest.Runtime.Type)
 	}
 
 	// Use manifest ID for the final plugin directory (not repo name)
@@ -284,7 +312,7 @@ func (i *Installer) installFromSource(ctx context.Context, owner, repo, tag stri
 	// Track the repo
 	i.trackRepo(owner, repo, tag, manifest.ID)
 
-	i.logger.Info("Plugin installed from source", "id", manifest.ID, "version", manifest.Version, "dir", pluginDir)
+	i.logger.Info("Plugin installed from source", "id", manifest.ID, "version", manifest.Version, "runtime", manifest.Runtime.Type, "dir", pluginDir)
 	return manifest, nil
 }
 
