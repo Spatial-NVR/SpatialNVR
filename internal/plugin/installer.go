@@ -235,20 +235,27 @@ func (i *Installer) installFromSource(ctx context.Context, owner, repo, tag stri
 	// Clone to a temp directory first so we can read manifest and get the real ID
 	tempDir := filepath.Join(i.cacheDir, fmt.Sprintf("src-%s-%d", repo, time.Now().UnixNano()))
 
-	// Clone the repository
+	// Clone the repository (use --recurse-submodules to fetch submodules)
 	cloneURL := fmt.Sprintf("https://github.com/%s/%s.git", owner, repo)
 
-	cmd := exec.CommandContext(ctx, "git", "clone", "--depth", "1", "--branch", tag, cloneURL, tempDir)
+	cmd := exec.CommandContext(ctx, "git", "clone", "--depth", "1", "--recurse-submodules", "--shallow-submodules", "--branch", tag, cloneURL, tempDir)
 	cmd.Stdout = io.Discard
 	cmd.Stderr = io.Discard
 	if err := cmd.Run(); err != nil {
 		// Try without tag (use default branch)
-		cmd = exec.CommandContext(ctx, "git", "clone", "--depth", "1", cloneURL, tempDir)
+		cmd = exec.CommandContext(ctx, "git", "clone", "--depth", "1", "--recurse-submodules", "--shallow-submodules", cloneURL, tempDir)
 		if err := cmd.Run(); err != nil {
 			return nil, fmt.Errorf("failed to clone repository: %w", err)
 		}
 	}
 	defer func() { _ = os.RemoveAll(tempDir) }()
+
+	// Initialize any submodules that weren't fetched (fallback for older git versions)
+	submoduleCmd := exec.CommandContext(ctx, "git", "-c", "safe.directory=*", "submodule", "update", "--init", "--recursive")
+	submoduleCmd.Dir = tempDir
+	submoduleCmd.Stdout = io.Discard
+	submoduleCmd.Stderr = io.Discard
+	_ = submoduleCmd.Run() // Ignore errors - submodules may not exist
 
 	// Read manifest first to determine runtime type
 	manifest, err := i.readManifest(tempDir)
@@ -257,11 +264,48 @@ func (i *Installer) installFromSource(ctx context.Context, owner, repo, tag stri
 	}
 
 	// Handle different runtime types
-	switch manifest.Runtime.Type {
+	switch strings.ToLower(manifest.Runtime.Type) {
 	case "python":
-		i.logger.Info("Installing Python plugin (no build required)", "id", manifest.ID)
-		// Python plugins don't need compilation
-		// Setup script (if any) will be run by the manager when the plugin starts
+		i.logger.Info("Setting up Python plugin", "id", manifest.ID)
+		// Run setup script if it exists to create venv and install dependencies
+		if manifest.Runtime.Setup != "" {
+			setupPath := filepath.Join(tempDir, manifest.Runtime.Setup)
+			if _, err := os.Stat(setupPath); err == nil {
+				i.logger.Info("Running plugin setup script", "id", manifest.ID, "setup", setupPath)
+				setupCmd := exec.CommandContext(ctx, "/bin/bash", setupPath)
+				setupCmd.Dir = tempDir
+				setupCmd.Env = append(os.Environ(), "HOME=/tmp") // Some scripts need HOME
+				if output, err := setupCmd.CombinedOutput(); err != nil {
+					i.logger.Warn("Plugin setup script failed, trying manual venv setup", "id", manifest.ID, "error", err, "output", string(output))
+				}
+			}
+		}
+
+		// Ensure venv exists - create it if setup.sh didn't
+		venvDir := filepath.Join(tempDir, "venv")
+		venvBin := filepath.Join(venvDir, "bin", "python")
+		if _, err := os.Stat(venvBin); os.IsNotExist(err) {
+			i.logger.Info("Creating Python venv", "id", manifest.ID)
+			venvCmd := exec.CommandContext(ctx, "python3", "-m", "venv", venvDir)
+			venvCmd.Dir = tempDir
+			if output, err := venvCmd.CombinedOutput(); err != nil {
+				i.logger.Warn("Failed to create venv", "error", err, "output", string(output))
+			}
+		}
+
+		// Install requirements if they exist
+		reqPath := filepath.Join(tempDir, "requirements.txt")
+		if _, err := os.Stat(reqPath); err == nil {
+			pipPath := filepath.Join(venvDir, "bin", "pip")
+			if _, err := os.Stat(pipPath); err == nil {
+				i.logger.Info("Installing Python dependencies", "id", manifest.ID)
+				pipCmd := exec.CommandContext(ctx, pipPath, "install", "-r", reqPath)
+				pipCmd.Dir = tempDir
+				if output, err := pipCmd.CombinedOutput(); err != nil {
+					i.logger.Warn("Failed to install Python dependencies", "error", err, "output", string(output))
+				}
+			}
+		}
 
 	case "node":
 		i.logger.Info("Installing Node.js plugin", "id", manifest.ID)

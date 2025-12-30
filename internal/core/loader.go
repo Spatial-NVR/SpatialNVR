@@ -576,7 +576,14 @@ func (l *PluginLoader) ScanExternalPlugins() error {
 			}
 		}
 
-		l.logger.Info("Found plugin manifest", "dir", entry.Name(), "id", manifest.ID, "runtime_type", manifest.Runtime.Type, "runtime_script", manifest.Runtime.Script, "runtime_setup", manifest.Runtime.Setup)
+		l.logger.Info("Found plugin manifest",
+			"dir", entry.Name(),
+			"id", manifest.ID,
+			"version", manifest.Version,
+			"runtime_type", manifest.Runtime.Type,
+			"runtime_script", manifest.Runtime.Script,
+			"runtime_setup", manifest.Runtime.Setup,
+			"manifest_bytes", len(data))
 
 		l.pluginsMu.Lock()
 		if _, exists := l.plugins[manifest.ID]; exists {
