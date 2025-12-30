@@ -1,7 +1,7 @@
 {
   "latest": {
     "version": "0.0.34",
-    "date": "2025-12-30T07:45:00Z",
+    "date": "2025-12-30T13:09:23Z",
     "docker": {
       "amd64": "ghcr.io/spatial-nvr/spatialnvr:0.0.34",
       "arm64": "ghcr.io/spatial-nvr/spatialnvr:0.0.34-arm64"
