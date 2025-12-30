@@ -166,8 +166,11 @@ func (c *PluginClient) Call(ctx context.Context, method string, params interface
 	select {
 	case <-ctx.Done():
 		c.mu.Lock()
-		delete(c.pending, id)
-		close(respCh)
+		// Only close if we still own the channel (readLoop may have closed it)
+		if _, exists := c.pending[id]; exists {
+			delete(c.pending, id)
+			close(respCh)
+		}
 		c.mu.Unlock()
 		return nil, ctx.Err()
 	case resp, ok := <-respCh:
