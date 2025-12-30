@@ -519,23 +519,38 @@ func (l *PluginLoader) ScanExternalPlugins() error {
 		}
 
 		pluginDir := filepath.Join(l.pluginsDir, entry.Name())
+
+		// Try manifest.yaml first, then manifest.json
 		manifestPath := filepath.Join(pluginDir, "manifest.yaml")
+		data, err := os.ReadFile(manifestPath)
+		isJSON := false
+		if err != nil {
+			// Try manifest.json as fallback
+			manifestPath = filepath.Join(pluginDir, "manifest.json")
+			data, err = os.ReadFile(manifestPath)
+			if err != nil {
+				l.logger.Debug("Skipping directory (no manifest)", "dir", entry.Name())
+				continue
+			}
+			isJSON = true
+		}
 
 		l.logger.Debug("Checking plugin directory", "dir", entry.Name(), "manifestPath", manifestPath)
 
-		data, err := os.ReadFile(manifestPath)
-		if err != nil {
-			l.logger.Debug("Skipping directory (no manifest)", "dir", entry.Name(), "error", err)
-			continue
-		}
-
 		var manifest sdk.PluginManifest
-		if err := yaml.Unmarshal(data, &manifest); err != nil {
-			l.logger.Warn("Invalid manifest", "dir", entry.Name(), "error", err)
-			continue
+		if isJSON {
+			if err := json.Unmarshal(data, &manifest); err != nil {
+				l.logger.Warn("Invalid manifest", "dir", entry.Name(), "error", err)
+				continue
+			}
+		} else {
+			if err := yaml.Unmarshal(data, &manifest); err != nil {
+				l.logger.Warn("Invalid manifest", "dir", entry.Name(), "error", err)
+				continue
+			}
 		}
 
-		l.logger.Debug("Found manifest", "dir", entry.Name(), "id", manifest.ID, "runtime", manifest.Runtime.Type)
+		l.logger.Debug("Found manifest", "dir", entry.Name(), "id", manifest.ID, "runtime_type", manifest.Runtime.Type, "runtime_script", manifest.Runtime.Script, "runtime_setup", manifest.Runtime.Setup)
 
 		l.pluginsMu.Lock()
 		if _, exists := l.plugins[manifest.ID]; exists {
