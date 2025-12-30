@@ -404,10 +404,19 @@ func (i *Installer) findPlatformAsset(assets []GitHubAsset) *GitHubAsset {
 }
 
 // downloadFile downloads a file from a URL
-func (i *Installer) downloadFile(ctx context.Context, url, destPath string) error {
-	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+func (i *Installer) downloadFile(ctx context.Context, urlStr, destPath string) error {
+	req, err := http.NewRequestWithContext(ctx, "GET", urlStr, nil)
 	if err != nil {
 		return err
+	}
+
+	// Add GitHub token for private repo downloads
+	i.mu.RLock()
+	token := i.githubToken
+	i.mu.RUnlock()
+	if token != "" && strings.Contains(urlStr, "github.com") {
+		req.Header.Set("Authorization", "Bearer "+token)
+		req.Header.Set("Accept", "application/octet-stream")
 	}
 
 	resp, err := i.httpClient.Do(req)

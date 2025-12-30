@@ -30,6 +30,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/Spatial-NVR/SpatialNVR/internal/api"
+	"github.com/Spatial-NVR/SpatialNVR/internal/config"
 	"github.com/Spatial-NVR/SpatialNVR/internal/core"
 	"github.com/Spatial-NVR/SpatialNVR/internal/database"
 	"github.com/Spatial-NVR/SpatialNVR/internal/detection"
@@ -302,6 +303,13 @@ func main() {
 		updateStartupState("gateway", "Setting up API gateway...")
 		gateway = core.NewAPIGateway(loader, eventBus, logger)
 		installer = plugin.NewInstaller(pluginsDir, logger)
+
+		// Set GitHub token from config for private repo access
+		if cfg, err := config.Load(configPath); err == nil && cfg.System.Updates.GitHubToken != "" {
+			installer.SetGitHubToken(cfg.System.Updates.GitHubToken)
+			slog.Info("GitHub token configured for plugin installer")
+		}
+
 		if err := installer.Start(ctx); err != nil {
 			slog.Warn("Failed to start plugin installer", "error", err)
 		}
