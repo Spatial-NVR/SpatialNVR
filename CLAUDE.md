@@ -1,5 +1,13 @@
 # Project Notes
 
+## CRITICAL RULES - DO NOT VIOLATE
+
+1. **NEVER question the user's container version.** When the user says they are running the latest container, they ARE running the latest container. Do not suggest they need to pull, update, or recreate containers. Do not compare image digests. Do not ask them to verify versions. The issue is ALWAYS in the code, not the deployment.
+
+2. **NEVER suggest the user is on an old version.** If something isn't working, debug the code - don't blame the deployment.
+
+3. **Test via UI/Playwright, not manual API calls.** Use the Playwright tests to reproduce issues, not curl commands or direct API testing.
+
 ## Related Repositories
 
 - **Wyze Plugin**: `/Users/joshua.seidel/spatialnvr-wyze-plugin`

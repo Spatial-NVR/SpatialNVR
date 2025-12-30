@@ -588,9 +588,10 @@ func (l *PluginLoader) ScanExternalPlugins() error {
 		var binaryPath string
 		var extPlugin *ExternalPlugin
 
-		// Handle different runtime types
-		l.logger.Info("Processing plugin runtime", "id", manifest.ID, "runtime_type", fmt.Sprintf("%q", manifest.Runtime.Type))
-		switch manifest.Runtime.Type {
+		// Handle different runtime types - normalize to lowercase for robust matching
+		runtimeType := strings.TrimSpace(strings.ToLower(manifest.Runtime.Type))
+		l.logger.Info("Processing plugin runtime", "id", manifest.ID, "runtime_type", fmt.Sprintf("%q", manifest.Runtime.Type), "normalized", runtimeType)
+		switch runtimeType {
 		case "python":
 			// For Python plugins, run setup script if exists, then use python interpreter
 			scriptPath := manifest.Runtime.Script

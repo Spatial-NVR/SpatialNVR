@@ -196,11 +196,26 @@ func main() {
 	if info, err := os.Stat(webPath); err == nil && info.IsDir() {
 		fs := http.FileServer(http.Dir(webPath))
 		earlyRouter.Get("/*", func(w http.ResponseWriter, req *http.Request) {
-			filePath := filepath.Join(webPath, req.URL.Path)
+			urlPath := req.URL.Path
+			filePath := filepath.Join(webPath, urlPath)
 			if _, err := os.Stat(filePath); err == nil {
+				// Set cache headers - no caching during startup to ensure fresh content
+				if strings.HasSuffix(urlPath, ".html") || strings.HasSuffix(urlPath, ".json") {
+					w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
+					w.Header().Set("Pragma", "no-cache")
+					w.Header().Set("Expires", "0")
+				} else if strings.HasSuffix(urlPath, ".js") || strings.HasSuffix(urlPath, ".css") {
+					w.Header().Set("Cache-Control", "public, max-age=3600, must-revalidate")
+				} else {
+					w.Header().Set("Cache-Control", "public, max-age=86400")
+				}
 				fs.ServeHTTP(w, req)
 				return
 			}
+			// SPA fallback - no cache
+			w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
+			w.Header().Set("Pragma", "no-cache")
+			w.Header().Set("Expires", "0")
 			http.ServeFile(w, req, filepath.Join(webPath, "index.html"))
 		})
 	}
@@ -665,11 +680,27 @@ func setupRouter(gateway *core.APIGateway, loader *core.PluginLoader, eventBus *
 			// Try to serve static file
 			filePath := filepath.Join(webPath, urlPath)
 			if _, err := os.Stat(filePath); err == nil {
+				// Set cache headers based on file type
+				// HTML and manifest files should never be cached to ensure updates are detected
+				if strings.HasSuffix(urlPath, ".html") || strings.HasSuffix(urlPath, ".json") {
+					w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
+					w.Header().Set("Pragma", "no-cache")
+					w.Header().Set("Expires", "0")
+				} else if strings.HasSuffix(urlPath, ".js") || strings.HasSuffix(urlPath, ".css") {
+					// JS/CSS files have content hashes, cache for 1 hour but revalidate
+					w.Header().Set("Cache-Control", "public, max-age=3600, must-revalidate")
+				} else {
+					// Other assets (images, fonts) - cache for 1 day
+					w.Header().Set("Cache-Control", "public, max-age=86400")
+				}
 				fs.ServeHTTP(w, req)
 				return
 			}
 
-			// Otherwise serve index.html for SPA routing
+			// Otherwise serve index.html for SPA routing (no cache)
+			w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
+			w.Header().Set("Pragma", "no-cache")
+			w.Header().Set("Expires", "0")
 			http.ServeFile(w, req, filepath.Join(webPath, "index.html"))
 		})
 	}
