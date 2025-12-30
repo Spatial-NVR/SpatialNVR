@@ -48,6 +48,9 @@ import (
 	nvrupdates "github.com/Spatial-NVR/SpatialNVR/plugins/nvr-updates"
 )
 
+// Version is set at build time via ldflags
+var Version = "dev"
+
 const (
 	defaultAddress    = "0.0.0.0"
 	defaultDataPath   = "/data"
@@ -128,7 +131,7 @@ func main() {
 	}
 
 	slog.Info("Starting NVR System (Plugin Architecture)",
-		"version", nvrVersion,
+		"version", Version,
 		"mode", "plugin-based",
 		"api_port", ports.API,
 		"nats_port", ports.NATS,
@@ -577,7 +580,7 @@ func setupRouter(gateway *core.APIGateway, loader *core.PluginLoader, eventBus *
 
 		w.Header().Set("Content-Type", "application/json")
 		// Include ready:true so UI knows backend is fully started
-		_, _ = fmt.Fprintf(w, `{"status":"%s","ready":true,"version":"%s","plugins":%d,"mode":"plugin-based"}`, status, nvrVersion, len(plugins))
+		_, _ = fmt.Fprintf(w, `{"status":"%s","ready":true,"version":"%s","plugins":%d,"mode":"plugin-based"}`, status, Version, len(plugins))
 	})
 
 	// API routes
@@ -1324,9 +1327,6 @@ const (
 	catalogTimeout = 10 * time.Second
 )
 
-// Current NVR version
-const nvrVersion = "0.0.19"
-
 // Cached catalog
 var (
 	cachedCatalog        map[string]interface{}
@@ -1337,14 +1337,14 @@ var (
 	versionsCacheTTL     = 5 * time.Minute
 	cachedNVRVersion     string
 	cachedNVRVersionTime time.Time
-	nvrVersionCacheTTL   = 30 * time.Minute
+	VersionCacheTTL   = 30 * time.Minute
 )
 
 // checkNVRUpdate checks if a newer NVR version is available
 func checkNVRUpdate() (bool, string) {
 	// Check cache first
-	if cachedNVRVersion != "" && time.Since(cachedNVRVersionTime) < nvrVersionCacheTTL {
-		return compareVersions(nvrVersion, cachedNVRVersion), cachedNVRVersion
+	if cachedNVRVersion != "" && time.Since(cachedNVRVersionTime) < VersionCacheTTL {
+		return compareVersions(Version, cachedNVRVersion), cachedNVRVersion
 	}
 
 	// Fetch from GitHub API
@@ -1356,7 +1356,7 @@ func checkNVRUpdate() (bool, string) {
 		return false, ""
 	}
 	req.Header.Set("Accept", "application/vnd.github.v3+json")
-	req.Header.Set("User-Agent", "SpatialNVR/"+nvrVersion)
+	req.Header.Set("User-Agent", "SpatialNVR/"+Version)
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
@@ -1378,7 +1378,7 @@ func checkNVRUpdate() (bool, string) {
 	cachedNVRVersion = latestVersion
 	cachedNVRVersionTime = time.Now()
 
-	return compareVersions(nvrVersion, latestVersion), latestVersion
+	return compareVersions(Version, latestVersion), latestVersion
 }
 
 // compareVersions returns true if latestVersion is newer than currentVersion

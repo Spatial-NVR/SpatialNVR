@@ -191,16 +191,19 @@ jobs:
           mkdir -p dist
           VERSION="${{ steps.tag.outputs.version }}"
 
+          # ldflags to set version in both main and nvr-updates plugin
+          LDFLAGS="-s -w -X main.Version=$VERSION -X github.com/Spatial-NVR/SpatialNVR/plugins/nvr-updates.Version=$VERSION"
+
           # Build linux/amd64 with CGO (native, for SQLite support)
           echo "Building dist/spatialnvr-linux-amd64..."
           CGO_ENABLED=1 GOOS=linux GOARCH=amd64 go build \
-            -ldflags="-s -w -X main.Version=$VERSION" \
+            -ldflags="$LDFLAGS" \
             -o "dist/spatialnvr-linux-amd64" ./cmd/nvr
 
           # Build linux/arm64 with CGO (cross-compile)
           echo "Building dist/spatialnvr-linux-arm64..."
           CGO_ENABLED=1 GOOS=linux GOARCH=arm64 CC=aarch64-linux-gnu-gcc go build \
-            -ldflags="-s -w -X main.Version=$VERSION" \
+            -ldflags="$LDFLAGS" \
             -o "dist/spatialnvr-linux-arm64" ./cmd/nvr
 
           # Darwin builds - CGO disabled (use Docker for production)
@@ -211,7 +214,7 @@ jobs:
 
             echo "Building $OUTPUT (without CGO - use Docker for production)..."
             CGO_ENABLED=0 GOOS=$GOOS GOARCH=$GOARCH go build \
-              -ldflags="-s -w -X main.Version=$VERSION" \
+              -ldflags="$LDFLAGS" \
               -o "$OUTPUT" ./cmd/nvr
           done
 
@@ -223,6 +226,8 @@ jobs:
           context: .
           platforms: linux/amd64
           push: true
+          build-args: |
+            VERSION=${{ steps.tag.outputs.version }}
           tags: |
             ghcr.io/spatial-nvr/spatialnvr:${{ steps.tag.outputs.version }}
             ghcr.io/spatial-nvr/spatialnvr:${{ steps.tag.outputs.version }}-amd64
@@ -236,6 +241,8 @@ jobs:
           context: .
           platforms: linux/arm64
           push: true
+          build-args: |
+            VERSION=${{ steps.tag.outputs.version }}
           tags: |
             ghcr.io/spatial-nvr/spatialnvr:${{ steps.tag.outputs.version }}-arm64
             ghcr.io/spatial-nvr/spatialnvr:arm64

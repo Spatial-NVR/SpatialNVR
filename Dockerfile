@@ -24,6 +24,9 @@
 # =============================================================================
 FROM golang:1.24-bookworm AS builder
 
+# Version is passed from the build workflow
+ARG VERSION=dev
+
 WORKDIR /build
 
 # Install build dependencies
@@ -39,7 +42,10 @@ RUN go mod download
 COPY . .
 
 # Build the binary with CGO enabled for SQLite support
-RUN CGO_ENABLED=1 GOOS=linux go build -ldflags="-s -w" -o nvr ./cmd/nvr
+# Set version in both main and nvr-updates plugin
+RUN CGO_ENABLED=1 GOOS=linux go build \
+    -ldflags="-s -w -X main.Version=${VERSION} -X github.com/Spatial-NVR/SpatialNVR/plugins/nvr-updates.Version=${VERSION}" \
+    -o nvr ./cmd/nvr
 
 # =============================================================================
 # Stage 2: Build the web UI
