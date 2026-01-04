@@ -1379,6 +1379,16 @@ export const pluginsApi = {
     const query = params.toString();
     return request<PluginLogs>(`/api/v1/plugins/${pluginId}/logs${query ? `?${query}` : ''}`);
   },
+
+  /**
+   * Send RPC command to a plugin
+   */
+  rpc: async <T = unknown>(pluginId: string, method: string, params: Record<string, unknown> = {}): Promise<T> => {
+    return request<T>(`/api/v1/plugins/${pluginId}/rpc`, {
+      method: 'POST',
+      body: JSON.stringify({ method, params }),
+    });
+  },
 };
 
 // ============================================================================
