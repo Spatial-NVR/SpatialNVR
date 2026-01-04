@@ -229,8 +229,9 @@ func (r *Recorder) buildStreamURL() string {
 		return ""
 	}
 
-	// Add authentication to URL if configured
-	if r.config.Stream.Username != "" && r.config.Stream.Password != "" {
+	// Add authentication to URL if configured AND URL doesn't already have credentials
+	// Check for @ symbol after the protocol:// to detect existing credentials
+	if r.config.Stream.Username != "" && r.config.Stream.Password != "" && !urlHasCredentials(streamURL) {
 		// Parse the URL to inject credentials
 		if strings.HasPrefix(streamURL, "rtsp://") {
 			streamURL = fmt.Sprintf("rtsp://%s:%s@%s",
@@ -251,6 +252,25 @@ func (r *Recorder) buildStreamURL() string {
 	}
 
 	return streamURL
+}
+
+// urlHasCredentials checks if a URL already contains embedded credentials
+func urlHasCredentials(urlStr string) bool {
+	// Remove protocol prefix and check for @ before first /
+	for _, proto := range []string{"rtsp://", "http://", "https://", "rtmp://"} {
+		if strings.HasPrefix(urlStr, proto) {
+			rest := strings.TrimPrefix(urlStr, proto)
+			// Find the host part (before first /)
+			slashIdx := strings.Index(rest, "/")
+			hostPart := rest
+			if slashIdx != -1 {
+				hostPart = rest[:slashIdx]
+			}
+			// If there's an @ in the host part, credentials are present
+			return strings.Contains(hostPart, "@")
+		}
+	}
+	return false
 }
 
 // buildFFmpegArgs constructs the FFmpeg command arguments

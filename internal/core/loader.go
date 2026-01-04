@@ -370,6 +370,25 @@ func (l *PluginLoader) GetPlugin(id string) (*LoadedPlugin, bool) {
 	return p, ok
 }
 
+// GetPluginCaller returns a PluginRPCCaller for the specified plugin ID
+// Returns nil, false if the plugin is not found or doesn't support RPC
+func (l *PluginLoader) GetPluginCaller(id string) (PluginRPCCaller, bool) {
+	l.pluginsMu.RLock()
+	defer l.pluginsMu.RUnlock()
+
+	p, ok := l.plugins[id]
+	if !ok {
+		return nil, false
+	}
+
+	// Check if it's an external plugin that supports RPC
+	if ext, ok := p.Plugin.(*ExternalPlugin); ok {
+		return ext, true
+	}
+
+	return nil, false
+}
+
 // ListPlugins returns all loaded plugins
 func (l *PluginLoader) ListPlugins() []*LoadedPlugin {
 	l.pluginsMu.RLock()

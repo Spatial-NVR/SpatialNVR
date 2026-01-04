@@ -315,8 +315,11 @@ func main() {
 		// Create and configure plugin loader
 		updateStartupState("plugins", "Loading plugins...")
 		loader = core.NewPluginLoader(pluginsDir, eventBus, db.DB, logger)
-		registerCorePlugins(loader, dataPath)
+		coreAPIPlugin := registerCorePlugins(loader, dataPath)
 		configurePlugins(loader, dataPath, configPath, ports)
+
+		// Wire up plugin RPC provider so core API can proxy calls to external plugins
+		coreAPIPlugin.SetPluginRPCProvider(loader)
 
 		if err := loader.LoadPluginConfigs(); err != nil {
 			slog.Warn("Failed to load plugin configs", "error", err)
@@ -403,8 +406,8 @@ func main() {
 	slog.Info("Server stopped")
 }
 
-// registerCorePlugins registers all builtin core plugins
-func registerCorePlugins(loader *core.PluginLoader, dataPath string) {
+// registerCorePlugins registers all builtin core plugins and returns the core API plugin
+func registerCorePlugins(loader *core.PluginLoader, dataPath string) *nvrcoreapi.CoreAPIPlugin {
 	// Core foundation plugins (no dependencies)
 	if err := loader.RegisterBuiltinPlugin(nvrcoreconfig.New()); err != nil {
 		slog.Error("Failed to register config plugin", "error", err)
@@ -414,7 +417,9 @@ func registerCorePlugins(loader *core.PluginLoader, dataPath string) {
 		slog.Error("Failed to register events plugin", "error", err)
 	}
 
-	if err := loader.RegisterBuiltinPlugin(nvrcoreapi.New()); err != nil {
+	// Create and register core API plugin (keep reference for wiring)
+	coreAPIPlugin := nvrcoreapi.New()
+	if err := loader.RegisterBuiltinPlugin(coreAPIPlugin); err != nil {
 		slog.Error("Failed to register core API plugin", "error", err)
 	}
 
@@ -443,6 +448,8 @@ func registerCorePlugins(loader *core.PluginLoader, dataPath string) {
 	if err := loader.RegisterBuiltinPlugin(nvrupdates.New()); err != nil {
 		slog.Error("Failed to register updates plugin", "error", err)
 	}
+
+	return coreAPIPlugin
 }
 
 // configurePlugins sets up configuration for each plugin

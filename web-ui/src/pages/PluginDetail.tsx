@@ -20,13 +20,15 @@ import {
   X,
   ChevronDown,
   ChevronRight,
-  Camera
+  Camera,
+  Video
 } from 'lucide-react'
 import { pluginsApi } from '../lib/api'
 import { useToast } from '../components/Toast'
 import { ReolinkSetup } from '../components/plugins/ReolinkSetup'
+import { PluginCamerasTab } from '../components/plugins/PluginCamerasTab'
 
-type TabType = 'overview' | 'setup' | 'settings' | 'logs'
+type TabType = 'overview' | 'setup' | 'cameras' | 'settings' | 'logs'
 
 // Plugin IDs that have setup components
 const PLUGINS_WITH_SETUP = ['reolink', 'nvr-camera-reolink']
@@ -506,6 +508,9 @@ export function PluginDetail() {
             ...(PLUGINS_WITH_SETUP.some(p => plugin.id.includes(p))
               ? [{ id: 'setup', label: 'Setup', icon: Camera }]
               : []),
+            ...(PLUGINS_WITH_SETUP.some(p => plugin.id.includes(p))
+              ? [{ id: 'cameras', label: 'Cameras', icon: Video }]
+              : []),
             { id: 'settings', label: 'Settings', icon: Settings },
             { id: 'logs', label: 'Logs', icon: Terminal },
           ].map(tab => (
@@ -659,9 +664,20 @@ export function PluginDetail() {
                 pluginId={plugin.id}
                 onCameraAdded={() => {
                   queryClient.invalidateQueries({ queryKey: ['cameras'] })
+                  queryClient.invalidateQueries({ queryKey: ['plugin-cameras', plugin.id] })
                 }}
               />
             )}
+          </div>
+        )}
+
+        {activeTab === 'cameras' && (
+          <div className="bg-card border border-border rounded-lg p-6">
+            <h3 className="font-medium mb-4 flex items-center gap-2">
+              <Video className="w-4 h-4" />
+              Plugin Cameras
+            </h3>
+            <PluginCamerasTab pluginId={plugin.id} />
           </div>
         )}
 

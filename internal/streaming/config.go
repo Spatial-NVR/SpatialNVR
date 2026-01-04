@@ -183,8 +183,8 @@ func (g *ConfigGenerator) WriteToFile(config *Go2RTCConfig, path string) error {
 func (g *ConfigGenerator) buildStreamURL(url, username, password string) string {
 	result := url
 
-	// Add credentials if provided
-	if username != "" {
+	// Add credentials if provided AND URL doesn't already have credentials
+	if username != "" && !urlHasCredentials(url) {
 		// Parse and rebuild URL with credentials
 		// Handle rtsp:// URLs
 		if strings.HasPrefix(url, "rtsp://") {
@@ -213,11 +213,26 @@ func (g *ConfigGenerator) buildStreamURL(url, username, password string) string 
 		}
 	}
 
-	// Note: We no longer force H264 transcoding here
-	// The VideoPlayer will try native H265 first, and request H264 transcoding
-	// via the stream URL parameter if the browser doesn't support H265
-
 	return result
+}
+
+// urlHasCredentials checks if a URL already contains embedded credentials
+func urlHasCredentials(urlStr string) bool {
+	// Remove protocol prefix and check for @ before first /
+	for _, proto := range []string{"rtsp://", "http://", "https://", "rtmp://"} {
+		if strings.HasPrefix(urlStr, proto) {
+			rest := strings.TrimPrefix(urlStr, proto)
+			// Find the host part (before first /)
+			slashIdx := strings.Index(rest, "/")
+			hostPart := rest
+			if slashIdx != -1 {
+				hostPart = rest[:slashIdx]
+			}
+			// If there's an @ in the host part, credentials are present
+			return strings.Contains(hostPart, "@")
+		}
+	}
+	return false
 }
 
 // sanitizeStreamName ensures the stream name is valid for go2rtc

@@ -15,6 +15,7 @@ import (
 
 	"github.com/Spatial-NVR/SpatialNVR/internal/camera"
 	"github.com/Spatial-NVR/SpatialNVR/internal/config"
+	"github.com/Spatial-NVR/SpatialNVR/internal/core"
 	"github.com/Spatial-NVR/SpatialNVR/internal/database"
 	"github.com/Spatial-NVR/SpatialNVR/internal/streaming"
 	"github.com/Spatial-NVR/SpatialNVR/sdk"
@@ -24,16 +25,24 @@ import (
 type CoreAPIPlugin struct {
 	sdk.BaseServicePlugin
 
-	cameraService *camera.Service
-	config        *config.Config
-	db            *database.DB
-	go2rtc        *streaming.Go2RTCManager
+	cameraService    *camera.Service
+	config           *config.Config
+	db               *database.DB
+	go2rtc           *streaming.Go2RTCManager
+	pluginRPCProvider core.PluginRPCProvider
 
 	configPath  string
 	storagePath string
 
 	mu      sync.RWMutex
 	started bool
+}
+
+// SetPluginRPCProvider sets the plugin RPC provider for proxying plugin calls
+func (p *CoreAPIPlugin) SetPluginRPCProvider(provider core.PluginRPCProvider) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.pluginRPCProvider = provider
 }
 
 // New creates a new CoreAPIPlugin instance
@@ -494,21 +503,41 @@ func (p *CoreAPIPlugin) handleGetCapabilities(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	// If camera has a plugin_id, capabilities come from the plugin
-	// For now, return defaults. Frontend can call plugin RPC directly for plugin-managed cameras.
-	if cfg.PluginID != "" {
-		// Return a response indicating this is a plugin-managed camera
-		// The frontend should call the plugin's get_capabilities RPC
+	// If camera has a plugin_id, proxy the capabilities request to the plugin
+	if cfg.PluginID != "" && p.pluginRPCProvider != nil {
+		caller, ok := p.pluginRPCProvider.GetPluginCaller(cfg.PluginID)
+		if ok {
+			ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+			defer cancel()
+
+			result, err := caller.Call(ctx, "get_capabilities", map[string]string{
+				"camera_id": cfg.PluginCamID,
+			})
+			if err == nil {
+				// Parse plugin response and add plugin metadata
+				var caps map[string]interface{}
+				if json.Unmarshal(result, &caps) == nil {
+					caps["is_plugin_managed"] = true
+					caps["plugin_id"] = cfg.PluginID
+					caps["plugin_camera_id"] = cfg.PluginCamID
+					p.respondJSON(w, caps)
+					return
+				}
+			}
+			// Fall through to defaults if plugin call fails
+		}
+
+		// Plugin not available or call failed - return basic info
 		p.respondJSON(w, map[string]interface{}{
-			"plugin_id":        cfg.PluginID,
-			"plugin_camera_id": cfg.PluginCamID,
-			"has_ptz":          cfg.PTZ.Enabled,
-			"has_audio":        cfg.Audio.Enabled,
+			"plugin_id":         cfg.PluginID,
+			"plugin_camera_id":  cfg.PluginCamID,
+			"has_ptz":           cfg.PTZ.Enabled,
+			"has_audio":         cfg.Audio.Enabled,
 			"has_two_way_audio": cfg.Audio.TwoWay,
-			"has_snapshot":     true,
-			"device_type":      "camera",
-			"protocols":        []string{"source"}, // Plugin will provide actual protocols
-			"current_protocol": "source",
+			"has_snapshot":      true,
+			"device_type":       "camera",
+			"protocols":         []string{"source"},
+			"current_protocol":  "source",
 			"is_plugin_managed": true,
 		})
 		return
@@ -516,18 +545,18 @@ func (p *CoreAPIPlugin) handleGetCapabilities(w http.ResponseWriter, r *http.Req
 
 	// Manual camera - return basic capabilities from config
 	p.respondJSON(w, map[string]interface{}{
-		"has_ptz":          cfg.PTZ.Enabled,
-		"has_audio":        cfg.Audio.Enabled,
+		"has_ptz":           cfg.PTZ.Enabled,
+		"has_audio":         cfg.Audio.Enabled,
 		"has_two_way_audio": cfg.Audio.TwoWay,
-		"has_snapshot":     true,
-		"device_type":      "camera",
-		"is_doorbell":      false,
-		"is_nvr":           false,
-		"is_battery":       false,
-		"has_ai_detection": cfg.Detection.Enabled,
-		"ai_types":         cfg.Detection.Models,
-		"protocols":        []string{"source"},
-		"current_protocol": "source",
+		"has_snapshot":      true,
+		"device_type":       "camera",
+		"is_doorbell":       false,
+		"is_nvr":            false,
+		"is_battery":        false,
+		"has_ai_detection":  cfg.Detection.Enabled,
+		"ai_types":          cfg.Detection.Models,
+		"protocols":         []string{"source"},
+		"current_protocol":  "source",
 		"is_plugin_managed": false,
 	})
 }
@@ -541,13 +570,25 @@ func (p *CoreAPIPlugin) handleGetPTZPresets(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	// If plugin-managed, frontend should call plugin RPC directly
-	if cfg.PluginID != "" {
-		p.respondJSON(w, map[string]interface{}{
-			"plugin_id":        cfg.PluginID,
-			"plugin_camera_id": cfg.PluginCamID,
-			"presets":          []interface{}{}, // Plugin will provide
-		})
+	// If plugin-managed, proxy the request to the plugin
+	if cfg.PluginID != "" && p.pluginRPCProvider != nil {
+		caller, ok := p.pluginRPCProvider.GetPluginCaller(cfg.PluginID)
+		if ok {
+			ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+			defer cancel()
+
+			result, err := caller.Call(ctx, "get_ptz_presets", map[string]string{
+				"camera_id": cfg.PluginCamID,
+			})
+			if err == nil {
+				// Return raw plugin response (array of presets)
+				w.Header().Set("Content-Type", "application/json")
+				w.Write(result)
+				return
+			}
+		}
+		// Plugin not available - return empty presets
+		p.respondJSON(w, []interface{}{})
 		return
 	}
 
@@ -578,13 +619,40 @@ func (p *CoreAPIPlugin) handlePTZControl(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	// For plugin cameras, frontend should call plugin RPC directly
-	// Return plugin info so frontend knows which plugin to call
-	p.respondJSON(w, map[string]interface{}{
-		"plugin_id":        cfg.PluginID,
-		"plugin_camera_id": cfg.PluginCamID,
-		"message":          "Use plugin RPC endpoint for PTZ control",
-	})
+	// Parse the PTZ command from request body
+	var cmd struct {
+		Action    string  `json:"action"`
+		Direction float64 `json:"direction,omitempty"`
+		Speed     float64 `json:"speed,omitempty"`
+		Preset    string  `json:"preset,omitempty"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&cmd); err != nil {
+		p.respondError(w, http.StatusBadRequest, "Invalid PTZ command")
+		return
+	}
+
+	// Proxy to plugin
+	if p.pluginRPCProvider != nil {
+		caller, ok := p.pluginRPCProvider.GetPluginCaller(cfg.PluginID)
+		if ok {
+			ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+			defer cancel()
+
+			result, err := caller.Call(ctx, "ptz_control", map[string]interface{}{
+				"camera_id": cfg.PluginCamID,
+				"command":   cmd,
+			})
+			if err != nil {
+				p.respondError(w, http.StatusInternalServerError, err.Error())
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			w.Write(result)
+			return
+		}
+	}
+
+	p.respondError(w, http.StatusServiceUnavailable, "Plugin not available")
 }
 
 func (p *CoreAPIPlugin) handleGetProtocols(w http.ResponseWriter, r *http.Request) {
@@ -596,13 +664,24 @@ func (p *CoreAPIPlugin) handleGetProtocols(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	if cfg.PluginID != "" {
-		// Plugin camera - protocols come from plugin
-		p.respondJSON(w, map[string]interface{}{
-			"plugin_id":        cfg.PluginID,
-			"plugin_camera_id": cfg.PluginCamID,
-			"protocols":        []interface{}{}, // Plugin will provide
-		})
+	// If plugin-managed, proxy the request to the plugin
+	if cfg.PluginID != "" && p.pluginRPCProvider != nil {
+		caller, ok := p.pluginRPCProvider.GetPluginCaller(cfg.PluginID)
+		if ok {
+			ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+			defer cancel()
+
+			result, err := caller.Call(ctx, "get_protocols", map[string]string{
+				"camera_id": cfg.PluginCamID,
+			})
+			if err == nil {
+				w.Header().Set("Content-Type", "application/json")
+				w.Write(result)
+				return
+			}
+		}
+		// Plugin not available - return empty
+		p.respondJSON(w, []interface{}{})
 		return
 	}
 
@@ -631,12 +710,37 @@ func (p *CoreAPIPlugin) handleSetProtocol(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	// For plugin cameras, frontend should call plugin RPC directly
-	p.respondJSON(w, map[string]interface{}{
-		"plugin_id":        cfg.PluginID,
-		"plugin_camera_id": cfg.PluginCamID,
-		"message":          "Use plugin RPC endpoint to change protocol",
-	})
+	// Parse the protocol from request body
+	var req struct {
+		Protocol string `json:"protocol"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		p.respondError(w, http.StatusBadRequest, "Invalid request")
+		return
+	}
+
+	// Proxy to plugin
+	if p.pluginRPCProvider != nil {
+		caller, ok := p.pluginRPCProvider.GetPluginCaller(cfg.PluginID)
+		if ok {
+			ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+			defer cancel()
+
+			result, err := caller.Call(ctx, "set_protocol", map[string]string{
+				"camera_id": cfg.PluginCamID,
+				"protocol":  req.Protocol,
+			})
+			if err != nil {
+				p.respondError(w, http.StatusInternalServerError, err.Error())
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			w.Write(result)
+			return
+		}
+	}
+
+	p.respondError(w, http.StatusServiceUnavailable, "Plugin not available")
 }
 
 func (p *CoreAPIPlugin) handleGetDeviceInfo(w http.ResponseWriter, r *http.Request) {
@@ -648,13 +752,26 @@ func (p *CoreAPIPlugin) handleGetDeviceInfo(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	if cfg.PluginID != "" {
-		// Plugin camera - device info comes from plugin
+	// If plugin-managed, proxy the request to the plugin
+	if cfg.PluginID != "" && p.pluginRPCProvider != nil {
+		caller, ok := p.pluginRPCProvider.GetPluginCaller(cfg.PluginID)
+		if ok {
+			ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+			defer cancel()
+
+			result, err := caller.Call(ctx, "get_device_info", map[string]string{
+				"camera_id": cfg.PluginCamID,
+			})
+			if err == nil {
+				w.Header().Set("Content-Type", "application/json")
+				w.Write(result)
+				return
+			}
+		}
+		// Plugin not available - return basic info from config
 		p.respondJSON(w, map[string]interface{}{
-			"plugin_id":        cfg.PluginID,
-			"plugin_camera_id": cfg.PluginCamID,
-			"model":            cfg.Model,
-			"manufacturer":     cfg.Manufacturer,
+			"model":        cfg.Model,
+			"manufacturer": cfg.Manufacturer,
 		})
 		return
 	}

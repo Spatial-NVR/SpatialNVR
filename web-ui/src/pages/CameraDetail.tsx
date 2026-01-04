@@ -6,6 +6,7 @@ import { cameraApi, CameraConfig, storageApi, recordingApi, eventApi, timelineAp
 import { VideoPlayer } from '../components/VideoPlayer'
 import { MotionZoneEditor } from '../components/MotionZoneEditor'
 import { PTZControl } from '../components/PTZControl'
+import { PluginCameraSettings } from '../components/PluginCameraSettings'
 import { useState, useEffect } from 'react'
 import { usePorts } from '../hooks/usePorts'
 import { useToast } from '../components/Toast'
@@ -19,7 +20,7 @@ function formatBytes(bytes: number): string {
   return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
 }
 
-type SettingsTab = 'general' | 'streams' | 'recording' | 'detection' | 'zones' | 'audio';
+type SettingsTab = 'general' | 'streams' | 'recording' | 'detection' | 'zones' | 'audio' | 'plugin';
 type EventsViewMode = 'list' | 'timeline';
 
 export function CameraDetail() {
@@ -646,6 +647,7 @@ export function CameraDetail() {
                 pluginId={baseCapabilities.plugin_id}
                 presets={ptzPresets?.map(p => ({ id: p.id, name: p.name })) || []}
                 onPresetSaved={() => refetchPresets()}
+                onPresetDeleted={() => refetchPresets()}
               />
             </div>
           )}
@@ -912,7 +914,11 @@ export function CameraDetail() {
 
             {/* Tabs */}
             <div className="flex border-b px-6 overflow-x-auto">
-              {(['general', 'streams', 'recording', 'detection', 'zones', 'audio'] as SettingsTab[]).map((tab) => (
+              {(
+                baseCapabilities?.is_plugin_managed && baseCapabilities?.plugin_id
+                  ? (['general', 'streams', 'recording', 'detection', 'zones', 'audio', 'plugin'] as SettingsTab[])
+                  : (['general', 'streams', 'recording', 'detection', 'zones', 'audio'] as SettingsTab[])
+              ).map((tab) => (
                 <button
                   key={tab}
                   onClick={() => setSettingsTab(tab)}
@@ -1426,6 +1432,16 @@ export function CameraDetail() {
                     </p>
                   </div>
                 </div>
+              )}
+
+              {/* Plugin Tab */}
+              {settingsTab === 'plugin' && baseCapabilities?.is_plugin_managed && baseCapabilities?.plugin_id && baseCapabilities?.plugin_camera_id && (
+                <PluginCameraSettings
+                  cameraId={id!}
+                  pluginId={baseCapabilities.plugin_id}
+                  pluginCameraId={baseCapabilities.plugin_camera_id}
+                  onToast={(message, type) => addToast(type || 'success', message)}
+                />
               )}
 
               {updateMutation.isError && (
