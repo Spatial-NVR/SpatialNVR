@@ -306,7 +306,11 @@ func (p *ExternalPlugin) Call(ctx context.Context, method string, params interfa
 	// Send request
 	_, err = p.stdin.Write(append(reqBytes, '\n'))
 	if err != nil {
-		return nil, fmt.Errorf("failed to send request: %w", err)
+		// Check if plugin process has exited
+		p.runningMu.Lock()
+		p.running = false
+		p.runningMu.Unlock()
+		return nil, fmt.Errorf("failed to send request (plugin may have crashed): %w", err)
 	}
 
 	// Wait for response
@@ -342,6 +346,27 @@ func (p *ExternalPlugin) readResponses() {
 			ch <- &resp
 		}
 		p.pendingLock.Unlock()
+	}
+
+	// Scanner finished - plugin stdout closed (process likely exited)
+	if err := scanner.Err(); err != nil {
+		fmt.Printf("[%s] stdout scanner error: %v\n", p.manifest.ID, err)
+	}
+
+	// Mark plugin as not running since stdout closed
+	p.runningMu.Lock()
+	wasRunning := p.running
+	p.running = false
+	p.runningMu.Unlock()
+
+	if wasRunning {
+		fmt.Printf("[%s] plugin process exited unexpectedly\n", p.manifest.ID)
+		// Wait for the process to get exit status
+		if p.cmd != nil && p.cmd.Process != nil {
+			if state, err := p.cmd.Process.Wait(); err == nil {
+				fmt.Printf("[%s] exit status: %s\n", p.manifest.ID, state.String())
+			}
+		}
 	}
 }
 
