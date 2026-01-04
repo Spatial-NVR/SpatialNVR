@@ -67,6 +67,62 @@ export interface Camera {
   display_aspect_ratio?: AspectRatio;
   created_at: string;
   updated_at: string;
+  // Plugin association (empty = manually added camera)
+  plugin_id?: string;
+  plugin_camera_id?: string;
+}
+
+// Camera capability types for plugin-managed cameras
+export interface CameraCapabilities {
+  has_ptz: boolean;
+  has_audio: boolean;
+  has_two_way_audio: boolean;
+  has_snapshot: boolean;
+  device_type: string;
+  is_doorbell: boolean;
+  is_nvr: boolean;
+  is_battery: boolean;
+  has_ai_detection: boolean;
+  ai_types?: string[];
+  protocols: string[];
+  current_protocol: string;
+  ptz_presets?: PTZPreset[];
+  features?: Record<string, unknown>;
+  // If true, this camera is managed by a plugin
+  is_plugin_managed?: boolean;
+  plugin_id?: string;
+  plugin_camera_id?: string;
+}
+
+export interface PTZPreset {
+  id: string;
+  name: string;
+}
+
+export interface PTZCommand {
+  action: 'pan' | 'tilt' | 'zoom' | 'stop' | 'preset';
+  direction?: number;  // -1.0 to 1.0
+  speed?: number;      // 0.0 to 1.0
+  preset?: string;     // preset id for preset action
+}
+
+export interface ProtocolOption {
+  id: string;
+  name: string;
+  description?: string;
+  stream_url?: string;
+}
+
+export interface DeviceInfo {
+  model: string;
+  manufacturer: string;
+  serial?: string;
+  firmware_version?: string;
+  hardware_version?: string;
+  channel_count: number;
+  device_type?: string;
+  plugin_id?: string;
+  plugin_camera_id?: string;
 }
 
 export type StreamRole = 'detect' | 'record' | 'audio' | 'motion';
@@ -263,7 +319,7 @@ async function request<T>(
       ...options,
       headers,
     });
-  } catch (error) {
+  } catch {
     // Network error - backend not reachable
     throw new ApiError(
       'Cannot connect to NVR backend. Please ensure the server is running.',
@@ -389,6 +445,65 @@ export const cameraApi = {
    */
   getSnapshotUrl: (id: string): string => {
     return `${API_BASE}/api/v1/cameras/${id}/snapshot`;
+  },
+
+  /**
+   * Get camera capabilities (for plugin-managed cameras, may include plugin info)
+   */
+  getCapabilities: async (id: string): Promise<CameraCapabilities> => {
+    return request<CameraCapabilities>(`/api/v1/cameras/${id}/capabilities`);
+  },
+
+  /**
+   * Get PTZ presets for a camera
+   */
+  getPTZPresets: async (id: string): Promise<PTZPreset[]> => {
+    const result = await request<PTZPreset[] | { presets: PTZPreset[]; plugin_id?: string }>(`/api/v1/cameras/${id}/ptz/presets`);
+    // Handle both array and object response
+    if (Array.isArray(result)) {
+      return result;
+    }
+    return result.presets || [];
+  },
+
+  /**
+   * Send PTZ control command
+   * For plugin-managed cameras, this returns plugin info to call via plugin RPC
+   */
+  ptzControl: async (id: string, command: PTZCommand): Promise<void> => {
+    await request<void>(`/api/v1/cameras/${id}/ptz/control`, {
+      method: 'POST',
+      body: JSON.stringify(command),
+    });
+  },
+
+  /**
+   * Get available streaming protocols for a camera
+   */
+  getProtocols: async (id: string): Promise<ProtocolOption[]> => {
+    const result = await request<ProtocolOption[] | { protocols: ProtocolOption[]; plugin_id?: string }>(`/api/v1/cameras/${id}/protocols`);
+    // Handle both array and object response
+    if (Array.isArray(result)) {
+      return result;
+    }
+    return result.protocols || [];
+  },
+
+  /**
+   * Set the streaming protocol for a plugin-managed camera
+   */
+  setProtocol: async (id: string, protocol: string): Promise<void> => {
+    await request<void>(`/api/v1/cameras/${id}/protocol`, {
+      method: 'PUT',
+      body: JSON.stringify({ protocol }),
+    });
+  },
+
+  /**
+   * Get device information for a camera
+   */
+  getDeviceInfo: async (id: string): Promise<DeviceInfo> => {
+    return request<DeviceInfo>(`/api/v1/cameras/${id}/device-info`);
   },
 };
 

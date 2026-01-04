@@ -32,28 +32,6 @@ plugins:
       - Reolink PTZ cameras
       - Reolink floodlight cameras
 
-  - id: wyze
-    name: Wyze
-    description: Wyze camera integration using TUTK library for local streaming
-    author: NVR System
-    repo: github.com/nvr-plugins/wyze
-    icon: camera
-    category: cameras
-    featured: true
-    capabilities:
-      - video
-      - audio
-      - two_way_audio
-      - motion
-      - snapshot
-    supported_devices:
-      - Wyze Cam v1, v2, v3, v3 Pro
-      - Wyze Cam Pan, Pan v2, Pan v3
-      - Wyze Cam Outdoor v1, v2
-      - Wyze Video Doorbell
-      - Wyze Cam OG
-      - Wyze Cam Floodlight
-
   - id: onvif
     name: ONVIF
     description: Generic ONVIF camera support for any ONVIF-compliant device

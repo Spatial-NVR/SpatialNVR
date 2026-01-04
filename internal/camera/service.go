@@ -47,6 +47,9 @@ type Camera struct {
 	Stats              json.RawMessage `json:"stats,omitempty"`
 	CreatedAt          time.Time       `json:"created_at"`
 	UpdatedAt          time.Time       `json:"updated_at"`
+	// Plugin association (empty = manually added camera)
+	PluginID    string `json:"plugin_id,omitempty"`
+	PluginCamID string `json:"plugin_camera_id,omitempty"`
 }
 
 // Service manages cameras
@@ -107,6 +110,8 @@ func (s *Service) syncFromConfig(ctx context.Context) error {
 			Model:              camCfg.Model,
 			StreamURL:          camCfg.Stream.URL,
 			DisplayAspectRatio: camCfg.DisplayAspectRatio,
+			PluginID:           camCfg.PluginID,
+			PluginCamID:        camCfg.PluginCamID,
 			CreatedAt:          time.Now(),
 			UpdatedAt:          time.Now(),
 		}
@@ -183,6 +188,8 @@ func (s *Service) List(ctx context.Context) ([]*Camera, error) {
 			cam.Model = cfgCam.Model
 			cam.StreamURL = cfgCam.Stream.URL
 			cam.DisplayAspectRatio = cfgCam.DisplayAspectRatio
+			cam.PluginID = cfgCam.PluginID
+			cam.PluginCamID = cfgCam.PluginCamID
 		}
 
 		cameras = append(cameras, cam)
@@ -244,6 +251,8 @@ func (s *Service) Get(ctx context.Context, id string) (*Camera, error) {
 		cam.Model = cfgCam.Model
 		cam.StreamURL = cfgCam.Stream.URL
 		cam.DisplayAspectRatio = cfgCam.DisplayAspectRatio
+		cam.PluginID = cfgCam.PluginID
+		cam.PluginCamID = cfgCam.PluginCamID
 	}
 
 	return cam, nil
@@ -314,6 +323,8 @@ func (s *Service) Create(ctx context.Context, camCfg config.CameraConfig) (*Came
 		Model:              camCfg.Model,
 		StreamURL:          camCfg.Stream.URL,
 		DisplayAspectRatio: camCfg.DisplayAspectRatio,
+		PluginID:           camCfg.PluginID,
+		PluginCamID:        camCfg.PluginCamID,
 		CreatedAt:          time.Now(),
 		UpdatedAt:          time.Now(),
 	}
@@ -439,6 +450,14 @@ func (s *Service) UpdateWithFields(ctx context.Context, id string, camCfg config
 		mergedCfg.Location = camCfg.Location
 	}
 
+	if fieldPresent("plugin_id") {
+		mergedCfg.PluginID = camCfg.PluginID
+	}
+
+	if fieldPresent("plugin_camera_id") {
+		mergedCfg.PluginCamID = camCfg.PluginCamID
+	}
+
 	// Update config file with merged config
 	if err := s.cfg.UpsertCamera(mergedCfg); err != nil {
 		return nil, fmt.Errorf("failed to update camera config: %w", err)
@@ -454,6 +473,8 @@ func (s *Service) UpdateWithFields(ctx context.Context, id string, camCfg config
 		Model:              mergedCfg.Model,
 		StreamURL:          mergedCfg.Stream.URL,
 		DisplayAspectRatio: mergedCfg.DisplayAspectRatio,
+		PluginID:           mergedCfg.PluginID,
+		PluginCamID:        mergedCfg.PluginCamID,
 		CreatedAt:          existing.CreatedAt,
 		UpdatedAt:          time.Now(),
 	}

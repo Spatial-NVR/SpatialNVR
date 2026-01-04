@@ -56,9 +56,8 @@ describe('Search', () => {
   it('should render date filter inputs', () => {
     render(<Search />)
 
-    const dateInputs = screen.getAllByRole('textbox', { hidden: true })
     // Date inputs might be type="date" which aren't textboxes
-    // Let's check for the "to" label instead
+    // Check for the "to" label instead
     expect(screen.getByText('to')).toBeInTheDocument()
   })
 

@@ -322,6 +322,68 @@ func (p *PluginProxy) GetSnapshot(ctx context.Context, cameraID string) ([]byte,
 	return result, nil
 }
 
+// GetCameraCapabilities returns detailed capabilities for a plugin-managed camera
+func (p *PluginProxy) GetCameraCapabilities(ctx context.Context, cameraID string) (*CameraCapabilities, error) {
+	result, err := p.client.Call(ctx, "get_capabilities", map[string]string{"camera_id": cameraID})
+	if err != nil {
+		return nil, err
+	}
+	var caps CameraCapabilities
+	if err := json.Unmarshal(result, &caps); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal capabilities: %w", err)
+	}
+	return &caps, nil
+}
+
+// GetPTZPresets returns available PTZ presets for a camera
+func (p *PluginProxy) GetPTZPresets(ctx context.Context, cameraID string) ([]PTZPreset, error) {
+	result, err := p.client.Call(ctx, "get_ptz_presets", map[string]string{"camera_id": cameraID})
+	if err != nil {
+		return nil, err
+	}
+	var presets []PTZPreset
+	if err := json.Unmarshal(result, &presets); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal presets: %w", err)
+	}
+	return presets, nil
+}
+
+// GetProtocolOptions returns available streaming protocols for a camera
+func (p *PluginProxy) GetProtocolOptions(ctx context.Context, cameraID string) ([]ProtocolOption, error) {
+	result, err := p.client.Call(ctx, "get_protocols", map[string]string{"camera_id": cameraID})
+	if err != nil {
+		return nil, err
+	}
+	var protocols []ProtocolOption
+	if err := json.Unmarshal(result, &protocols); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal protocols: %w", err)
+	}
+	return protocols, nil
+}
+
+// SetProtocol changes the streaming protocol for a camera
+func (p *PluginProxy) SetProtocol(ctx context.Context, cameraID string, protocol string) error {
+	params := map[string]string{
+		"camera_id": cameraID,
+		"protocol":  protocol,
+	}
+	_, err := p.client.Call(ctx, "set_protocol", params)
+	return err
+}
+
+// GetDeviceInfo returns detailed device information for a plugin-managed camera
+func (p *PluginProxy) GetDeviceInfo(ctx context.Context, cameraID string) (*DeviceInfo, error) {
+	result, err := p.client.Call(ctx, "get_device_info", map[string]string{"camera_id": cameraID})
+	if err != nil {
+		return nil, err
+	}
+	var info DeviceInfo
+	if err := json.Unmarshal(result, &info); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal device info: %w", err)
+	}
+	return &info, nil
+}
+
 // Events returns the event channel from the underlying client
 func (p *PluginProxy) Events() <-chan *JSONRPCRequest {
 	return p.client.Events()

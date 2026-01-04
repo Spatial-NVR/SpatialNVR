@@ -3,9 +3,8 @@ import { test, expect } from '@playwright/test'
 /**
  * Plugin Installation E2E Test
  *
- * Tests the complete flow of installing the Wyze plugin from the UI.
- * This test reproduces the issue where the plugin is installed but
- * fails to register/hot-reload properly.
+ * Tests the complete flow of installing the Reolink plugin from the UI.
+ * This test validates the plugin installation and hot-reload functionality.
  */
 test.describe('Plugin Installation Flow', () => {
   test.beforeEach(async ({ page }) => {
@@ -31,7 +30,7 @@ test.describe('Plugin Installation Flow', () => {
     })
   })
 
-  test('should install Wyze plugin from catalog', async ({ page }) => {
+  test('should install Reolink plugin from catalog', async ({ page }) => {
     // Navigate to plugins page
     await page.goto('/plugins')
     await page.waitForLoadState('networkidle')
@@ -42,14 +41,14 @@ test.describe('Plugin Installation Flow', () => {
     // Take screenshot of initial state
     await page.screenshot({ path: 'test-results/plugin-install-01-initial.png', fullPage: true })
 
-    // Check if Wyze is already installed
+    // Check if Reolink is already installed
     const installedSection = page.locator('section').filter({ hasText: /installed/i })
-    const installedWyze = installedSection.locator('.bg-card').filter({ hasText: /wyze/i }).first()
+    const installedReolink = installedSection.locator('.bg-card').filter({ hasText: /reolink/i }).first()
 
-    if (await installedWyze.count() > 0) {
-      console.log('Wyze plugin is already installed - uninstalling first')
+    if (await installedReolink.count() > 0) {
+      console.log('Reolink plugin is already installed - uninstalling first')
       // Find and click the uninstall button (trash icon)
-      const uninstallBtn = installedWyze.locator('button[title="Uninstall"]')
+      const uninstallBtn = installedReolink.locator('button[title="Uninstall"]')
       console.log('Uninstall button count:', await uninstallBtn.count())
 
       if (await uninstallBtn.count() > 0) {
@@ -85,15 +84,15 @@ test.describe('Plugin Installation Flow', () => {
     // Take screenshot before install
     await page.screenshot({ path: 'test-results/plugin-install-02-before-install.png', fullPage: true })
 
-    // Now find the Wyze plugin in Available section
+    // Now find the Reolink plugin in Available section
     const availableSection = page.locator('section').filter({ hasText: /available/i })
-    const wyzePluginCard = availableSection.locator('.bg-card').filter({ hasText: /wyze/i }).first()
+    const reolinkPluginCard = availableSection.locator('.bg-card').filter({ hasText: /reolink/i }).first()
 
     console.log('Available section found:', await availableSection.count() > 0)
-    console.log('Wyze card in available:', await wyzePluginCard.count())
+    console.log('Reolink card in available:', await reolinkPluginCard.count())
 
-    // Find the Install button within the Wyze card
-    const installButton = wyzePluginCard.locator('button').filter({ hasText: /install/i })
+    // Find the Install button within the Reolink card
+    const installButton = reolinkPluginCard.locator('button').filter({ hasText: /install/i })
 
     expect(await installButton.count()).toBeGreaterThan(0)
     console.log('Found Install button, clicking...')
@@ -123,7 +122,6 @@ test.describe('Plugin Installation Flow', () => {
 
     // Refresh the catalog
     await page.waitForTimeout(2000)
-    const refreshButton = page.locator('button').filter({ has: page.locator('svg') }).filter({ hasText: '' }).first()
 
     // Reload the page to get fresh state
     await page.reload()
@@ -133,25 +131,25 @@ test.describe('Plugin Installation Flow', () => {
     // Take screenshot of final state
     await page.screenshot({ path: 'test-results/plugin-install-04-final.png', fullPage: true })
 
-    // Verify Wyze plugin is now in installed section
+    // Verify Reolink plugin is now in installed section
     const finalInstalledSection = page.locator('section').filter({ hasText: /installed/i })
-    const finalInstalledWyze = finalInstalledSection.locator('.bg-card').filter({ hasText: /wyze/i })
+    const finalInstalledReolink = finalInstalledSection.locator('.bg-card').filter({ hasText: /reolink/i })
 
-    const wyzeInstalled = await finalInstalledWyze.count() > 0
-    console.log(`Wyze plugin in installed section: ${wyzeInstalled}`)
+    const reolinkInstalled = await finalInstalledReolink.count() > 0
+    console.log(`Reolink plugin in installed section: ${reolinkInstalled}`)
 
-    if (wyzeInstalled) {
+    if (reolinkInstalled) {
       // Check the plugin status
-      const statusDot = finalInstalledWyze.locator('.rounded-full').first()
+      const statusDot = finalInstalledReolink.locator('.rounded-full').first()
       const statusClass = await statusDot.getAttribute('class')
       console.log(`Plugin status indicator class: ${statusClass}`)
 
       // Get version shown
-      const versionText = await finalInstalledWyze.textContent()
+      const versionText = await finalInstalledReolink.textContent()
       console.log(`Plugin card content: ${versionText}`)
     }
 
-    expect(wyzeInstalled).toBe(true)
+    expect(reolinkInstalled).toBe(true)
   })
 
   test('should install plugin from GitHub URL input', async ({ page }) => {
@@ -163,8 +161,8 @@ test.describe('Plugin Installation Flow', () => {
     const githubInput = page.locator('input[placeholder*="github"]')
     expect(await githubInput.count()).toBeGreaterThan(0)
 
-    // Type the Wyze plugin repo URL
-    await githubInput.fill('github.com/Spatial-NVR/wyze-plugin')
+    // Type the Reolink plugin repo URL
+    await githubInput.fill('github.com/Spatial-NVR/reolink-plugin')
 
     // Take screenshot
     await page.screenshot({ path: 'test-results/plugin-github-install-01.png', fullPage: true })
@@ -196,19 +194,19 @@ test.describe('Plugin Installation Flow', () => {
     await page.waitForLoadState('networkidle')
     await page.waitForTimeout(2000)
 
-    // Find Wyze plugin (either installed or in catalog)
-    const wyzeCard = page.locator('.bg-card').filter({ hasText: /wyze/i }).first()
+    // Find Reolink plugin (either installed or in catalog)
+    const reolinkCard = page.locator('.bg-card').filter({ hasText: /reolink/i }).first()
 
-    if (await wyzeCard.count() > 0) {
-      const cardText = await wyzeCard.textContent()
-      console.log(`Wyze card content: ${cardText}`)
+    if (await reolinkCard.count() > 0) {
+      const cardText = await reolinkCard.textContent()
+      console.log(`Reolink card content: ${cardText}`)
 
       // Check for version
-      const hasVersion = cardText?.includes('v2.') || cardText?.includes('2.0')
+      const hasVersion = cardText?.includes('v') || cardText?.includes('0.')
       console.log(`Has version: ${hasVersion}`)
 
       // Check for status indicator
-      const statusDot = wyzeCard.locator('.rounded-full')
+      const statusDot = reolinkCard.locator('.rounded-full')
       if (await statusDot.count() > 0) {
         const statusClass = await statusDot.first().getAttribute('class')
         console.log(`Status class: ${statusClass}`)
@@ -240,12 +238,12 @@ test.describe('Plugin Installation Flow', () => {
 
     console.log('Catalog response:', JSON.stringify(catalogResponse, null, 2))
 
-    // Check if wyze is in the catalog
-    const wyzePlugin = catalogResponse.plugins?.find((p: { id: string }) => p.id === 'wyze')
-    if (wyzePlugin) {
-      console.log('Wyze plugin in catalog:', JSON.stringify(wyzePlugin, null, 2))
+    // Check if reolink is in the catalog
+    const reolinkPlugin = catalogResponse.plugins?.find((p: { id: string }) => p.id === 'reolink')
+    if (reolinkPlugin) {
+      console.log('Reolink plugin in catalog:', JSON.stringify(reolinkPlugin, null, 2))
     } else {
-      console.log('Wyze plugin NOT found in catalog')
+      console.log('Reolink plugin NOT found in catalog')
     }
 
     // Check installed plugins

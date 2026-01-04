@@ -79,6 +79,7 @@ function CameraThumbnail({
 }) {
   const [snapshotUrl, setSnapshotUrl] = useState<string | null>(null)
   const [hasError, setHasError] = useState(false)
+  const snapshotUrlRef = useRef<string | null>(null)
 
   useEffect(() => {
     // Fetch snapshot on mount and periodically refresh
@@ -92,6 +93,7 @@ function CameraThumbnail({
             if (prev) URL.revokeObjectURL(prev)
             return url
           })
+          snapshotUrlRef.current = url
           setHasError(false)
         } else {
           setHasError(true)
@@ -108,7 +110,7 @@ function CameraThumbnail({
       const interval = setInterval(fetchSnapshot, 30000)
       return () => {
         clearInterval(interval)
-        if (snapshotUrl) URL.revokeObjectURL(snapshotUrl)
+        if (snapshotUrlRef.current) URL.revokeObjectURL(snapshotUrlRef.current)
       }
     }
   }, [camera.id, camera.status, apiUrl])

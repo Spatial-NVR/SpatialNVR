@@ -54,7 +54,14 @@ test('Test audio in actual app', async ({ page }) => {
     await new Promise(r => setTimeout(r, 2000))
 
     // Now analyze with AudioContext
-    let audioAnalysis: any = {}
+    interface AudioAnalysisResult {
+      samples?: number[]
+      maxLevel?: number
+      avgLevel?: number
+      hasAudio?: boolean
+      error?: string
+    }
+    let audioAnalysis: AudioAnalysisResult = {}
     try {
       const ctx = new AudioContext()
       console.log('AudioContext created, state:', ctx.state)

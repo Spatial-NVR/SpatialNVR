@@ -244,6 +244,60 @@ type PTZCommand struct {
 	Preset    string  `json:"preset,omitempty"` // preset name for preset action
 }
 
+// PTZPreset represents a saved PTZ position
+type PTZPreset struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}
+
+// CameraCapabilities represents detailed capabilities of a plugin-managed camera
+type CameraCapabilities struct {
+	// Basic capabilities
+	HasPTZ         bool `json:"has_ptz"`
+	HasAudio       bool `json:"has_audio"`
+	HasTwoWayAudio bool `json:"has_two_way_audio"`
+	HasSnapshot    bool `json:"has_snapshot"`
+
+	// Device type
+	DeviceType string `json:"device_type"` // camera, doorbell, nvr, battery_camera, etc.
+	IsDoorbell bool   `json:"is_doorbell"`
+	IsNVR      bool   `json:"is_nvr"`
+	IsBattery  bool   `json:"is_battery"`
+
+	// AI/Detection
+	HasAIDetection bool     `json:"has_ai_detection"`
+	AITypes        []string `json:"ai_types,omitempty"` // person, vehicle, animal, package, etc.
+
+	// Stream options
+	Protocols       []string `json:"protocols"`        // rtsp, rtmp, hls, flv
+	CurrentProtocol string   `json:"current_protocol"` // Currently selected protocol
+
+	// PTZ presets (if has_ptz is true)
+	PTZPresets []PTZPreset `json:"ptz_presets,omitempty"`
+
+	// Plugin-specific features (extensible)
+	Features map[string]interface{} `json:"features,omitempty"`
+}
+
+// DeviceInfo represents detailed information about a plugin-managed device
+type DeviceInfo struct {
+	Model           string `json:"model"`
+	Manufacturer    string `json:"manufacturer"`
+	Serial          string `json:"serial,omitempty"`
+	FirmwareVersion string `json:"firmware_version,omitempty"`
+	HardwareVersion string `json:"hardware_version,omitempty"`
+	ChannelCount    int    `json:"channel_count"`
+	DeviceType      string `json:"device_type,omitempty"`
+}
+
+// ProtocolOption represents an available streaming protocol
+type ProtocolOption struct {
+	ID          string `json:"id"`          // rtsp, rtmp, hls
+	Name        string `json:"name"`        // RTSP, RTMP, HLS
+	Description string `json:"description,omitempty"`
+	StreamURL   string `json:"stream_url,omitempty"` // URL when this protocol is selected
+}
+
 // EventHandler is a callback for camera events
 type EventHandler func(event CameraEvent)
 

@@ -97,6 +97,9 @@ type CameraConfig struct {
 	Audio              AudioConfig      `yaml:"audio,omitempty" json:"audio,omitempty"`
 	PTZ                PTZConfig        `yaml:"ptz,omitempty" json:"ptz,omitempty"`
 	Advanced           AdvancedConfig   `yaml:"advanced,omitempty" json:"advanced,omitempty"`
+	// Plugin association (empty = manually added camera)
+	PluginID    string `yaml:"plugin_id,omitempty" json:"plugin_id,omitempty"`
+	PluginCamID string `yaml:"plugin_camera_id,omitempty" json:"plugin_camera_id,omitempty"`
 }
 
 // MotionConfig holds motion detection settings for a camera
@@ -166,6 +169,9 @@ type DetectionConfig struct {
 	Zones         []ZoneConfig     `yaml:"zones,omitempty" json:"zones,omitempty"`
 	Filters       FiltersConfig    `yaml:"filters,omitempty" json:"filters,omitempty"`
 	Notifications NotifyConfig     `yaml:"notifications,omitempty" json:"notifications,omitempty"`
+	// Source determines where detection events come from: "nvr" (CoreML/ONNX), "plugin" (camera AI), or "both"
+	// Default is "nvr" if not specified
+	Source string `yaml:"source,omitempty" json:"source,omitempty"`
 }
 
 // ZoneConfig holds detection zone settings

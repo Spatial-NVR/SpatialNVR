@@ -8,7 +8,6 @@
 #
 # Plugin Architecture:
 # - Plugins are self-contained and manage their own dependencies
-# - Wyze plugin downloads/bundles wyze-bridge itself (like Scrypted)
 # - No Docker-in-Docker or privileged mode required
 #
 # Self-Updating Architecture:
@@ -86,7 +85,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     git \
     # FFmpeg with all codecs for stream processing
     ffmpeg \
-    # Python 3 for plugins that need it (e.g., Wyze plugin downloads wyze-bridge)
+    # Python 3 for plugins that may need it
     python3 \
     python3-pip \
     python3-venv \
@@ -106,13 +105,11 @@ RUN groupadd -g 1000 nvr && \
 # Create directories
 # /app contains the shipped versions (read-only after build)
 # /data/bin and /data/web can contain updated versions (writable, checked first at runtime)
-# /tokens and /img are required by wyze-bridge (hardcoded paths in wyze-bridge config)
 RUN mkdir -p /app /app/bin /app/web \
     /config \
     /data /data/bin /data/web /data/plugins /data/updates \
     /data/recordings /data/thumbnails /data/snapshots /data/exports \
-    /tokens /img \
-    && chown -R nvr:nvr /app /config /data /tokens /img
+    && chown -R nvr:nvr /app /config /data
 
 WORKDIR /app
 

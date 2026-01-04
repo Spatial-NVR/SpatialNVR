@@ -25,12 +25,11 @@ import {
 import { pluginsApi } from '../lib/api'
 import { useToast } from '../components/Toast'
 import { ReolinkSetup } from '../components/plugins/ReolinkSetup'
-import { WyzeSetup } from '../components/plugins/WyzeSetup'
 
 type TabType = 'overview' | 'setup' | 'settings' | 'logs'
 
 // Plugin IDs that have setup components
-const PLUGINS_WITH_SETUP = ['reolink', 'wyze', 'nvr-camera-reolink', 'nvr-camera-wyze']
+const PLUGINS_WITH_SETUP = ['reolink', 'nvr-camera-reolink']
 
 // Log level colors
 const logLevelColors: Record<string, string> = {
@@ -657,14 +656,6 @@ export function PluginDetail() {
             </h3>
             {plugin.id.includes('reolink') && (
               <ReolinkSetup
-                pluginId={plugin.id}
-                onCameraAdded={() => {
-                  queryClient.invalidateQueries({ queryKey: ['cameras'] })
-                }}
-              />
-            )}
-            {plugin.id.includes('wyze') && (
-              <WyzeSetup
                 pluginId={plugin.id}
                 onCameraAdded={() => {
                   queryClient.invalidateQueries({ queryKey: ['cameras'] })

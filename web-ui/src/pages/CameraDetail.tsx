@@ -1,10 +1,11 @@
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { ArrowLeft, Settings, Trash2, RefreshCw, X, Save, Copy, Check, HardDrive, Volume2, VolumeX, Circle, Square, Loader2, AlertCircle, List, Clock, Bell } from 'lucide-react'
+import { ArrowLeft, Settings, Trash2, RefreshCw, X, Save, Copy, Check, HardDrive, Volume2, VolumeX, Circle, Square, Loader2, AlertCircle, List, Clock, Bell, Plug, Info } from 'lucide-react'
 import { Link } from 'react-router-dom'
-import { cameraApi, CameraConfig, storageApi, recordingApi, eventApi, timelineApi } from '../lib/api'
+import { cameraApi, CameraConfig, storageApi, recordingApi, eventApi, timelineApi, pluginsApi, CameraCapabilities, DeviceInfo, PTZPreset } from '../lib/api'
 import { VideoPlayer } from '../components/VideoPlayer'
 import { MotionZoneEditor } from '../components/MotionZoneEditor'
+import { PTZControl } from '../components/PTZControl'
 import { useState, useEffect } from 'react'
 import { usePorts } from '../hooks/usePorts'
 import { useToast } from '../components/Toast'
@@ -97,6 +98,60 @@ export function CameraDetail() {
     queryFn: () => recordingApi.getStatus(id!),
     enabled: !!id,
     refetchInterval: 3000, // Check every 3 seconds
+  })
+
+  // Fetch basic camera capabilities from core API (includes plugin_id if plugin-managed)
+  const { data: baseCapabilities } = useQuery({
+    queryKey: ['camera-capabilities', id],
+    queryFn: () => cameraApi.getCapabilities(id!),
+    enabled: !!id,
+    staleTime: 60000, // Cache for 1 minute
+  })
+
+  // If plugin-managed, fetch full capabilities from the plugin
+  const { data: pluginCapabilities } = useQuery({
+    queryKey: ['camera-plugin-capabilities', baseCapabilities?.plugin_id, baseCapabilities?.plugin_camera_id],
+    queryFn: async () => {
+      if (!baseCapabilities?.plugin_id || !baseCapabilities?.plugin_camera_id) return null
+      return pluginsApi.rpc<CameraCapabilities>(baseCapabilities.plugin_id, 'get_capabilities', {
+        camera_id: baseCapabilities.plugin_camera_id,
+      })
+    },
+    enabled: !!baseCapabilities?.is_plugin_managed && !!baseCapabilities?.plugin_id,
+    staleTime: 60000,
+  })
+
+  // Merge capabilities - plugin data takes precedence if available
+  const capabilities: CameraCapabilities | undefined = pluginCapabilities || baseCapabilities
+
+  // Fetch PTZ presets - from plugin if plugin-managed, otherwise from core API
+  const { data: ptzPresets, refetch: refetchPresets } = useQuery({
+    queryKey: ['camera-ptz-presets', id, baseCapabilities?.plugin_id],
+    queryFn: async () => {
+      if (baseCapabilities?.is_plugin_managed && baseCapabilities?.plugin_id && baseCapabilities?.plugin_camera_id) {
+        const result = await pluginsApi.rpc<{ presets: PTZPreset[] }>(baseCapabilities.plugin_id, 'get_ptz_presets', {
+          camera_id: baseCapabilities.plugin_camera_id,
+        })
+        return result?.presets || []
+      }
+      return cameraApi.getPTZPresets(id!)
+    },
+    enabled: !!id && !!capabilities?.has_ptz,
+  })
+
+  // Fetch device info from plugin for plugin-managed cameras
+  const { data: deviceInfo } = useQuery({
+    queryKey: ['camera-device-info', baseCapabilities?.plugin_id, baseCapabilities?.plugin_camera_id],
+    queryFn: async () => {
+      if (!baseCapabilities?.plugin_id || !baseCapabilities?.plugin_camera_id) {
+        return cameraApi.getDeviceInfo(id!)
+      }
+      return pluginsApi.rpc<DeviceInfo>(baseCapabilities.plugin_id, 'get_device_info', {
+        camera_id: baseCapabilities.plugin_camera_id,
+      })
+    },
+    enabled: !!id && !!baseCapabilities?.is_plugin_managed,
+    staleTime: 300000, // Cache for 5 minutes
   })
 
   // Recording control mutations
@@ -497,6 +552,105 @@ export function CameraDetail() {
           </p>
         </div>
       </div>
+
+      {/* Plugin Controls Section - shown for plugin-managed cameras */}
+      {baseCapabilities?.is_plugin_managed && baseCapabilities.plugin_id && (
+        <div className="bg-card rounded-lg border p-6">
+          <div className="flex items-center gap-2 mb-4">
+            <Plug size={20} className="text-primary" />
+            <h2 className="text-lg font-semibold">Plugin Controls</h2>
+            <span className="text-xs bg-primary/10 text-primary px-2 py-0.5 rounded">
+              {baseCapabilities.plugin_id}
+            </span>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* Device Info */}
+            {deviceInfo && (
+              <div className="space-y-3">
+                <h3 className="text-sm font-medium flex items-center gap-2">
+                  <Info size={16} />
+                  Device Information
+                </h3>
+                <dl className="space-y-2 text-sm">
+                  {deviceInfo.manufacturer && (
+                    <div className="flex justify-between">
+                      <dt className="text-muted-foreground">Manufacturer</dt>
+                      <dd className="font-medium">{deviceInfo.manufacturer}</dd>
+                    </div>
+                  )}
+                  {deviceInfo.model && (
+                    <div className="flex justify-between">
+                      <dt className="text-muted-foreground">Model</dt>
+                      <dd className="font-medium">{deviceInfo.model}</dd>
+                    </div>
+                  )}
+                  {deviceInfo.firmware_version && (
+                    <div className="flex justify-between">
+                      <dt className="text-muted-foreground">Firmware</dt>
+                      <dd className="font-medium">{deviceInfo.firmware_version}</dd>
+                    </div>
+                  )}
+                  {deviceInfo.serial && (
+                    <div className="flex justify-between">
+                      <dt className="text-muted-foreground">Serial</dt>
+                      <dd className="font-medium font-mono text-xs">{deviceInfo.serial}</dd>
+                    </div>
+                  )}
+                  {deviceInfo.device_type && (
+                    <div className="flex justify-between">
+                      <dt className="text-muted-foreground">Type</dt>
+                      <dd className="font-medium capitalize">{deviceInfo.device_type}</dd>
+                    </div>
+                  )}
+                </dl>
+              </div>
+            )}
+
+            {/* Capabilities */}
+            <div className="space-y-3">
+              <h3 className="text-sm font-medium">Capabilities</h3>
+              <div className="flex flex-wrap gap-2">
+                {capabilities?.has_ptz && (
+                  <span className="text-xs bg-blue-500/10 text-blue-500 px-2 py-1 rounded">PTZ</span>
+                )}
+                {capabilities?.has_audio && (
+                  <span className="text-xs bg-green-500/10 text-green-500 px-2 py-1 rounded">Audio</span>
+                )}
+                {capabilities?.has_two_way_audio && (
+                  <span className="text-xs bg-purple-500/10 text-purple-500 px-2 py-1 rounded">Two-Way Audio</span>
+                )}
+                {capabilities?.has_ai_detection && (
+                  <span className="text-xs bg-orange-500/10 text-orange-500 px-2 py-1 rounded">AI Detection</span>
+                )}
+                {capabilities?.is_doorbell && (
+                  <span className="text-xs bg-pink-500/10 text-pink-500 px-2 py-1 rounded">Doorbell</span>
+                )}
+                {capabilities?.is_battery && (
+                  <span className="text-xs bg-yellow-500/10 text-yellow-500 px-2 py-1 rounded">Battery</span>
+                )}
+                {capabilities?.ai_types?.map((type) => (
+                  <span key={type} className="text-xs bg-muted text-muted-foreground px-2 py-1 rounded capitalize">
+                    {type}
+                  </span>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* PTZ Controls */}
+          {capabilities?.has_ptz && baseCapabilities?.plugin_id && baseCapabilities?.plugin_camera_id && (
+            <div className="mt-6">
+              <PTZControl
+                cameraId={baseCapabilities.plugin_camera_id}
+                pluginId={baseCapabilities.plugin_id}
+                presets={ptzPresets?.map(p => ({ id: p.id, name: p.name })) || []}
+                onPresetSaved={() => refetchPresets()}
+              />
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Events Section with Timeline */}
       <div className="bg-card rounded-lg border p-6">

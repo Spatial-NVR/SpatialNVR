@@ -21,7 +21,7 @@ class MockEventSource {
   }
 }
 
-// @ts-ignore
+// @ts-expect-error EventSource mock for tests
 global.EventSource = MockEventSource
 
 // Mock API responses

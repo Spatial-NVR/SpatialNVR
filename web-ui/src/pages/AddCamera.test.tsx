@@ -1,5 +1,5 @@
-import { describe, it, expect, vi } from 'vitest'
-import { render, screen, waitFor, fireEvent } from '../test/utils'
+import { describe, it, expect } from 'vitest'
+import { render, screen, waitFor } from '../test/utils'
 import { AddCamera } from './AddCamera'
 import { http, HttpResponse } from 'msw'
 import { server } from '../test/setup'

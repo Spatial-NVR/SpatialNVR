@@ -100,7 +100,14 @@ test('Browser audio decode test', async ({ page }) => {
     await new Promise(r => setTimeout(r, 2000))
 
     // Analyze audio with Web Audio API
-    let audioAnalysis: any = { error: 'not attempted' }
+    interface AudioAnalysisResult {
+      samples?: number[]
+      maxLevel?: number
+      avgLevel?: number
+      hasAudio?: boolean
+      error?: string
+    }
+    let audioAnalysis: AudioAnalysisResult = { error: 'not attempted' }
     try {
       const audioContext = new AudioContext()
       console.log('AudioContext state:', audioContext.state)
@@ -142,15 +149,27 @@ test('Browser audio decode test', async ({ page }) => {
     ws.close()
 
     // Check video's audioTracks API
-    const videoEl = video as HTMLVideoElement & { audioTracks?: AudioTrackList }
-    let audioTracksInfo: any = 'not available'
+    interface AudioTrack {
+      enabled: boolean
+      kind: string
+      label: string
+    }
+    interface AudioTrackListWithIndex extends AudioTrackList {
+      [index: number]: AudioTrack
+    }
+    interface AudioTracksInfo {
+      length: number
+      tracks: { enabled: boolean; kind: string; label: string }[]
+    }
+    const videoEl = video as HTMLVideoElement & { audioTracks?: AudioTrackListWithIndex }
+    let audioTracksInfo: AudioTracksInfo | string = 'not available'
     if (videoEl.audioTracks) {
       audioTracksInfo = {
         length: videoEl.audioTracks.length,
         tracks: Array.from({ length: videoEl.audioTracks.length }, (_, i) => ({
-          enabled: (videoEl.audioTracks as any)[i].enabled,
-          kind: (videoEl.audioTracks as any)[i].kind,
-          label: (videoEl.audioTracks as any)[i].label
+          enabled: videoEl.audioTracks![i].enabled,
+          kind: videoEl.audioTracks![i].kind,
+          label: videoEl.audioTracks![i].label
         }))
       }
     }

@@ -77,15 +77,6 @@ detectors:
         regex: "^[A-Z0-9]{5,8}$"
 
 plugins:
-  wyze_bridge:
-    enabled: false
-    config:
-      api_key: ""
-      api_id: ""
-      username: ""
-      password: ""
-      refresh_interval: 300
-
   reolink:
     enabled: true
     config:

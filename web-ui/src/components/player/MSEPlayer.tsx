@@ -53,6 +53,7 @@ export default function MSEPlayer({
   const ondataRef = useRef<((data: ArrayBufferLike) => void) | null>(null)
   const onmessageRef = useRef<Record<string, (msg: { value: string; type: string }) => void>>({})
   const msRef = useRef<MediaSource | null>(null)
+  const onConnectRef = useRef<() => void>(() => {})
 
   const wsURL = useMemo(() => {
     const streamName = camera.toLowerCase().replace(/\s+/g, '_')
@@ -106,7 +107,7 @@ export default function MSEPlayer({
 
     reconnectTIDRef.current = window.setTimeout(() => {
       reconnectTIDRef.current = null
-      onConnect()
+      onConnectRef.current()
     }, delay)
   }, [connectTS])
 
@@ -225,6 +226,9 @@ export default function MSEPlayer({
     wsRef.current.addEventListener('open', onOpen)
     wsRef.current.addEventListener('close', onClose)
   }, [wsURL, onOpen, onClose])
+
+  // Keep the ref updated with the latest onConnect
+  onConnectRef.current = onConnect
 
   const handlePause = useCallback(() => {
     if (isPlaying && playbackEnabled) {

@@ -20,6 +20,7 @@ import {
   cameraApi,
   SpatialMap,
   CameraPlacement,
+  CameraPlacementCreate,
   CameraTransition,
   SpatialPoint,
   Camera,
@@ -869,7 +870,7 @@ export function SpatialTracking() {
 
   // Create placement mutation
   const createPlacement = useMutation({
-    mutationFn: ({ mapId, placement }: { mapId: string; placement: any }) =>
+    mutationFn: ({ mapId, placement }: { mapId: string; placement: CameraPlacementCreate }) =>
       spatialApi.createPlacement(mapId, placement),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['spatial-placements', selectedMapId] })
@@ -882,7 +883,7 @@ export function SpatialTracking() {
 
   // Update placement mutation
   const updatePlacement = useMutation({
-    mutationFn: ({ placementId, updates }: { placementId: string; updates: any }) =>
+    mutationFn: ({ placementId, updates }: { placementId: string; updates: Partial<CameraPlacementCreate> }) =>
       spatialApi.updatePlacement(selectedMapId!, placementId, updates),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['spatial-placements', selectedMapId] })

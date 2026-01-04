@@ -190,6 +190,14 @@ func (p *CoreAPIPlugin) Routes() http.Handler {
 	r.Get("/{id}/snapshot", p.handleGetSnapshot)
 	r.Get("/{id}/stream", p.handleGetStreamURLs)
 
+	// Plugin capability routes - for plugin-managed cameras
+	r.Get("/{id}/capabilities", p.handleGetCapabilities)
+	r.Get("/{id}/ptz/presets", p.handleGetPTZPresets)
+	r.Post("/{id}/ptz/control", p.handlePTZControl)
+	r.Get("/{id}/protocols", p.handleGetProtocols)
+	r.Put("/{id}/protocol", p.handleSetProtocol)
+	r.Get("/{id}/device-info", p.handleGetDeviceInfo)
+
 	// System routes - these won't be accessible via /cameras route
 	// They're accessible via /api/v1/plugins/nvr-core-api/system/...
 	r.Get("/system/info", p.handleSystemInfo)
@@ -472,6 +480,191 @@ func (p *CoreAPIPlugin) handleGetConfig(w http.ResponseWriter, r *http.Request) 
 	}
 
 	p.respondJSON(w, safeConfig)
+}
+
+// Plugin capability handlers
+
+func (p *CoreAPIPlugin) handleGetCapabilities(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+
+	// Get camera config to check for plugin association
+	cfg := p.config.GetCamera(id)
+	if cfg == nil {
+		p.respondError(w, http.StatusNotFound, "Camera not found")
+		return
+	}
+
+	// If camera has a plugin_id, capabilities come from the plugin
+	// For now, return defaults. Frontend can call plugin RPC directly for plugin-managed cameras.
+	if cfg.PluginID != "" {
+		// Return a response indicating this is a plugin-managed camera
+		// The frontend should call the plugin's get_capabilities RPC
+		p.respondJSON(w, map[string]interface{}{
+			"plugin_id":        cfg.PluginID,
+			"plugin_camera_id": cfg.PluginCamID,
+			"has_ptz":          cfg.PTZ.Enabled,
+			"has_audio":        cfg.Audio.Enabled,
+			"has_two_way_audio": cfg.Audio.TwoWay,
+			"has_snapshot":     true,
+			"device_type":      "camera",
+			"protocols":        []string{"source"}, // Plugin will provide actual protocols
+			"current_protocol": "source",
+			"is_plugin_managed": true,
+		})
+		return
+	}
+
+	// Manual camera - return basic capabilities from config
+	p.respondJSON(w, map[string]interface{}{
+		"has_ptz":          cfg.PTZ.Enabled,
+		"has_audio":        cfg.Audio.Enabled,
+		"has_two_way_audio": cfg.Audio.TwoWay,
+		"has_snapshot":     true,
+		"device_type":      "camera",
+		"is_doorbell":      false,
+		"is_nvr":           false,
+		"is_battery":       false,
+		"has_ai_detection": cfg.Detection.Enabled,
+		"ai_types":         cfg.Detection.Models,
+		"protocols":        []string{"source"},
+		"current_protocol": "source",
+		"is_plugin_managed": false,
+	})
+}
+
+func (p *CoreAPIPlugin) handleGetPTZPresets(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+
+	cfg := p.config.GetCamera(id)
+	if cfg == nil {
+		p.respondError(w, http.StatusNotFound, "Camera not found")
+		return
+	}
+
+	// If plugin-managed, frontend should call plugin RPC directly
+	if cfg.PluginID != "" {
+		p.respondJSON(w, map[string]interface{}{
+			"plugin_id":        cfg.PluginID,
+			"plugin_camera_id": cfg.PluginCamID,
+			"presets":          []interface{}{}, // Plugin will provide
+		})
+		return
+	}
+
+	// Manual camera - return presets from config
+	var presets []map[string]interface{}
+	for _, preset := range cfg.PTZ.Presets {
+		presets = append(presets, map[string]interface{}{
+			"id":   preset.ID,
+			"name": preset.Name,
+		})
+	}
+
+	p.respondJSON(w, presets)
+}
+
+func (p *CoreAPIPlugin) handlePTZControl(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+
+	cfg := p.config.GetCamera(id)
+	if cfg == nil {
+		p.respondError(w, http.StatusNotFound, "Camera not found")
+		return
+	}
+
+	// PTZ control requires a plugin for the actual camera control
+	if cfg.PluginID == "" {
+		p.respondError(w, http.StatusBadRequest, "PTZ control requires a plugin-managed camera")
+		return
+	}
+
+	// For plugin cameras, frontend should call plugin RPC directly
+	// Return plugin info so frontend knows which plugin to call
+	p.respondJSON(w, map[string]interface{}{
+		"plugin_id":        cfg.PluginID,
+		"plugin_camera_id": cfg.PluginCamID,
+		"message":          "Use plugin RPC endpoint for PTZ control",
+	})
+}
+
+func (p *CoreAPIPlugin) handleGetProtocols(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+
+	cfg := p.config.GetCamera(id)
+	if cfg == nil {
+		p.respondError(w, http.StatusNotFound, "Camera not found")
+		return
+	}
+
+	if cfg.PluginID != "" {
+		// Plugin camera - protocols come from plugin
+		p.respondJSON(w, map[string]interface{}{
+			"plugin_id":        cfg.PluginID,
+			"plugin_camera_id": cfg.PluginCamID,
+			"protocols":        []interface{}{}, // Plugin will provide
+		})
+		return
+	}
+
+	// Manual camera - only has the configured source
+	p.respondJSON(w, []map[string]interface{}{
+		{
+			"id":          "source",
+			"name":        "Source Stream",
+			"description": "Original stream URL",
+			"stream_url":  cfg.Stream.URL,
+		},
+	})
+}
+
+func (p *CoreAPIPlugin) handleSetProtocol(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+
+	cfg := p.config.GetCamera(id)
+	if cfg == nil {
+		p.respondError(w, http.StatusNotFound, "Camera not found")
+		return
+	}
+
+	if cfg.PluginID == "" {
+		p.respondError(w, http.StatusBadRequest, "Protocol switching requires a plugin-managed camera")
+		return
+	}
+
+	// For plugin cameras, frontend should call plugin RPC directly
+	p.respondJSON(w, map[string]interface{}{
+		"plugin_id":        cfg.PluginID,
+		"plugin_camera_id": cfg.PluginCamID,
+		"message":          "Use plugin RPC endpoint to change protocol",
+	})
+}
+
+func (p *CoreAPIPlugin) handleGetDeviceInfo(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+
+	cfg := p.config.GetCamera(id)
+	if cfg == nil {
+		p.respondError(w, http.StatusNotFound, "Camera not found")
+		return
+	}
+
+	if cfg.PluginID != "" {
+		// Plugin camera - device info comes from plugin
+		p.respondJSON(w, map[string]interface{}{
+			"plugin_id":        cfg.PluginID,
+			"plugin_camera_id": cfg.PluginCamID,
+			"model":            cfg.Model,
+			"manufacturer":     cfg.Manufacturer,
+		})
+		return
+	}
+
+	// Manual camera - return what we know from config
+	p.respondJSON(w, map[string]interface{}{
+		"model":         cfg.Model,
+		"manufacturer":  cfg.Manufacturer,
+		"channel_count": 1,
+	})
 }
 
 // Helper methods

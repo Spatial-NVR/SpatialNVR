@@ -684,7 +684,7 @@ function LogViewer() {
     return () => {
       eventSource.close()
     }
-  }, [isStreaming])
+  }, [isStreaming, apiUrl])
 
   useEffect(() => {
     if (autoScroll && logContainerRef.current) {

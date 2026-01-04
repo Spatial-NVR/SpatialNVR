@@ -16,12 +16,6 @@ function formatBytes(bytes: number): string {
 
 export function Settings() {
   const location = useLocation()
-
-  // Redirect legacy /settings/plugins routes to /plugins
-  if (location.pathname.startsWith('/settings/plugins')) {
-    return <Navigate to="/plugins" replace />
-  }
-
   const queryClient = useQueryClient()
   const [theme, setTheme] = useState<'dark' | 'light'>('dark')
   const { addToast } = useToast()
@@ -204,6 +198,11 @@ export function Settings() {
       }
     }
   }, [config])
+
+  // Redirect legacy /settings/plugins routes to /plugins - must be after all hooks
+  if (location.pathname.startsWith('/settings/plugins')) {
+    return <Navigate to="/plugins" replace />
+  }
 
   const toggleTheme = () => {
     const newTheme = theme === 'dark' ? 'light' : 'dark'
