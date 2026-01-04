@@ -140,9 +140,11 @@ func (p *ExternalPlugin) Initialize(ctx context.Context, runtime *sdk.PluginRunt
 		return fmt.Errorf("failed to create stderr pipe: %w", err)
 	}
 
+	fmt.Printf("[%s] Starting plugin process: %s\n", p.manifest.ID, p.binaryPath)
 	if err := p.cmd.Start(); err != nil {
 		return fmt.Errorf("failed to start plugin process: %w", err)
 	}
+	fmt.Printf("[%s] Plugin process started (PID: %d)\n", p.manifest.ID, p.cmd.Process.Pid)
 
 	p.runningMu.Lock()
 	p.running = true
@@ -155,11 +157,14 @@ func (p *ExternalPlugin) Initialize(ctx context.Context, runtime *sdk.PluginRunt
 	go p.readStderr()
 
 	// Send initialize command
+	fmt.Printf("[%s] Sending initialize command...\n", p.manifest.ID)
 	_, err = p.Call(ctx, "initialize", p.config)
 	if err != nil {
+		fmt.Printf("[%s] Initialize failed: %v\n", p.manifest.ID, err)
 		_ = p.Stop(ctx)
 		return fmt.Errorf("failed to initialize plugin: %w", err)
 	}
+	fmt.Printf("[%s] Plugin initialized successfully\n", p.manifest.ID)
 
 	return nil
 }
@@ -304,6 +309,7 @@ func (p *ExternalPlugin) Call(ctx context.Context, method string, params interfa
 	}()
 
 	// Send request
+	fmt.Printf("[%s] Sending RPC: %s (id=%d)\n", p.manifest.ID, method, id)
 	_, err = p.stdin.Write(append(reqBytes, '\n'))
 	if err != nil {
 		// Check if plugin process has exited
@@ -312,12 +318,15 @@ func (p *ExternalPlugin) Call(ctx context.Context, method string, params interfa
 		p.runningMu.Unlock()
 		return nil, fmt.Errorf("failed to send request (plugin may have crashed): %w", err)
 	}
+	fmt.Printf("[%s] RPC sent, waiting for response...\n", p.manifest.ID)
 
 	// Wait for response
 	select {
 	case <-ctx.Done():
+		fmt.Printf("[%s] RPC %s timed out\n", p.manifest.ID, method)
 		return nil, ctx.Err()
 	case resp := <-respCh:
+		fmt.Printf("[%s] RPC %s got response\n", p.manifest.ID, method)
 		if resp.Error != nil {
 			return nil, fmt.Errorf("RPC error %d: %s", resp.Error.Code, resp.Error.Message)
 		}
@@ -330,14 +339,18 @@ func (p *ExternalPlugin) readResponses() {
 	scanner := bufio.NewScanner(p.stdout)
 	scanner.Buffer(make([]byte, 1024*1024), 10*1024*1024)
 
+	fmt.Printf("[%s] Started reading stdout\n", p.manifest.ID)
 	for scanner.Scan() {
 		line := scanner.Bytes()
 		if len(line) == 0 {
 			continue
 		}
 
+		fmt.Printf("[%s] Got stdout: %s\n", p.manifest.ID, string(line[:min(len(line), 200)]))
+
 		var resp JSONRPCResponse
 		if err := json.Unmarshal(line, &resp); err != nil {
+			fmt.Printf("[%s] Failed to parse response: %v\n", p.manifest.ID, err)
 			continue
 		}
 
