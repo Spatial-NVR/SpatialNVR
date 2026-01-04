@@ -50,12 +50,12 @@
 - [x] Quick jump to events (event list panel with filtering)
 - [x] Playback speed control (0.25x to 4x)
 
-### Week 6: Multi-camera Views
-- [ ] Configurable grid layouts (2x2, 3x3, 4x4, custom)
-- [ ] Saved view presets
-- [ ] Camera grouping
-- [ ] PTZ control integration
-- [ ] Tour mode (auto-cycle cameras)
+### Week 6: Multi-camera Views - COMPLETE
+- [x] Configurable grid layouts (2x2, 3x3, 4x4, custom)
+- [x] Saved view presets
+- [x] Camera grouping
+- [x] PTZ control integration
+- [x] Tour mode (auto-cycle cameras)
 
 ---
 
