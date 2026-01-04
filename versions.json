@@ -1,20 +1,14 @@
 {
-  "schema_version": "1.0",
   "latest": {
-    "version": "v0.0.46",
-    "date": "2026-01-04T21:45:06Z",
-    "docker": {
-      "amd64": "ghcr.io/spatial-nvr/spatialnvr:v0.0.46",
-      "arm64": "ghcr.io/spatial-nvr/spatialnvr:v0.0.46-arm64"
-    },
+    "version": "0.0.47",
+    "date": "2026-01-04T23:56:39Z",
+    "docker": "ghcr.io/spatial-nvr/spatialnvr:0.0.47",
     "binaries": {
-      "linux-amd64": "https://github.com/Spatial-NVR/SpatialNVR/releases/download/vv0.0.46/spatialnvr-linux-amd64",
-      "linux-arm64": "https://github.com/Spatial-NVR/SpatialNVR/releases/download/vv0.0.46/spatialnvr-linux-arm64",
-      "darwin-amd64": "https://github.com/Spatial-NVR/SpatialNVR/releases/download/vv0.0.46/spatialnvr-darwin-amd64",
-      "darwin-arm64": "https://github.com/Spatial-NVR/SpatialNVR/releases/download/vv0.0.46/spatialnvr-darwin-arm64"
-    },
-    "changelog_url": "https://github.com/Spatial-NVR/SpatialNVR/releases/tag/vv0.0.46"
+      "linux-amd64": "https://github.com/Spatial-NVR/SpatialNVR/releases/download/v0.0.47/spatialnvr-linux-amd64",
+      "linux-arm64": "https://github.com/Spatial-NVR/SpatialNVR/releases/download/v0.0.47/spatialnvr-linux-arm64",
+      "darwin-amd64": "https://github.com/Spatial-NVR/SpatialNVR/releases/download/v0.0.47/spatialnvr-darwin-amd64",
+      "darwin-arm64": "https://github.com/Spatial-NVR/SpatialNVR/releases/download/v0.0.47/spatialnvr-darwin-arm64"
+    }
   },
-  "components": {},
-  "update_check_url": "https://raw.githubusercontent.com/Spatial-NVR/SpatialNVR/main/versions.json"
+  "components": {}
 }
