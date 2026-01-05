@@ -35,8 +35,15 @@ export function PluginCamerasTab({ pluginId }: PluginCamerasTabProps) {
     queryKey: ['plugin-cameras', pluginId],
     queryFn: async () => {
       try {
-        const result = await pluginsApi.rpc<PluginCamera[]>(pluginId, 'list_cameras', {})
-        return result || []
+        const result = await pluginsApi.rpc<PluginCamera[] | { cameras?: PluginCamera[] }>(pluginId, 'list_cameras', {})
+        // Handle both array response and object with cameras property
+        if (Array.isArray(result)) {
+          return result
+        }
+        if (result && typeof result === 'object' && 'cameras' in result && Array.isArray(result.cameras)) {
+          return result.cameras
+        }
+        return []
       } catch {
         return []
       }
