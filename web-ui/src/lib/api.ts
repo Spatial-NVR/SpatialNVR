@@ -1346,6 +1346,69 @@ export interface PluginInstallResult {
 }
 
 // ============================================================================
+// Plugin Settings Types (Scrypted-style declarative UI)
+// ============================================================================
+
+export type SettingType =
+  | 'string'
+  | 'number'
+  | 'integer'
+  | 'boolean'
+  | 'password'
+  | 'textarea'
+  | 'button'
+  | 'device'
+  | 'interface'
+  | 'clippath'
+  | 'time'
+  | 'date'
+  | 'datetime';
+
+export interface SettingChoice {
+  title: string;
+  value: unknown;
+}
+
+/**
+ * Setting represents a single configuration option exposed by a plugin.
+ * Plugins return an array of these, and the NVR renders them generically.
+ * This enables a Scrypted-style architecture where plugins describe their UI
+ * rather than providing custom UI code.
+ */
+export interface Setting {
+  /** Unique identifier for this setting */
+  key: string;
+  /** Display name shown to users */
+  title: string;
+  /** Additional context/help text */
+  description?: string;
+  /** Input type determines what component is rendered */
+  type: SettingType;
+  /** Group settings into sections */
+  group?: string;
+  /** Secondary grouping within a group */
+  subgroup?: string;
+  /** Current value */
+  value?: unknown;
+  /** Placeholder text for inputs */
+  placeholder?: string;
+  /** Options for dropdown/select */
+  choices?: SettingChoice[];
+  /** Allow selecting multiple choices */
+  multiple?: boolean;
+  /** Prevent user modification */
+  readonly?: boolean;
+  /** [min, max] range for number inputs */
+  range?: [number, number];
+  /** Filter device picker by capability */
+  deviceFilter?: string;
+  /** Apply value immediately without save button */
+  immediate?: boolean;
+  /** Allow typing custom values in addition to choices */
+  combobox?: boolean;
+}
+
+// ============================================================================
 // Plugins API
 // ============================================================================
 
@@ -1503,6 +1566,30 @@ export const pluginsApi = {
       method: 'POST',
       body: JSON.stringify({ method, params }),
     });
+  },
+
+  /**
+   * Get plugin settings (Scrypted-style declarative UI)
+   * Returns an array of Setting objects that describe the plugin's configuration UI
+   */
+  getSettings: async (pluginId: string): Promise<Setting[]> => {
+    const result = await pluginsApi.rpc<Setting[] | { settings: Setting[] }>(pluginId, 'get_settings', {});
+    // Handle both array and object response formats
+    if (Array.isArray(result)) {
+      return result;
+    }
+    if (result && typeof result === 'object' && 'settings' in result) {
+      return result.settings;
+    }
+    return [];
+  },
+
+  /**
+   * Update a single plugin setting
+   * For button types, this triggers the associated action
+   */
+  putSetting: async (pluginId: string, key: string, value: unknown): Promise<void> => {
+    await pluginsApi.rpc(pluginId, 'put_setting', { key, value });
   },
 };
 

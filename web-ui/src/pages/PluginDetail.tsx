@@ -25,13 +25,14 @@ import {
 } from 'lucide-react'
 import { pluginsApi } from '../lib/api'
 import { useToast } from '../components/Toast'
-import { ReolinkSetup } from '../components/plugins/ReolinkSetup'
+import { PluginSettings } from '../components/plugins/PluginSettings'
 import { PluginCamerasTab } from '../components/plugins/PluginCamerasTab'
 
 type TabType = 'overview' | 'setup' | 'cameras' | 'settings' | 'logs'
 
-// Plugin IDs that have setup components
-const PLUGINS_WITH_SETUP = ['reolink', 'nvr-camera-reolink']
+// Helper to check if plugin has a capability
+const hasCapability = (capabilities: string[] | undefined, cap: string) =>
+  capabilities?.includes(cap) ?? false
 
 // Log level colors
 const logLevelColors: Record<string, string> = {
@@ -505,13 +506,15 @@ export function PluginDetail() {
         <nav className="flex gap-4">
           {[
             { id: 'overview', label: 'Overview', icon: Activity },
-            ...(PLUGINS_WITH_SETUP.some(p => plugin.id.includes(p))
+            // Show Setup tab for plugins with 'settings' capability (declarative UI)
+            ...(hasCapability(plugin.capabilities, 'settings')
               ? [{ id: 'setup', label: 'Setup', icon: Camera }]
               : []),
-            ...(PLUGINS_WITH_SETUP.some(p => plugin.id.includes(p))
+            // Show Cameras tab for camera plugins
+            ...(hasCapability(plugin.capabilities, 'camera') || hasCapability(plugin.capabilities, 'discovery')
               ? [{ id: 'cameras', label: 'Cameras', icon: Video }]
               : []),
-            { id: 'settings', label: 'Settings', icon: Settings },
+            { id: 'settings', label: 'Config', icon: Settings },
             { id: 'logs', label: 'Logs', icon: Terminal },
           ].map(tab => (
             <button
@@ -657,17 +660,13 @@ export function PluginDetail() {
           <div className="bg-card border border-border rounded-lg p-6">
             <h3 className="font-medium mb-4 flex items-center gap-2">
               <Camera className="w-4 h-4" />
-              Camera Setup
+              Plugin Setup
             </h3>
-            {plugin.id.includes('reolink') && (
-              <ReolinkSetup
-                pluginId={plugin.id}
-                onCameraAdded={() => {
-                  queryClient.invalidateQueries({ queryKey: ['cameras'] })
-                  queryClient.invalidateQueries({ queryKey: ['plugin-cameras', plugin.id] })
-                }}
-              />
-            )}
+            {/* Generic plugin settings renderer - plugins describe their UI declaratively */}
+            <PluginSettings
+              pluginId={plugin.id}
+              onToast={(message, type) => addToast(type || 'success', message)}
+            />
           </div>
         )}
 

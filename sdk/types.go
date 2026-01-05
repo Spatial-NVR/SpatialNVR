@@ -249,4 +249,91 @@ const (
 	CapabilityEvents          = "events"
 	CapabilityTimeline        = "timeline"
 	CapabilityExport          = "export"
+	CapabilitySettings        = "settings" // Plugin provides declarative settings UI
 )
+
+// SettingType defines the type of a setting input
+type SettingType string
+
+const (
+	SettingTypeString    SettingType = "string"
+	SettingTypeNumber    SettingType = "number"
+	SettingTypeInteger   SettingType = "integer"
+	SettingTypeBoolean   SettingType = "boolean"
+	SettingTypePassword  SettingType = "password"
+	SettingTypeTextarea  SettingType = "textarea"
+	SettingTypeButton    SettingType = "button"
+	SettingTypeDevice    SettingType = "device"    // Device/camera picker
+	SettingTypeInterface SettingType = "interface" // Interface picker
+	SettingTypeClippath  SettingType = "clippath"  // Zone/polygon editor
+	SettingTypeTime      SettingType = "time"
+	SettingTypeDate      SettingType = "date"
+	SettingTypeDatetime  SettingType = "datetime"
+)
+
+// Setting represents a single configuration setting that plugins expose
+// The NVR renders these declaratively - plugins describe their UI, they don't provide it
+type Setting struct {
+	// Key is the unique identifier for this setting
+	Key string `json:"key"`
+
+	// Title is the display name shown to users
+	Title string `json:"title"`
+
+	// Description provides additional context
+	Description string `json:"description,omitempty"`
+
+	// Type determines the input component rendered
+	Type SettingType `json:"type"`
+
+	// Group organizes settings into sections
+	Group string `json:"group,omitempty"`
+
+	// Subgroup for further organization within a group
+	Subgroup string `json:"subgroup,omitempty"`
+
+	// Value is the current setting value
+	Value interface{} `json:"value,omitempty"`
+
+	// Placeholder text for input fields
+	Placeholder string `json:"placeholder,omitempty"`
+
+	// Choices for dropdown/select inputs
+	Choices []SettingChoice `json:"choices,omitempty"`
+
+	// Multiple allows selecting multiple choices
+	Multiple bool `json:"multiple,omitempty"`
+
+	// Readonly prevents user modification
+	Readonly bool `json:"readonly,omitempty"`
+
+	// Range for number inputs [min, max]
+	Range []float64 `json:"range,omitempty"`
+
+	// DeviceFilter filters device picker by interface/capability
+	DeviceFilter string `json:"device_filter,omitempty"`
+
+	// Immediate causes value to be applied without save button
+	Immediate bool `json:"immediate,omitempty"`
+
+	// Combobox allows typing custom values in addition to choices
+	Combobox bool `json:"combobox,omitempty"`
+}
+
+// SettingChoice represents an option in a dropdown/select
+type SettingChoice struct {
+	Title string      `json:"title"`
+	Value interface{} `json:"value"`
+}
+
+// SettingsProvider is implemented by plugins that expose declarative settings
+// This enables a Scrypted-style architecture where plugins describe their UI
+// and the NVR renders it generically - no plugin-specific UI code needed
+type SettingsProvider interface {
+	// GetSettings returns the current settings configuration
+	GetSettings(ctx context.Context) ([]Setting, error)
+
+	// PutSetting updates a single setting value
+	// For button types, this triggers the action
+	PutSetting(ctx context.Context, key string, value interface{}) error
+}
