@@ -1,29 +1,29 @@
 {
   "latest": {
-    "version": "v0.0.50",
-    "date": "2026-01-05T14:30:00Z",
-    "docker": {
-      "amd64": "ghcr.io/spatial-nvr/spatialnvr:v0.0.50",
-      "arm64": "ghcr.io/spatial-nvr/spatialnvr:v0.0.50-arm64"
-    },
-    "binaries": {
-      "linux-amd64": "https://github.com/Spatial-NVR/SpatialNVR/releases/download/v0.0.50/spatialnvr-linux-amd64",
-      "linux-arm64": "https://github.com/Spatial-NVR/SpatialNVR/releases/download/v0.0.50/spatialnvr-linux-arm64",
-      "darwin-amd64": "https://github.com/Spatial-NVR/SpatialNVR/releases/download/v0.0.50/spatialnvr-darwin-amd64",
-      "darwin-arm64": "https://github.com/Spatial-NVR/SpatialNVR/releases/download/v0.0.50/spatialnvr-darwin-arm64"
-    },
-    "changelog_url": "https://github.com/Spatial-NVR/SpatialNVR/releases/tag/v0.0.50"
+  "version": "v0.0.50",
+  "date": "2026-01-05T14:30:00Z",
+  "docker": {
+    "amd64": "ghcr.io/spatial-nvr/spatialnvr:v0.0.50",
+    "arm64": "ghcr.io/spatial-nvr/spatialnvr:v0.0.50-arm64"
   },
+  "binaries": {
+    "linux-amd64": "https://github.com/Spatial-NVR/SpatialNVR/releases/download/v0.0.50/spatialnvr-linux-amd64",
+    "linux-arm64": "https://github.com/Spatial-NVR/SpatialNVR/releases/download/v0.0.50/spatialnvr-linux-arm64",
+    "darwin-amd64": "https://github.com/Spatial-NVR/SpatialNVR/releases/download/v0.0.50/spatialnvr-darwin-amd64",
+    "darwin-arm64": "https://github.com/Spatial-NVR/SpatialNVR/releases/download/v0.0.50/spatialnvr-darwin-arm64"
+  },
+  "changelog_url": "https://github.com/Spatial-NVR/SpatialNVR/releases/tag/v0.0.50"
+},
   "components": {
-    "web-ui": {
-      "version": "0.0.48",
-      "date": "2026-01-05T14:17:46Z",
-      "tag": "v0.0.48-web-ui"
-    },
-    "api": {
-      "version": "0.0.48",
-      "date": "2026-01-05T14:17:46Z",
-      "tag": "v0.0.48-api"
-    }
+  "web-ui": {
+    "version": "0.0.48",
+    "date": "2026-01-05T14:53:14Z",
+    "tag": "v0.0.48-web-ui"
+  },
+  "api": {
+    "version": "0.0.48",
+    "date": "2026-01-05T14:53:14Z",
+    "tag": "v0.0.48-api"
   }
+}
 }
