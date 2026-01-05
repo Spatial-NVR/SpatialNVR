@@ -84,7 +84,10 @@ export function PluginCamerasTab({ pluginId }: PluginCamerasTabProps) {
     )
   }
 
-  if (!pluginCameras || pluginCameras.length === 0) {
+  // Ensure pluginCameras is always an array
+  const cameras = Array.isArray(pluginCameras) ? pluginCameras : []
+
+  if (cameras.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center py-12 gap-4">
         <Camera className="w-12 h-12 text-muted-foreground/30" />
@@ -104,23 +107,23 @@ export function PluginCamerasTab({ pluginId }: PluginCamerasTabProps) {
       <div className="flex items-center justify-between p-4 bg-accent/30 rounded-lg">
         <div className="flex items-center gap-3">
           <Plug className="w-5 h-5 text-primary" />
-          <span className="font-medium">{pluginCameras.length} camera{pluginCameras.length !== 1 ? 's' : ''} managed</span>
+          <span className="font-medium">{cameras.length} camera{cameras.length !== 1 ? 's' : ''} managed</span>
         </div>
         <div className="flex items-center gap-4 text-sm">
           <span className="flex items-center gap-1.5">
             <span className="w-2 h-2 rounded-full bg-green-500" />
-            {pluginCameras.filter(c => c.online).length} online
+            {cameras.filter(c => c.online).length} online
           </span>
           <span className="flex items-center gap-1.5">
             <span className="w-2 h-2 rounded-full bg-gray-400" />
-            {pluginCameras.filter(c => !c.online).length} offline
+            {cameras.filter(c => !c.online).length} offline
           </span>
         </div>
       </div>
 
       {/* Camera List */}
       <div className="divide-y divide-border rounded-lg border border-border overflow-hidden">
-        {pluginCameras.map((pluginCamera) => {
+        {cameras.map((pluginCamera) => {
           const nvrCamera = getCameraMapping(pluginCamera.id)
           const isRegistered = !!nvrCamera
 
