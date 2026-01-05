@@ -222,8 +222,21 @@ func sanitizeStreamName(name string) string {
 }
 
 // buildStreamURL constructs the stream URL with authentication if needed
+// Uses substream if configured via Stream.Roles.Record = "sub"
 func (r *Recorder) buildStreamURL() string {
 	streamURL := r.config.Stream.URL
+
+	// Check if we should use substream for recording
+	// This allows using H.265 substream for storage efficiency while keeping H.264 main for live
+	if r.config.Stream.Roles != nil && r.config.Stream.Roles.Record == "sub" {
+		if r.config.Stream.SubURL != "" {
+			streamURL = r.config.Stream.SubURL
+			r.logger.Debug("Using substream for recording", "camera", r.cameraID)
+		} else {
+			r.logger.Warn("Record role set to 'sub' but no SubURL configured, falling back to main stream", "camera", r.cameraID)
+		}
+	}
+
 	if streamURL == "" {
 		r.logger.Error("No stream URL configured for camera", "camera", r.cameraID)
 		return ""
@@ -316,17 +329,30 @@ func (r *Recorder) buildFFmpegArgs() []string {
 		args = append(args, hwAccelArgs...)
 	}
 
-	// Add protocol-specific input options
+	// Add protocol-specific input options with optimizations
 	if strings.HasPrefix(streamURL, "rtsp://") {
-		args = append(args, "-rtsp_transport", "tcp")
+		args = append(args,
+			"-rtsp_transport", "tcp",
+			"-buffer_size", "1024000", // 1MB buffer for network jitter
+			"-stimeout", "5000000", // 5 second socket timeout (microseconds)
+		)
 	} else if strings.HasPrefix(streamURL, "rtmp://") {
 		args = append(args, "-live_start_index", "-1")
 	}
 	// HLS, HTTP, and other protocols don't need special options
 
-	// Add input and output args
+	// Add input
+	args = append(args, "-i", streamURL)
+
+	// Input processing flags for reliability
 	args = append(args,
-		"-i", streamURL,
+		"-fflags", "+genpts+discardcorrupt", // Generate PTS if missing, discard corrupt frames
+		"-avoid_negative_ts", "make_zero", // Ensure timestamps start at 0
+		"-max_delay", "500000", // 500ms max demux delay for low latency
+	)
+
+	// Output args - stream copy (no transcoding)
+	args = append(args,
 		"-c:v", "copy",
 		"-c:a", "copy",
 		"-f", "segment",
