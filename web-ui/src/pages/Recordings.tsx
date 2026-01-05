@@ -174,6 +174,13 @@ export function Recordings() {
   const [hoverTime, setHoverTime] = useState<Date | null>(null)
   const [hoverX, setHoverX] = useState<number | null>(null)
 
+  // Track currently loaded segment for efficient seeking
+  const [loadedSegment, setLoadedSegment] = useState<{
+    startTime: Date
+    endTime: Date
+    segmentOffset: number // offset in seconds from X-Segment-Offset header
+  } | null>(null)
+
   const videoRef = useRef<HTMLVideoElement>(null)
   const timelineRef = useRef<HTMLDivElement>(null)
   const verticalTimelineRef = useRef<HTMLDivElement>(null)
@@ -261,56 +268,131 @@ export function Recordings() {
     return `${apiUrl}/api/v1/recordings/timeline/${selectedCamera}/stream?t=${timestamp.toISOString()}`
   }, [apiUrl, selectedCamera])
 
+  // Find the recording segment that contains a given time
+  const findSegmentForTime = useCallback((time: Date): TimelineSegment | null => {
+    if (!timeline?.segments) return null
+
+    for (const segment of timeline.segments) {
+      if (segment.type !== 'recording') continue
+      const segStart = new Date(segment.start_time)
+      const segEnd = new Date(segment.end_time)
+      if (time >= segStart && time <= segEnd) {
+        return segment
+      }
+    }
+    return null
+  }, [timeline])
+
+  // Check if a time is within the currently loaded segment
+  const isWithinLoadedSegment = useCallback((time: Date): boolean => {
+    if (!loadedSegment) return false
+    return time >= loadedSegment.startTime && time <= loadedSegment.endTime
+  }, [loadedSegment])
+
   // Pending seek state - used when transitioning from live mode where video isn't mounted yet
   const [pendingSeek, setPendingSeek] = useState<{ time: Date; autoPlay: boolean } | null>(null)
 
-  // Seek to a specific time
+  // Load a new segment and seek to a specific time within it
+  const loadSegmentAndSeek = useCallback(async (time: Date, autoPlay = false) => {
+    if (!videoRef.current) return
+
+    const segment = findSegmentForTime(time)
+    if (!segment) {
+      console.warn('[Recordings] No segment found for time:', time)
+      return
+    }
+
+    const segmentStart = new Date(segment.start_time)
+    const segmentEnd = new Date(segment.end_time)
+
+    // Load from the segment start to get the full segment
+    const url = getStreamUrl(segmentStart)
+    console.log('[Recordings] Loading segment:', url)
+
+    // Fetch the segment info to get the offset header
+    try {
+      const response = await fetch(url, { method: 'HEAD' })
+      const offsetStr = response.headers.get('X-Segment-Offset')
+      const segmentOffset = offsetStr ? parseFloat(offsetStr) : 0
+
+      // Update loaded segment tracking
+      setLoadedSegment({
+        startTime: segmentStart,
+        endTime: segmentEnd,
+        segmentOffset
+      })
+
+      // Calculate where to seek within the video
+      const targetOffset = (time.getTime() - segmentStart.getTime()) / 1000
+
+      videoRef.current.src = url
+      videoRef.current.load()
+
+      // Wait for video to be ready, then seek
+      const onLoadedMetadata = () => {
+        if (videoRef.current) {
+          videoRef.current.currentTime = targetOffset
+          setVideoStartTime(segmentStart)
+          setCurrentTime(time)
+
+          if (autoPlay || isPlaying) {
+            setIsPlaying(true)
+            videoRef.current.play().catch(() => {})
+          }
+        }
+        videoRef.current?.removeEventListener('loadedmetadata', onLoadedMetadata)
+      }
+
+      videoRef.current.addEventListener('loadedmetadata', onLoadedMetadata)
+    } catch (err) {
+      console.error('[Recordings] Failed to load segment:', err)
+    }
+  }, [findSegmentForTime, getStreamUrl, isPlaying])
+
+  // Seek to a specific time - uses in-segment seeking when possible
   const seekToTime = useCallback((time: Date, autoPlay = false) => {
     setViewMode('playback')
     setCurrentTime(time)
-    setVideoStartTime(time)
 
-    if (videoRef.current) {
-      // Video element exists, load directly
-      const url = getStreamUrl(time)
-      videoRef.current.src = url
-      videoRef.current.load()
+    if (!videoRef.current) {
+      // Video element doesn't exist yet (transitioning from live mode)
+      setPendingSeek({ time, autoPlay: autoPlay || isPlaying })
+      return
+    }
+
+    // Check if we can seek within the current segment (enables scrubbing)
+    if (isWithinLoadedSegment(time) && loadedSegment) {
+      // Calculate offset within the loaded segment
+      const offsetInSegment = (time.getTime() - loadedSegment.startTime.getTime()) / 1000
+      videoRef.current.currentTime = offsetInSegment
+      setCurrentTime(time)
+
       if (autoPlay || isPlaying) {
         setIsPlaying(true)
         videoRef.current.play().catch(() => {})
       }
     } else {
-      // Video element doesn't exist yet (transitioning from live mode)
-      // Store the seek request to be processed after render
-      setPendingSeek({ time, autoPlay: autoPlay || isPlaying })
+      // Need to load a different segment
+      setVideoStartTime(time)
+      loadSegmentAndSeek(time, autoPlay)
     }
-  }, [getStreamUrl, isPlaying])
+  }, [isWithinLoadedSegment, loadedSegment, isPlaying, loadSegmentAndSeek])
 
   // Handle pending seek after video element mounts
-  // Uses a small delay to ensure React has rendered the video element
   useEffect(() => {
     if (!pendingSeek || viewMode !== 'playback') return
 
     const loadVideo = () => {
       if (!videoRef.current) {
-        // Video element not yet in DOM, try again shortly
         setTimeout(loadVideo, 50)
         return
       }
-
-      const url = getStreamUrl(pendingSeek.time)
-      console.log('[Recordings] Loading video:', url)
-      videoRef.current.src = url
-      videoRef.current.load()
-      if (pendingSeek.autoPlay) {
-        setIsPlaying(true)
-        videoRef.current.play().catch(() => {})
-      }
+      loadSegmentAndSeek(pendingSeek.time, pendingSeek.autoPlay)
       setPendingSeek(null)
     }
 
     loadVideo()
-  }, [pendingSeek, viewMode, getStreamUrl])
+  }, [pendingSeek, viewMode, loadSegmentAndSeek])
 
   // Preview time during scrubbing - only updates UI indicators, doesn't load video
   // This avoids stuttering from constant video reloads during drag
