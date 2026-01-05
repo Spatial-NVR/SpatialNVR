@@ -65,8 +65,8 @@ func DefaultConfig() *PluginConfig {
 		DataPath:           "/data/updates",
 		Components: map[string]ComponentConfig{
 			"nvr-core": {Enabled: true, AutoUpdate: false, Channel: "stable"},
+			"web-ui":   {Enabled: true, AutoUpdate: false, Channel: "stable"},
 			"go2rtc":   {Enabled: true, AutoUpdate: false, Channel: "stable"},
-			// Note: web-ui is not updatable separately - it's bundled with Docker image
 		},
 	}
 }
@@ -213,9 +213,15 @@ func (p *Plugin) registerComponents() {
 		AutoUpdate:     p.config.Components["nvr-core"].AutoUpdate,
 	})
 
-	// Note: web-ui is NOT registered as updatable
-	// In Docker deployments, web-ui is bundled with the image
-	// Updates require pulling a new Docker image
+	// Web UI assets (released as web-ui.tar.gz in component releases)
+	p.updater.RegisterComponent(updater.Component{
+		Name:           "web-ui",
+		CurrentVersion: Version,
+		Repository:     "Spatial-NVR/SpatialNVR",
+		AssetPattern:   "web-ui.tar.gz",
+		InstallPath:    "/data/web",
+		AutoUpdate:     p.config.Components["web-ui"].AutoUpdate,
+	})
 
 	// go2rtc
 	p.updater.RegisterComponent(updater.Component{

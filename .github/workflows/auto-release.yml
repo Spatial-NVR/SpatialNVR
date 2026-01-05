@@ -220,6 +220,22 @@ jobs:
 
           ls -la dist/
 
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Build web-ui tarball
+        run: |
+          cd web-ui
+          npm ci
+          npm run build
+          cd dist
+          tar -czvf ../../dist/web-ui.tar.gz .
+          cd ../..
+          echo "Created web-ui.tar.gz:"
+          ls -la dist/
+
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
 
@@ -375,6 +391,24 @@ jobs:
           done
           ls -la release/
 
+      - name: Set up Node.js for web-ui
+        if: contains(needs.analyze.outputs.components, 'web-ui')
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Build web-ui tarball
+        if: contains(needs.analyze.outputs.components, 'web-ui')
+        run: |
+          cd web-ui
+          npm ci
+          npm run build
+          cd dist
+          tar -czvf ../../release/web-ui.tar.gz .
+          cd ../..
+          echo "Created web-ui.tar.gz:"
+          ls -la release/web-ui.tar.gz
+
       - name: Create component tags and releases
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -395,8 +429,23 @@ jobs:
             git tag -a "$TAG" -m "Component release: $component v$VERSION" || true
             git push origin "$TAG" || true
 
-            # Create release with binaries
-            NOTES="## Component Update: $component v$VERSION
+            # Determine which assets to upload based on component
+            if [ "$component" = "web-ui" ]; then
+              ASSETS="release/web-ui.tar.gz"
+              NOTES="## Web UI Update: v$VERSION
+
+          This is a web-ui only update. No binary changes.
+
+          ### Installation
+          The updater will automatically extract this to \`/data/web\`.
+          Or manually: \`tar -xzf web-ui.tar.gz -C /data/web\`
+
+          ### Changed Component
+          - \`web-ui\`
+          "
+            else
+              ASSETS="release/spatialnvr-*"
+              NOTES="## Component Update: $component v$VERSION
 
           This is a component-specific update. Only the $component plugin was modified.
 
@@ -406,11 +455,12 @@ jobs:
           ### Changed Component
           - \`$component\`
           "
+            fi
 
             gh release create "$TAG" \
               --title "$component v$VERSION" \
               --notes "$NOTES" \
-              release/* || true
+              $ASSETS || true
           done
 
           # Update versions.json with component versions

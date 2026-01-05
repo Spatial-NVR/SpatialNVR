@@ -93,6 +93,22 @@ jobs:
 
           ls -la dist/
 
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Build web-ui tarball
+        run: |
+          cd web-ui
+          npm ci
+          npm run build
+          cd dist
+          tar -czvf ../../dist/web-ui.tar.gz .
+          cd ../..
+          echo "Created web-ui.tar.gz:"
+          ls -la dist/
+
       - name: Build and push Docker (multi-arch)
         if: inputs.release_type == 'full'
         uses: docker/build-push-action@v6
