@@ -100,6 +100,8 @@ jobs:
           context: .
           platforms: linux/amd64,linux/arm64
           push: true
+          build-args: |
+            VERSION=${{ inputs.version }}
           tags: |
             ghcr.io/spatial-nvr/spatialnvr:${{ inputs.version }}
             ghcr.io/spatial-nvr/spatialnvr:latest
