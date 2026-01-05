@@ -280,6 +280,13 @@ func (p *CoreAPIPlugin) handleCreateCamera(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
+	// Debug: Log plugin association
+	if camCfg.PluginID != "" {
+		fmt.Printf("[CreateCamera] Creating camera with plugin_id=%s, plugin_camera_id=%s\n", camCfg.PluginID, camCfg.PluginCamID)
+	} else {
+		fmt.Printf("[CreateCamera] Creating camera without plugin association\n")
+	}
+
 	cam, err := p.cameraService.Create(r.Context(), camCfg)
 	if err != nil {
 		p.respondError(w, http.StatusInternalServerError, err.Error())
@@ -499,9 +506,13 @@ func (p *CoreAPIPlugin) handleGetCapabilities(w http.ResponseWriter, r *http.Req
 	// Get camera config to check for plugin association
 	cfg := p.config.GetCamera(id)
 	if cfg == nil {
+		fmt.Printf("[GetCapabilities] Camera not found in config: %s (total cameras in config: %d)\n", id, len(p.config.Cameras))
 		p.respondError(w, http.StatusNotFound, "Camera not found")
 		return
 	}
+
+	// Debug: Log plugin association status
+	fmt.Printf("[GetCapabilities] Camera %s: plugin_id=%q, plugin_camera_id=%q\n", id, cfg.PluginID, cfg.PluginCamID)
 
 	// If camera has a plugin_id, proxy the capabilities request to the plugin
 	if cfg.PluginID != "" && p.pluginRPCProvider != nil {
