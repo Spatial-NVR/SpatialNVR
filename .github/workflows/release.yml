@@ -38,6 +38,10 @@ jobs:
         with:
           go-version: '1.24'
 
+      - name: Set up QEMU
+        if: inputs.release_type == 'full'
+        uses: docker/setup-qemu-action@v3
+
       - name: Set up Docker Buildx
         if: inputs.release_type == 'full'
         uses: docker/setup-buildx-action@v3
@@ -89,30 +93,16 @@ jobs:
 
           ls -la dist/
 
-      - name: Build and push Docker (amd64)
+      - name: Build and push Docker (multi-arch)
         if: inputs.release_type == 'full'
         uses: docker/build-push-action@v6
         with:
           context: .
-          platforms: linux/amd64
+          platforms: linux/amd64,linux/arm64
           push: true
           tags: |
             ghcr.io/spatial-nvr/spatialnvr:${{ inputs.version }}
-            ghcr.io/spatial-nvr/spatialnvr:${{ inputs.version }}-amd64
             ghcr.io/spatial-nvr/spatialnvr:latest
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
-      - name: Build and push Docker (arm64)
-        if: inputs.release_type == 'full'
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          platforms: linux/arm64
-          push: true
-          tags: |
-            ghcr.io/spatial-nvr/spatialnvr:${{ inputs.version }}-arm64
-            ghcr.io/spatial-nvr/spatialnvr:arm64
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -189,10 +179,7 @@ jobs:
             "latest": {
               "version": "$VERSION",
               "date": "$DATE",
-              "docker": {
-                "amd64": "ghcr.io/spatial-nvr/spatialnvr:$VERSION",
-                "arm64": "ghcr.io/spatial-nvr/spatialnvr:$VERSION-arm64"
-              },
+              "docker": "ghcr.io/spatial-nvr/spatialnvr:$VERSION",
               "binaries": {
                 "linux-amd64": "https://github.com/Spatial-NVR/SpatialNVR/releases/download/v$VERSION/spatialnvr-linux-amd64",
                 "linux-arm64": "https://github.com/Spatial-NVR/SpatialNVR/releases/download/v$VERSION/spatialnvr-linux-arm64",
