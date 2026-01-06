@@ -555,15 +555,8 @@ func (s *Service) GetConfig(ctx context.Context, id string) (*config.CameraConfi
 
 // GetSnapshot returns a snapshot from a camera
 func (s *Service) GetSnapshot(ctx context.Context, id string) ([]byte, error) {
-	// Get snapshot URL from go2rtc
-	var url string
-	if s.go2rtc != nil {
-		// Use go2rtc manager's API URL
-		streamName := strings.ToLower(strings.ReplaceAll(id, "-", "_"))
-		url = fmt.Sprintf("%s/api/frame.jpeg?src=%s", s.go2rtc.APIURL(), streamName)
-	} else {
-		url = streaming.GetStreamURL(id, "mjpeg", streaming.DefaultGo2RTCPort)
-	}
+	// Get snapshot URL from go2rtc - use streaming package for consistent URL generation
+	url := streaming.GetStreamURL(id, "mjpeg", streaming.DefaultGo2RTCPort)
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {

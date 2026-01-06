@@ -329,6 +329,13 @@ func (r *Recorder) buildFFmpegArgs() []string {
 		args = append(args, hwAccelArgs...)
 	}
 
+	// Input processing flags for reliability (must come BEFORE -i)
+	args = append(args,
+		"-fflags", "+genpts+discardcorrupt", // Generate PTS if missing, discard corrupt frames
+		"-avoid_negative_ts", "make_zero", // Ensure timestamps start at 0
+		"-max_delay", "500000", // 500ms max demux delay for low latency
+	)
+
 	// Add protocol-specific input options with optimizations
 	if strings.HasPrefix(streamURL, "rtsp://") {
 		args = append(args,
@@ -343,13 +350,6 @@ func (r *Recorder) buildFFmpegArgs() []string {
 
 	// Add input
 	args = append(args, "-i", streamURL)
-
-	// Input processing flags for reliability
-	args = append(args,
-		"-fflags", "+genpts+discardcorrupt", // Generate PTS if missing, discard corrupt frames
-		"-avoid_negative_ts", "make_zero", // Ensure timestamps start at 0
-		"-max_delay", "500000", // 500ms max demux delay for low latency
-	)
 
 	// Output args - stream copy (no transcoding)
 	args = append(args,

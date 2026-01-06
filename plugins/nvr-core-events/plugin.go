@@ -344,7 +344,7 @@ func (p *EventsPlugin) handleListEvents(w http.ResponseWriter, r *http.Request) 
 	}
 
 	p.respondJSON(w, map[string]interface{}{
-		"events": eventsList,
+		"data":   eventsList,
 		"total":  total,
 		"limit":  opts.Limit,
 		"offset": opts.Offset,
