@@ -299,10 +299,10 @@ func (r *Recorder) buildFFmpegArgs() []string {
 	// Output path pattern
 	outputPattern := filepath.Join(r.storagePath, r.cameraID, "%Y-%m-%d_%H-%M-%S.mp4")
 
-	// Segment duration (default 60 seconds)
+	// Segment duration (default 10 seconds for quicker event isolation)
 	segmentDuration := r.config.Recording.SegmentDuration
 	if segmentDuration <= 0 {
-		segmentDuration = 60
+		segmentDuration = 10
 	}
 
 	// Start with hardware acceleration args
