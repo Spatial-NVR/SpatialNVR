@@ -355,14 +355,29 @@ func (r *Recorder) buildFFmpegArgs() []string {
 	// Add input
 	args = append(args, "-i", streamURL)
 
+	// Check if audio recording is enabled
+	audioEnabled := r.config.Audio.Enabled
+
 	// Output args - stream copy (no transcoding)
+	args = append(args, "-c:v", "copy")
+
+	if audioEnabled {
+		// Copy audio if enabled
+		// Use -map to select streams explicitly to handle missing audio gracefully
+		args = append(args,
+			"-map", "0:v:0", // First video stream
+			"-map", "0:a:0?", // First audio stream (optional - ? means ignore if missing)
+			"-c:a", "copy",
+		)
+	} else {
+		// No audio - just map video
+		args = append(args, "-map", "0:v:0", "-an")
+	}
+
 	args = append(args,
-		"-c:v", "copy",
-		"-c:a", "copy",
 		"-f", "segment",
 		"-segment_time", strconv.Itoa(segmentDuration),
 		"-segment_format", "mp4",
-		"-segment_atclocktime", "1",
 		"-strftime", "1",
 		"-movflags", "+frag_keyframe+empty_moov+default_base_moof",
 		"-reset_timestamps", "1",
