@@ -333,7 +333,7 @@ func (u *Updater) Update(ctx context.Context, componentName string) error {
 
 	u.setStatus(componentName, "downloading", 5, "Fetching release info...")
 
-	// Get release info
+	// Get release info - try latest release first, then component-specific release
 	release, err := u.getLatestRelease(ctx, component.Repository)
 	if err != nil {
 		u.setStatus(componentName, "error", 0, err.Error())
@@ -342,10 +342,29 @@ func (u *Updater) Update(ctx context.Context, componentName string) error {
 
 	// Find the right asset and checksum
 	asset := u.findAsset(release.Assets, component.AssetPattern)
+
+	// If asset not found in latest release, try component-specific release
 	if asset == nil {
-		err := fmt.Errorf("no matching asset found for pattern: %s", component.AssetPattern)
-		u.setStatus(componentName, "error", 0, err.Error())
-		return err
+		u.logger.Debug("Asset not found in latest release, checking component releases",
+			"component", componentName, "pattern", component.AssetPattern)
+
+		componentRelease, err := u.getComponentRelease(ctx, component.Repository, componentName)
+		if err != nil {
+			err := fmt.Errorf("no matching asset found for pattern: %s (checked main and component releases)", component.AssetPattern)
+			u.setStatus(componentName, "error", 0, err.Error())
+			return err
+		}
+
+		asset = u.findAsset(componentRelease.Assets, component.AssetPattern)
+		if asset == nil {
+			err := fmt.Errorf("no matching asset found for pattern: %s", component.AssetPattern)
+			u.setStatus(componentName, "error", 0, err.Error())
+			return err
+		}
+
+		// Use the component release for the rest of the update
+		release = componentRelease
+		u.logger.Info("Using component release", "component", componentName, "tag", release.TagName)
 	}
 
 	// Look for checksum file
@@ -507,6 +526,50 @@ func (u *Updater) getLatestRelease(ctx context.Context, repo string) (*GitHubRel
 	return &release, nil
 }
 
+// getComponentRelease fetches a component-specific release from GitHub
+// Component releases have tags like v1.2.3-web-ui, v1.2.3-streaming, etc.
+func (u *Updater) getComponentRelease(ctx context.Context, repo, componentName string) (*GitHubRelease, error) {
+	// Get all releases and find the latest one for this component
+	url := fmt.Sprintf("https://api.github.com/repos/%s/releases", repo)
+
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Accept", "application/vnd.github.v3+json")
+	req.Header.Set("User-Agent", "SpatialNVR-Updater")
+
+	if u.config.GitHubToken != "" {
+		req.Header.Set("Authorization", "Bearer "+u.config.GitHubToken)
+	}
+
+	resp, err := u.client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch releases: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("GitHub API returned status %d", resp.StatusCode)
+	}
+
+	var releases []GitHubRelease
+	if err := json.NewDecoder(resp.Body).Decode(&releases); err != nil {
+		return nil, fmt.Errorf("failed to parse releases: %w", err)
+	}
+
+	// Look for the latest component-specific release
+	// Tags are like v1.2.3-web-ui, v1.2.3-streaming
+	suffix := "-" + componentName
+	for _, release := range releases {
+		if strings.HasSuffix(release.TagName, suffix) {
+			return &release, nil
+		}
+	}
+
+	return nil, fmt.Errorf("no component release found for %s", componentName)
+}
+
 // findAsset finds the matching asset for the current platform
 func (u *Updater) findAsset(assets []GitHubAsset, pattern string) *GitHubAsset {
 	// Replace {arch} and {os} in pattern
@@ -599,8 +662,11 @@ func (u *Updater) installUpdate(ctx context.Context, componentName, archivePath,
 	} else if strings.HasSuffix(archivePath, ".zip") {
 		return u.extractZip(archivePath, installPath)
 	} else {
-		// Assume it's a binary, just copy it
-		return u.copyFile(archivePath, installPath)
+		// It's a binary - copy to the install directory with the original filename
+		// The installPath here is a staging directory, so we need to put the binary inside it
+		binaryName := filepath.Base(archivePath)
+		targetPath := filepath.Join(installPath, binaryName)
+		return u.copyFile(archivePath, targetPath)
 	}
 }
 
