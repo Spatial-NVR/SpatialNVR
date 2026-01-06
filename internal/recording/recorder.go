@@ -173,6 +173,10 @@ func (r *Recorder) runFFmpeg(parentCtx context.Context) {
 
 	// Build FFmpeg command
 	args := r.buildFFmpegArgs()
+	if args == nil || len(args) == 0 {
+		r.setError(fmt.Errorf("failed to build FFmpeg args: no stream URL configured"))
+		return
+	}
 	r.logger.Info("Starting FFmpeg", "args", strings.Join(args, " "))
 
 	cmd := exec.CommandContext(ctx, "ffmpeg", args...)
@@ -391,13 +395,27 @@ func (r *Recorder) parseFFmpegOutput(stderr *bufio.Reader) {
 	segmentPattern := regexp.MustCompile(`Opening '(.+\.mp4)' for writing`)
 
 	var previousSegment string
+	var recentLines []string // Keep recent lines for error context
+	const maxRecentLines = 20
 
 	for scanner.Scan() {
 		line := scanner.Text()
 
-		// Log FFmpeg output
-		if strings.Contains(line, "error") || strings.Contains(line, "Error") {
-			r.logger.Warn("FFmpeg output", "line", line)
+		// Keep track of recent lines for error context
+		recentLines = append(recentLines, line)
+		if len(recentLines) > maxRecentLines {
+			recentLines = recentLines[1:]
+		}
+
+		// Log FFmpeg errors and warnings
+		lineLower := strings.ToLower(line)
+		if strings.Contains(lineLower, "error") ||
+			strings.Contains(lineLower, "failed") ||
+			strings.Contains(lineLower, "invalid") ||
+			strings.Contains(lineLower, "unable") ||
+			strings.Contains(lineLower, "cannot") ||
+			strings.Contains(lineLower, "no such") {
+			r.logger.Warn("FFmpeg error", "line", line)
 		}
 
 		// Check for new segment
@@ -418,6 +436,14 @@ func (r *Recorder) parseFFmpegOutput(stderr *bufio.Reader) {
 			previousSegment = newSegment
 			r.logger.Debug("New segment started", "path", newSegment)
 		}
+	}
+
+	// If we exit without creating any segments, log recent output for debugging
+	r.mu.RLock()
+	segCount := r.segmentsCount
+	r.mu.RUnlock()
+	if segCount == 0 && len(recentLines) > 0 {
+		r.logger.Error("FFmpeg failed before creating any segments", "recent_output", strings.Join(recentLines, "\n"))
 	}
 
 	// Process the last segment when FFmpeg stops
