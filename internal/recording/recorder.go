@@ -345,7 +345,7 @@ func (r *Recorder) buildFFmpegArgs() []string {
 		args = append(args,
 			"-rtsp_transport", "tcp",
 			"-buffer_size", "1024000", // 1MB buffer for network jitter
-			"-stimeout", "5000000", // 5 second socket timeout (microseconds)
+			"-timeout", "5000000", // 5 second timeout (microseconds) - replaces deprecated -stimeout
 		)
 	} else if strings.HasPrefix(streamURL, "rtmp://") {
 		args = append(args, "-live_start_index", "-1")
