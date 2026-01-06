@@ -420,11 +420,11 @@ func (p *Plugin) triggerRestart() {
 	// Get parent PID (docker-entrypoint.sh)
 	ppid := os.Getppid()
 
-	if ppid <= 1 {
-		// Running directly (not under entrypoint) or as PID 1
+	if ppid < 1 {
+		// Running as PID 1 (no parent entrypoint available)
 		// In this case, send SIGTERM to ourselves to trigger a graceful shutdown
 		// The container's restart policy or orchestrator will handle the restart
-		p.logger.Warn("No parent entrypoint found, sending SIGTERM to self for graceful shutdown")
+		p.logger.Warn("No parent entrypoint found (ppid=0), sending SIGTERM to self for graceful shutdown")
 		// Don't use os.Exit - let the signal handler do graceful cleanup
 		if err := syscall.Kill(os.Getpid(), syscall.SIGTERM); err != nil {
 			p.logger.Error("Failed to send SIGTERM to self", "error", err)

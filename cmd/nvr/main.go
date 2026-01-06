@@ -1228,8 +1228,8 @@ func handleSystemRestart() http.HandlerFunc {
 
 		// Get our parent PID (should be the entrypoint script)
 		ppid := os.Getppid()
-		if ppid <= 1 {
-			// We're running directly (not under entrypoint supervisor)
+		if ppid < 1 {
+			// We're running as PID 1 (no parent entrypoint available)
 			// Just exit and let the container restart us
 			w.Header().Set("Content-Type", "application/json")
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{
