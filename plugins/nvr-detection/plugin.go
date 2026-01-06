@@ -35,6 +35,9 @@ type DetectionPlugin struct {
 	// Active detection streams
 	streams map[string]context.CancelFunc
 
+	// Error tracking for rate-limited logging
+	lastErrorTime map[string]time.Time
+
 	mu      sync.RWMutex
 	started bool
 	ctx     context.Context
@@ -77,6 +80,7 @@ func (p *DetectionPlugin) Initialize(ctx context.Context, runtime *sdk.PluginRun
 	p.minConfidence = runtime.ConfigFloat("min_confidence", 0.5)
 	p.modelsPath = runtime.ConfigString("models_path", "/data/models")
 	p.defaultBackend = runtime.ConfigString("default_backend", "onnx")
+	p.lastErrorTime = make(map[string]time.Time)
 
 	return nil
 }
@@ -345,14 +349,57 @@ func (p *DetectionPlugin) subscribeToEvents() error {
 
 func (p *DetectionPlugin) handleCameraAdded(event *sdk.Event) error {
 	cameraID, _ := event.Data["camera_id"].(string)
-	detectionEnabled, _ := event.Data["detection_enabled"].(bool)
-	fps, _ := event.Data["detection_fps"].(int)
-
-	if cameraID == "" || !detectionEnabled {
+	if cameraID == "" {
 		return nil
 	}
 
+	// Extract detection settings from nested config object
+	detectionEnabled, fps := p.extractDetectionSettings(event.Data)
+
+	if !detectionEnabled {
+		p.Runtime().Logger().Debug("Detection not enabled for camera", "camera_id", cameraID)
+		return nil
+	}
+
+	p.Runtime().Logger().Info("Starting detection for camera", "camera_id", cameraID, "fps", fps)
 	return p.StartCamera(cameraID, fps)
+}
+
+// extractDetectionSettings extracts detection enabled/fps from event data
+// Handles both flat fields (legacy) and nested config object
+func (p *DetectionPlugin) extractDetectionSettings(data map[string]interface{}) (enabled bool, fps int) {
+	// Try flat fields first (legacy format)
+	if enabled, ok := data["detection_enabled"].(bool); ok {
+		fps, _ := data["detection_fps"].(int)
+		return enabled, fps
+	}
+
+	// Try nested config object
+	if configData, ok := data["config"]; ok {
+		// Handle config.CameraConfig struct
+		if cfg, ok := configData.(map[string]interface{}); ok {
+			if detection, ok := cfg["detection"].(map[string]interface{}); ok {
+				enabled, _ = detection["enabled"].(bool)
+				fps, _ = detection["fps"].(int)
+				return enabled, fps
+			}
+		}
+		// Handle typed config.CameraConfig (when passed directly in-process)
+		// Use reflection-free approach by checking for Detection field
+		if cfgBytes, err := json.Marshal(configData); err == nil {
+			var cfgMap map[string]interface{}
+			if json.Unmarshal(cfgBytes, &cfgMap) == nil {
+				if detection, ok := cfgMap["detection"].(map[string]interface{}); ok {
+					enabled, _ = detection["enabled"].(bool)
+					fpsFloat, _ := detection["fps"].(float64) // JSON numbers are float64
+					fps = int(fpsFloat)
+					return enabled, fps
+				}
+			}
+		}
+	}
+
+	return false, 0
 }
 
 func (p *DetectionPlugin) handleCameraRemoved(event *sdk.Event) error {
@@ -366,20 +413,22 @@ func (p *DetectionPlugin) handleCameraRemoved(event *sdk.Event) error {
 
 func (p *DetectionPlugin) handleCameraUpdated(event *sdk.Event) error {
 	cameraID, _ := event.Data["camera_id"].(string)
-	detectionEnabled, _ := event.Data["detection_enabled"].(bool)
-	fps, _ := event.Data["detection_fps"].(int)
-
 	if cameraID == "" {
 		return nil
 	}
+
+	// Extract detection settings from nested config object
+	detectionEnabled, fps := p.extractDetectionSettings(event.Data)
 
 	p.mu.RLock()
 	_, running := p.streams[cameraID]
 	p.mu.RUnlock()
 
 	if detectionEnabled && !running {
+		p.Runtime().Logger().Info("Starting detection for camera", "camera_id", cameraID, "fps", fps)
 		return p.StartCamera(cameraID, fps)
 	} else if !detectionEnabled && running {
+		p.Runtime().Logger().Info("Stopping detection for camera", "camera_id", cameraID)
 		return p.StopCamera(cameraID)
 	}
 
@@ -408,11 +457,20 @@ func (p *DetectionPlugin) processFrame(ctx context.Context, cameraID string, fra
 		MinConfidence: p.minConfidence,
 	})
 	if err != nil {
-		return // Silently skip on error
+		// Log detection errors (rate-limited to avoid spam)
+		p.logDetectionError(cameraID, err)
+		return
 	}
 
 	// Publish detection events
 	for _, det := range resp.Detections {
+		p.Runtime().Logger().Debug("Detection found",
+			"camera_id", cameraID,
+			"object_type", det.ObjectType,
+			"label", det.Label,
+			"confidence", det.Confidence,
+		)
+
 		_ = p.PublishEvent(sdk.EventTypeDetection, map[string]interface{}{
 			"camera_id":   cameraID,
 			"object_type": string(det.ObjectType),
@@ -427,6 +485,24 @@ func (p *DetectionPlugin) processFrame(ctx context.Context, cameraID string, fra
 			"track_id":  det.TrackID,
 			"timestamp": det.Timestamp.Format(time.RFC3339),
 		})
+	}
+}
+
+// logDetectionError logs detection errors with rate limiting to avoid log spam
+func (p *DetectionPlugin) logDetectionError(cameraID string, err error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	// Initialize error tracking map if needed
+	if p.lastErrorTime == nil {
+		p.lastErrorTime = make(map[string]time.Time)
+	}
+
+	// Only log once per minute per camera
+	lastTime, exists := p.lastErrorTime[cameraID]
+	if !exists || time.Since(lastTime) > time.Minute {
+		p.Runtime().Logger().Error("Detection failed", "camera_id", cameraID, "error", err)
+		p.lastErrorTime[cameraID] = time.Now()
 	}
 }
 

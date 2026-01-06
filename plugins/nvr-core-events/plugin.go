@@ -203,7 +203,12 @@ func (p *EventsPlugin) HandleEvent(ctx context.Context, event *sdk.Event) error 
 	var eventType events.EventType
 	switch event.Type {
 	case sdk.EventTypeDetection:
-		eventType = events.EventPerson // Default to person, could be refined
+		// Use object_type from detection if available
+		if objType, ok := event.Data["object_type"].(string); ok {
+			eventType = mapObjectTypeToEventType(objType)
+		} else {
+			eventType = events.EventPerson // Default fallback
+		}
 	case sdk.EventTypeMotion:
 		eventType = events.EventMotion
 	default:
@@ -233,6 +238,25 @@ func (p *EventsPlugin) HandleEvent(ctx context.Context, event *sdk.Event) error 
 	p.broadcastToSSE(e)
 
 	return nil
+}
+
+// mapObjectTypeToEventType converts detection object types to event types
+func mapObjectTypeToEventType(objType string) events.EventType {
+	switch objType {
+	case "person", "Person":
+		return events.EventPerson
+	case "vehicle", "Vehicle", "car", "Car", "truck", "Truck", "bus", "Bus", "motorcycle", "Motorcycle":
+		return events.EventVehicle
+	case "animal", "Animal", "dog", "Dog", "cat", "Cat", "bird", "Bird":
+		return events.EventAnimal
+	case "face", "Face":
+		return events.EventFace
+	case "license_plate", "LicensePlate", "plate":
+		return events.EventLPR
+	default:
+		// For unknown types, default to person (most common detection)
+		return events.EventPerson
+	}
 }
 
 // Private methods
