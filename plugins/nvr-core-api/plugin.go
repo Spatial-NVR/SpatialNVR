@@ -799,7 +799,7 @@ func (p *CoreAPIPlugin) handleSetProtocol(w http.ResponseWriter, r *http.Request
 				return
 			}
 			w.Header().Set("Content-Type", "application/json")
-			w.Write(result)
+			_, _ = w.Write(result)
 			return
 		}
 	}
@@ -828,7 +828,7 @@ func (p *CoreAPIPlugin) handleGetDeviceInfo(w http.ResponseWriter, r *http.Reque
 			})
 			if err == nil {
 				w.Header().Set("Content-Type", "application/json")
-				w.Write(result)
+				_, _ = w.Write(result)
 				return
 			}
 		}
@@ -901,7 +901,7 @@ func (p *CoreAPIPlugin) proxyRequest(w http.ResponseWriter, r *http.Request, tar
 		p.respondError(w, http.StatusBadGateway, fmt.Sprintf("Failed to connect to stream: %v", err))
 		return
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		p.respondError(w, resp.StatusCode, fmt.Sprintf("Stream error: %s", resp.Status))
