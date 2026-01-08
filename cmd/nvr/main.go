@@ -1,6 +1,7 @@
 // Package main provides the plugin-based NVR system entry point
 // This is the new architecture that uses the plugin loader for all services
 // Multi-architecture builds: linux/amd64, linux/arm64
+// Build: v0.0.58
 package main
 
 import (
