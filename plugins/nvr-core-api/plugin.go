@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -852,8 +853,8 @@ func (p *CoreAPIPlugin) handleGetDeviceInfo(w http.ResponseWriter, r *http.Reque
 func (p *CoreAPIPlugin) handleProxyHLS(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 
-	// Build go2rtc HLS URL
-	go2rtcURL := fmt.Sprintf("http://localhost:%d/api/stream.m3u8?src=%s", streaming.DefaultGo2RTCPort, id)
+	// Use streaming.GetStreamURL which properly sanitizes the camera ID (lowercase, etc.)
+	go2rtcURL := streaming.GetStreamURL(id, "hls", streaming.DefaultGo2RTCPort)
 
 	// Proxy the request
 	p.proxyRequest(w, r, go2rtcURL, "application/vnd.apple.mpegurl")
@@ -863,8 +864,11 @@ func (p *CoreAPIPlugin) handleProxyHLSSegment(w http.ResponseWriter, r *http.Req
 	id := chi.URLParam(r, "id")
 	segment := chi.URLParam(r, "segment")
 
-	// Build go2rtc segment URL
-	go2rtcURL := fmt.Sprintf("http://localhost:%d/api/%s?src=%s", streaming.DefaultGo2RTCPort, segment, id)
+	// Sanitize the camera ID to match go2rtc stream names (lowercase, underscores)
+	streamName := strings.ToLower(strings.NewReplacer(" ", "_", "-", "_", ".", "_", "/", "_", "\\", "_").Replace(id))
+
+	// Build go2rtc segment URL with sanitized stream name
+	go2rtcURL := fmt.Sprintf("http://localhost:%d/api/%s?src=%s", streaming.DefaultGo2RTCPort, segment, streamName)
 
 	// Proxy the request
 	p.proxyRequest(w, r, go2rtcURL, "video/mp2t")
@@ -873,8 +877,9 @@ func (p *CoreAPIPlugin) handleProxyHLSSegment(w http.ResponseWriter, r *http.Req
 func (p *CoreAPIPlugin) handleProxyFrame(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 
-	// Build go2rtc frame URL
-	go2rtcURL := fmt.Sprintf("http://localhost:%d/api/frame.jpeg?src=%s", streaming.DefaultGo2RTCPort, id)
+	// Use streaming.GetStreamURL which properly sanitizes the camera ID (lowercase, etc.)
+	// "mjpeg" format returns the frame.jpeg URL
+	go2rtcURL := streaming.GetStreamURL(id, "mjpeg", streaming.DefaultGo2RTCPort)
 
 	// Proxy the request
 	p.proxyRequest(w, r, go2rtcURL, "image/jpeg")
