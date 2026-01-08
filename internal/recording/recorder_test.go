@@ -151,7 +151,7 @@ func TestRecorder_BuildFFmpegArgs(t *testing.T) {
 			name:            "default segment duration",
 			segmentDuration: 0,
 			hwAccel:         "",
-			wantContains:    []string{"-segment_time", "60"},
+			wantContains:    []string{"-segment_time", "10"}, // Code defaults to 10s for quicker event isolation
 		},
 		{
 			name:            "custom segment duration",
