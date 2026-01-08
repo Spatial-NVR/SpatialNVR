@@ -6,6 +6,8 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strconv"
 	"sync"
 	"time"
@@ -26,6 +28,7 @@ type EventsPlugin struct {
 
 	maxEvents     int
 	retentionDays int
+	dataDir       string // Base directory for thumbnails
 
 	// SSE subscribers
 	sseClients   map[chan *events.Event]struct{}
@@ -64,6 +67,7 @@ func (p *EventsPlugin) Initialize(ctx context.Context, runtime *sdk.PluginRuntim
 	// Get configuration
 	p.maxEvents = runtime.ConfigInt("max_events", 10000)
 	p.retentionDays = runtime.ConfigInt("retention_days", 30)
+	p.dataDir = runtime.ConfigString("data_dir", "/data/nvr")
 
 	// Get database from runtime
 	db := runtime.DB()
@@ -164,6 +168,9 @@ func (p *EventsPlugin) Routes() http.Handler {
 	// Event actions
 	r.Post("/{id}/acknowledge", p.handleAcknowledge)
 	r.Post("/{id}/unacknowledge", p.handleUnacknowledge)
+
+	// Event thumbnail
+	r.Get("/{id}/thumbnail", p.handleGetThumbnail)
 
 	// Streaming
 	r.Get("/stream", p.handleSSE)
@@ -520,6 +527,46 @@ func (p *EventsPlugin) handleGetCameraEvents(w http.ResponseWriter, r *http.Requ
 		"total":     total,
 		"camera_id": cameraID,
 	})
+}
+
+func (p *EventsPlugin) handleGetThumbnail(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+
+	// Try to find the thumbnail file
+	// Thumbnails are stored as: {dataDir}/thumbnails/{eventId}.jpg
+	thumbnailPath := filepath.Join(p.dataDir, "thumbnails", id+".jpg")
+
+	// Check if file exists
+	if _, err := os.Stat(thumbnailPath); os.IsNotExist(err) {
+		// Try alternate path without extension
+		thumbnailPath = filepath.Join(p.dataDir, "thumbnails", id)
+		if _, err := os.Stat(thumbnailPath); os.IsNotExist(err) {
+			// If event exists, try to get thumbnail from the event's camera snapshot
+			if p.eventService != nil {
+				event, err := p.eventService.Get(r.Context(), id)
+				if err == nil && event != nil && event.ThumbnailPath != "" {
+					thumbnailPath = event.ThumbnailPath
+				} else {
+					p.respondError(w, http.StatusNotFound, "Thumbnail not found")
+					return
+				}
+			} else {
+				p.respondError(w, http.StatusNotFound, "Thumbnail not found")
+				return
+			}
+		}
+	}
+
+	// Read and serve the thumbnail
+	data, err := os.ReadFile(thumbnailPath)
+	if err != nil {
+		p.respondError(w, http.StatusInternalServerError, "Failed to read thumbnail")
+		return
+	}
+
+	w.Header().Set("Content-Type", "image/jpeg")
+	w.Header().Set("Cache-Control", "public, max-age=3600")
+	_, _ = w.Write(data)
 }
 
 // Helper methods

@@ -146,6 +146,10 @@ func (p *CoreAPIPlugin) Start(ctx context.Context) error {
 		"plugin_id": "nvr-core-api",
 	})
 
+	// Publish CameraAdded events for all existing cameras
+	// This allows other plugins (detection, recording, etc.) to initialize for existing cameras
+	go p.publishExistingCameras(ctx)
+
 	return nil
 }
 
@@ -162,6 +166,49 @@ func (p *CoreAPIPlugin) Stop(ctx context.Context) error {
 	p.SetHealth(sdk.HealthStateUnknown, "Core API stopped")
 
 	return nil
+}
+
+// publishExistingCameras publishes CameraAdded events for all existing cameras
+// This allows plugins like detection/recording to initialize for cameras that existed before startup
+func (p *CoreAPIPlugin) publishExistingCameras(ctx context.Context) {
+	if p.cameraService == nil {
+		return
+	}
+
+	runtime := p.Runtime()
+	if runtime == nil {
+		return
+	}
+
+	// Small delay to ensure other plugins are ready to receive events
+	time.Sleep(500 * time.Millisecond)
+
+	cameras, err := p.cameraService.List(ctx)
+	if err != nil {
+		runtime.Logger().Error("Failed to list existing cameras for startup events", "error", err)
+		return
+	}
+
+	runtime.Logger().Info("Publishing startup events for existing cameras", "count", len(cameras))
+
+	for _, cam := range cameras {
+		// Get full config for this camera
+		camCfg, err := p.cameraService.GetConfig(ctx, cam.ID)
+		if err != nil {
+			runtime.Logger().Warn("Failed to get config for camera", "camera_id", cam.ID, "error", err)
+			continue
+		}
+
+		// Publish CameraAdded event with full config
+		_ = p.PublishEvent(sdk.EventTypeCameraAdded, map[string]interface{}{
+			"camera_id":   cam.ID,
+			"name":        cam.Name,
+			"main_stream": cam.StreamURL,
+			"config":      camCfg,
+		})
+
+		runtime.Logger().Debug("Published startup event for camera", "camera_id", cam.ID)
+	}
 }
 
 // Health returns the plugin's health status
