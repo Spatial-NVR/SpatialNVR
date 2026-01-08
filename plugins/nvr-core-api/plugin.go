@@ -647,7 +647,7 @@ func (p *CoreAPIPlugin) handleGetPTZPresets(w http.ResponseWriter, r *http.Reque
 			if err == nil {
 				// Return raw plugin response (array of presets)
 				w.Header().Set("Content-Type", "application/json")
-				w.Write(result)
+				_, _ = w.Write(result)
 				return
 			}
 		}
@@ -711,7 +711,7 @@ func (p *CoreAPIPlugin) handlePTZControl(w http.ResponseWriter, r *http.Request)
 				return
 			}
 			w.Header().Set("Content-Type", "application/json")
-			w.Write(result)
+			_, _ = w.Write(result)
 			return
 		}
 	}
@@ -740,7 +740,7 @@ func (p *CoreAPIPlugin) handleGetProtocols(w http.ResponseWriter, r *http.Reques
 			})
 			if err == nil {
 				w.Header().Set("Content-Type", "application/json")
-				w.Write(result)
+				_, _ = w.Write(result)
 				return
 			}
 		}
@@ -914,7 +914,7 @@ func (p *CoreAPIPlugin) proxyRequest(w http.ResponseWriter, r *http.Request, tar
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 
 	// Copy body
-	io.Copy(w, resp.Body)
+	_, _ = io.Copy(w, resp.Body)
 }
 
 // Helper methods

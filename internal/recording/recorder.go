@@ -173,7 +173,7 @@ func (r *Recorder) runFFmpeg(parentCtx context.Context) {
 
 	// Build FFmpeg command
 	args := r.buildFFmpegArgs()
-	if args == nil || len(args) == 0 {
+	if len(args) == 0 {
 		r.setError(fmt.Errorf("failed to build FFmpeg args: no stream URL configured"))
 		return
 	}
