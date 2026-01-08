@@ -249,7 +249,7 @@ func (p *CoreAPIPlugin) Routes() http.Handler {
 
 	// Stream proxy routes - proxy go2rtc streams through the API
 	r.Get("/{id}/stream/hls", p.handleProxyHLS)
-	r.Get("/{id}/stream/hls/{segment}", p.handleProxyHLSSegment)
+	r.Get("/{id}/stream/hls/*", p.handleProxyHLSSegment)
 	r.Get("/{id}/stream/frame", p.handleProxyFrame)
 
 	// Plugin capability routes - for plugin-managed cameras
@@ -856,22 +856,96 @@ func (p *CoreAPIPlugin) handleProxyHLS(w http.ResponseWriter, r *http.Request) {
 	// Use streaming.GetStreamURL which properly sanitizes the camera ID (lowercase, etc.)
 	go2rtcURL := streaming.GetStreamURL(id, "hls", streaming.DefaultGo2RTCPort)
 
-	// Proxy the request
+	// Proxy the master playlist - relative URLs will be handled by handleProxyHLSSegment wildcard route
 	p.proxyRequest(w, r, go2rtcURL, "application/vnd.apple.mpegurl")
 }
 
 func (p *CoreAPIPlugin) handleProxyHLSSegment(w http.ResponseWriter, r *http.Request) {
-	id := chi.URLParam(r, "id")
-	segment := chi.URLParam(r, "segment")
+	_ = chi.URLParam(r, "id") // camera ID not needed for segment proxying
 
-	// Sanitize the camera ID to match go2rtc stream names (lowercase, underscores)
-	streamName := strings.ToLower(strings.NewReplacer(" ", "_", "-", "_", ".", "_", "/", "_", "\\", "_").Replace(id))
+	// Get the wildcard path (everything after /stream/hls/)
+	path := chi.URLParam(r, "*")
 
-	// Build go2rtc segment URL with sanitized stream name
-	go2rtcURL := fmt.Sprintf("http://localhost:%d/api/%s?src=%s", streaming.DefaultGo2RTCPort, segment, streamName)
+	// Preserve query string
+	queryString := r.URL.RawQuery
 
-	// Proxy the request
-	p.proxyRequest(w, r, go2rtcURL, "video/mp2t")
+	// Build the go2rtc URL
+	// go2rtc HLS paths look like: /api/hls/playlist.m3u8?id=xxx or /api/hls/segment/xxx.ts
+	var go2rtcURL string
+	if strings.HasPrefix(path, "hls/") {
+		// Sub-playlist or segment within hls/
+		go2rtcURL = fmt.Sprintf("http://localhost:%d/api/%s", streaming.DefaultGo2RTCPort, path)
+	} else {
+		// Direct file request
+		go2rtcURL = fmt.Sprintf("http://localhost:%d/api/hls/%s", streaming.DefaultGo2RTCPort, path)
+	}
+
+	// Add query string if present
+	if queryString != "" {
+		if strings.Contains(go2rtcURL, "?") {
+			go2rtcURL += "&" + queryString
+		} else {
+			go2rtcURL += "?" + queryString
+		}
+	}
+
+	// Determine content type based on file extension
+	contentType := "application/octet-stream"
+	if strings.HasSuffix(path, ".m3u8") {
+		contentType = "application/vnd.apple.mpegurl"
+	} else if strings.HasSuffix(path, ".ts") {
+		contentType = "video/mp2t"
+	} else if strings.HasSuffix(path, ".m4s") || strings.HasSuffix(path, ".mp4") {
+		contentType = "video/mp4"
+	}
+
+	// Fetch from go2rtc
+	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, go2rtcURL, nil)
+	if err != nil {
+		p.respondError(w, http.StatusInternalServerError, "Failed to create proxy request")
+		return
+	}
+
+	client := &http.Client{Timeout: 30 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		p.respondError(w, http.StatusBadGateway, fmt.Sprintf("Failed to connect to stream: %v", err))
+		return
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		p.respondError(w, resp.StatusCode, fmt.Sprintf("Stream error: %s", resp.Status))
+		return
+	}
+
+	// For m3u8 playlists, we need to rewrite the URLs
+	if strings.HasSuffix(path, ".m3u8") {
+		body, err := io.ReadAll(resp.Body)
+		if err != nil {
+			p.respondError(w, http.StatusInternalServerError, "Failed to read playlist")
+			return
+		}
+
+		// Rewrite relative paths in the playlist
+		playlist := string(body)
+		// Segment files are referenced as relative paths, keep them relative
+		// The browser will resolve them relative to this URL
+
+		w.Header().Set("Content-Type", contentType)
+		w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		_, _ = w.Write([]byte(playlist))
+	} else {
+		// Binary content (video segments)
+		w.Header().Set("Content-Type", contentType)
+		w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		_, _ = io.Copy(w, resp.Body)
+	}
 }
 
 func (p *CoreAPIPlugin) handleProxyFrame(w http.ResponseWriter, r *http.Request) {
