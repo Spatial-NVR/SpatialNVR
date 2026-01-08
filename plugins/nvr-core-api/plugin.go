@@ -246,6 +246,11 @@ func (p *CoreAPIPlugin) Routes() http.Handler {
 	r.Get("/{id}/snapshot", p.handleGetSnapshot)
 	r.Get("/{id}/stream", p.handleGetStreamURLs)
 
+	// Stream proxy routes - proxy go2rtc streams through the API
+	r.Get("/{id}/stream/hls", p.handleProxyHLS)
+	r.Get("/{id}/stream/hls/{segment}", p.handleProxyHLSSegment)
+	r.Get("/{id}/stream/frame", p.handleProxyFrame)
+
 	// Plugin capability routes - for plugin-managed cameras
 	r.Get("/{id}/capabilities", p.handleGetCapabilities)
 	r.Get("/{id}/ptz/presets", p.handleGetPTZPresets)
@@ -840,6 +845,71 @@ func (p *CoreAPIPlugin) handleGetDeviceInfo(w http.ResponseWriter, r *http.Reque
 		"manufacturer":  cfg.Manufacturer,
 		"channel_count": 1,
 	})
+}
+
+// Stream proxy handlers - proxy go2rtc streams through the API for external access
+
+func (p *CoreAPIPlugin) handleProxyHLS(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+
+	// Build go2rtc HLS URL
+	go2rtcURL := fmt.Sprintf("http://localhost:%d/api/stream.m3u8?src=%s", streaming.DefaultGo2RTCPort, id)
+
+	// Proxy the request
+	p.proxyRequest(w, r, go2rtcURL, "application/vnd.apple.mpegurl")
+}
+
+func (p *CoreAPIPlugin) handleProxyHLSSegment(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	segment := chi.URLParam(r, "segment")
+
+	// Build go2rtc segment URL
+	go2rtcURL := fmt.Sprintf("http://localhost:%d/api/%s?src=%s", streaming.DefaultGo2RTCPort, segment, id)
+
+	// Proxy the request
+	p.proxyRequest(w, r, go2rtcURL, "video/mp2t")
+}
+
+func (p *CoreAPIPlugin) handleProxyFrame(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+
+	// Build go2rtc frame URL
+	go2rtcURL := fmt.Sprintf("http://localhost:%d/api/frame.jpeg?src=%s", streaming.DefaultGo2RTCPort, id)
+
+	// Proxy the request
+	p.proxyRequest(w, r, go2rtcURL, "image/jpeg")
+}
+
+func (p *CoreAPIPlugin) proxyRequest(w http.ResponseWriter, r *http.Request, targetURL string, contentType string) {
+	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, targetURL, nil)
+	if err != nil {
+		p.respondError(w, http.StatusInternalServerError, "Failed to create proxy request")
+		return
+	}
+
+	client := &http.Client{Timeout: 30 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		p.respondError(w, http.StatusBadGateway, fmt.Sprintf("Failed to connect to stream: %v", err))
+		return
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		p.respondError(w, resp.StatusCode, fmt.Sprintf("Stream error: %s", resp.Status))
+		return
+	}
+
+	// Copy headers
+	w.Header().Set("Content-Type", contentType)
+	w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+
+	// Copy body
+	io.Copy(w, resp.Body)
 }
 
 // Helper methods
